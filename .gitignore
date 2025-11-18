@@ -184,6 +184,9 @@ cython_debug/
 *.csv
 *.log
 
+# Coverage badges (tracked separately)
+!coverage.svg
+
 # IDE
 .vscode/
 .idea/
