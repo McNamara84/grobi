@@ -1,0 +1,176 @@
+{
+  "single_page_success": {
+    "data": [
+      {
+        "id": "10.5880/GFZ.1.1.2021.001",
+        "type": "dois",
+        "attributes": {
+          "doi": "10.5880/GFZ.1.1.2021.001",
+          "url": "https://dataservices.gfz-potsdam.de/panmetaworks/showshort.php?id=1234",
+          "titles": [{"title": "Test Dataset 1"}],
+          "publicationYear": 2021
+        }
+      },
+      {
+        "id": "10.5880/GFZ.1.1.2021.002",
+        "type": "dois",
+        "attributes": {
+          "doi": "10.5880/GFZ.1.1.2021.002",
+          "url": "https://dataservices.gfz-potsdam.de/panmetaworks/showshort.php?id=5678",
+          "titles": [{"title": "Test Dataset 2"}],
+          "publicationYear": 2021
+        }
+      },
+      {
+        "id": "10.5880/GFZ.1.1.2021.003",
+        "type": "dois",
+        "attributes": {
+          "doi": "10.5880/GFZ.1.1.2021.003",
+          "url": "https://dataservices.gfz-potsdam.de/panmetaworks/showshort.php?id=9012",
+          "titles": [{"title": "Test Dataset 3"}],
+          "publicationYear": 2021
+        }
+      }
+    ],
+    "links": {
+      "self": "https://api.datacite.org/dois?client-id=TIB.GFZ&page[number]=1&page[size]=100"
+    },
+    "meta": {
+      "total": 3,
+      "totalPages": 1,
+      "page": 1
+    }
+  },
+  "first_page_multi": {
+    "data": [
+      {
+        "id": "10.5880/GFZ.1.1.2021.001",
+        "type": "dois",
+        "attributes": {
+          "doi": "10.5880/GFZ.1.1.2021.001",
+          "url": "https://dataservices.gfz-potsdam.de/panmetaworks/showshort.php?id=1234",
+          "titles": [{"title": "Test Dataset 1"}],
+          "publicationYear": 2021
+        }
+      },
+      {
+        "id": "10.5880/GFZ.1.1.2021.002",
+        "type": "dois",
+        "attributes": {
+          "doi": "10.5880/GFZ.1.1.2021.002",
+          "url": "https://dataservices.gfz-potsdam.de/panmetaworks/showshort.php?id=5678",
+          "titles": [{"title": "Test Dataset 2"}],
+          "publicationYear": 2021
+        }
+      }
+    ],
+    "links": {
+      "self": "https://api.datacite.org/dois?client-id=TIB.GFZ&page[number]=1&page[size]=100",
+      "next": "https://api.datacite.org/dois?client-id=TIB.GFZ&page[number]=2&page[size]=100"
+    },
+    "meta": {
+      "total": 5,
+      "totalPages": 3,
+      "page": 1
+    }
+  },
+  "second_page_multi": {
+    "data": [
+      {
+        "id": "10.5880/GFZ.1.1.2021.003",
+        "type": "dois",
+        "attributes": {
+          "doi": "10.5880/GFZ.1.1.2021.003",
+          "url": "https://dataservices.gfz-potsdam.de/panmetaworks/showshort.php?id=9012",
+          "titles": [{"title": "Test Dataset 3"}],
+          "publicationYear": 2021
+        }
+      },
+      {
+        "id": "10.5880/GFZ.1.1.2021.004",
+        "type": "dois",
+        "attributes": {
+          "doi": "10.5880/GFZ.1.1.2021.004",
+          "url": "https://dataservices.gfz-potsdam.de/panmetaworks/showshort.php?id=3456",
+          "titles": [{"title": "Test Dataset 4"}],
+          "publicationYear": 2021
+        }
+      }
+    ],
+    "links": {
+      "self": "https://api.datacite.org/dois?client-id=TIB.GFZ&page[number]=2&page[size]=100",
+      "next": "https://api.datacite.org/dois?client-id=TIB.GFZ&page[number]=3&page[size]=100"
+    },
+    "meta": {
+      "total": 5,
+      "totalPages": 3,
+      "page": 2
+    }
+  },
+  "third_page_multi": {
+    "data": [
+      {
+        "id": "10.5880/GFZ.1.1.2021.005",
+        "type": "dois",
+        "attributes": {
+          "doi": "10.5880/GFZ.1.1.2021.005",
+          "url": "https://dataservices.gfz-potsdam.de/panmetaworks/showshort.php?id=7890",
+          "titles": [{"title": "Test Dataset 5"}],
+          "publicationYear": 2021
+        }
+      }
+    ],
+    "links": {
+      "self": "https://api.datacite.org/dois?client-id=TIB.GFZ&page[number]=3&page[size]=100"
+    },
+    "meta": {
+      "total": 5,
+      "totalPages": 3,
+      "page": 3
+    }
+  },
+  "empty_response": {
+    "data": [],
+    "links": {
+      "self": "https://api.datacite.org/dois?client-id=TIB.EMPTY&page[number]=1&page[size]=100"
+    },
+    "meta": {
+      "total": 0,
+      "totalPages": 0,
+      "page": 1
+    }
+  },
+  "incomplete_data": {
+    "data": [
+      {
+        "id": "10.5880/GFZ.1.1.2021.001",
+        "type": "dois",
+        "attributes": {
+          "doi": "10.5880/GFZ.1.1.2021.001",
+          "url": "https://dataservices.gfz-potsdam.de/panmetaworks/showshort.php?id=1234"
+        }
+      },
+      {
+        "id": "10.5880/GFZ.1.1.2021.002",
+        "type": "dois",
+        "attributes": {
+          "doi": "10.5880/GFZ.1.1.2021.002"
+        }
+      },
+      {
+        "type": "dois",
+        "attributes": {
+          "url": "https://dataservices.gfz-potsdam.de/panmetaworks/showshort.php?id=9012"
+        }
+      }
+    ],
+    "links": {
+      "self": "https://api.datacite.org/dois?client-id=TIB.GFZ&page[number]=1&page[size]=100"
+    },
+    "meta": {
+      "total": 3,
+      "totalPages": 1,
+      "page": 1
+    }
+  }
+}
