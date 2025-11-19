@@ -187,6 +187,16 @@ cython_debug/
 # Coverage badges (tracked separately)
 !coverage.svg
 
+# Nuitka build artifacts
+*.build/
+*.dist/
+*.onefile-build/
+build/
+dist/
+*.exe
+*.pyd
+*.so
+
 # IDE
 .vscode/
 .idea/
@@ -200,3 +210,4 @@ desktop.ini
 
 # Results
 *.csv
+nuitka-crash-report.xml
