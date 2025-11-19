@@ -45,38 +45,38 @@ def check_prerequisites() -> bool:
             check=True
         )
         nuitka_version = result.stdout.strip().split()[0]
-        print(f"✓ Nuitka {nuitka_version} installed")
+        print(f"[OK] Nuitka {nuitka_version} installed")
     except (subprocess.CalledProcessError, FileNotFoundError):
         errors.append("Nuitka not found. Install with: pip install -r requirements-build.txt")
     
     # Check icon file
     icon_path = Path("src/ui/GROBI-Logo.ico")
     if icon_path.exists():
-        print(f"✓ Icon file found: {icon_path}")
+        print(f"[OK] Icon file found: {icon_path}")
     else:
         errors.append(f"Icon file not found: {icon_path}")
     
     # Check main.py
     main_path = Path("src/main.py")
     if main_path.exists():
-        print(f"✓ Entry point found: {main_path}")
+        print(f"[OK] Entry point found: {main_path}")
     else:
         errors.append(f"Entry point not found: {main_path}")
     
     # Check PySide6 installation
     try:
         import PySide6
-        print(f"✓ PySide6 {PySide6.__version__} installed")
+        print(f"[OK] PySide6 {PySide6.__version__} installed")
     except ImportError:
         errors.append("PySide6 not found. Install with: pip install -r requirements.txt")
     
     if errors:
-        print("\n❌ Prerequisites check failed:\n")
+        print("\n[ERROR] Prerequisites check failed:\n")
         for error in errors:
             print(f"  - {error}")
         return False
     
-    print("\n✓ All prerequisites met!")
+    print("\n[OK] All prerequisites met!")
     return True
 
 
@@ -97,7 +97,7 @@ def clean_build_dirs() -> None:
             print(f"Removing {dir_path}...")
             shutil.rmtree(dir_path)
     
-    print("✓ Build directories cleaned")
+    print("[OK] Build directories cleaned")
 
 
 def build_exe() -> bool:
@@ -175,16 +175,16 @@ def build_exe() -> bool:
             print(f"File size: {size_mb:.1f} MB")
             return True
         else:
-            print(f"❌ EXE file not found at {exe_path}")
+            print(f"[ERROR] EXE file not found at {exe_path}")
             print("Check Nuitka output above for errors.")
             print(f"Expected location: {exe_path.absolute()}")
             return False
             
     except subprocess.CalledProcessError as e:
-        print(f"\n❌ Build failed with exit code {e.returncode}")
+        print(f"\n[ERROR] Build failed with exit code {e.returncode}")
         return False
     except KeyboardInterrupt:
-        print("\n\n❌ Build cancelled by user")
+        print("\n\n[ERROR] Build cancelled by user")
         return False
 
 
@@ -231,7 +231,7 @@ Support:
 """
     
     info_path.write_text(build_info, encoding="utf-8")
-    print(f"✓ Build info created: {info_path}")
+    print(f"[OK] Build info created: {info_path}")
 
 
 def main() -> int:

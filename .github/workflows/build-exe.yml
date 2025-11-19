@@ -48,7 +48,7 @@ jobs:
       run: |
         $vsPath = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC"
         if (Test-Path $vsPath) {
-          Write-Host "✓ MSVC found at: $vsPath"
+          Write-Host "[OK] MSVC found at: $vsPath"
           Get-ChildItem $vsPath | Select-Object -First 1
         } else {
           Write-Host "Using GitHub Actions pre-installed MSVC"
@@ -64,10 +64,10 @@ jobs:
       run: |
         if (Test-Path dist\GROBI.exe) {
           $size = (Get-Item dist\GROBI.exe).Length / 1MB
-          Write-Host "✓ GROBI.exe created successfully"
+          Write-Host "[OK] GROBI.exe created successfully"
           Write-Host "File size: $([math]::Round($size, 2)) MB"
         } else {
-          Write-Host "❌ GROBI.exe not found!"
+          Write-Host "[ERROR] GROBI.exe not found!"
           exit 1
         }
     
@@ -186,11 +186,11 @@ jobs:
         
         if (Test-Path dist\GROBI.exe) {
           $size = (Get-Item dist\GROBI.exe).Length / 1MB
-          Write-Host "✓ Status: SUCCESS" -ForegroundColor Green
-          Write-Host "✓ File: dist\GROBI.exe" -ForegroundColor Green
-          Write-Host "✓ Size: $([math]::Round($size, 2)) MB" -ForegroundColor Green
-          Write-Host "✓ Tag: ${{ github.ref_name }}" -ForegroundColor Green
+          Write-Host "[OK] Status: SUCCESS" -ForegroundColor Green
+          Write-Host "[OK] File: dist\GROBI.exe" -ForegroundColor Green
+          Write-Host "[OK] Size: $([math]::Round($size, 2)) MB" -ForegroundColor Green
+          Write-Host "[OK] Tag: ${{ github.ref_name }}" -ForegroundColor Green
         } else {
-          Write-Host "❌ Status: FAILED" -ForegroundColor Red
-          Write-Host "❌ GROBI.exe not created" -ForegroundColor Red
+          Write-Host "[ERROR] Status: FAILED" -ForegroundColor Red
+          Write-Host "[ERROR] GROBI.exe not created" -ForegroundColor Red
         }
