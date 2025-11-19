@@ -37,12 +37,14 @@ jobs:
           ${{ runner.os }}-pip-
     
     - name: Install dependencies
+      shell: pwsh
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install -r requirements-build.txt
     
     - name: Verify MSVC installation
+      shell: pwsh
       run: |
         $vsPath = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC"
         if (Test-Path $vsPath) {
@@ -53,10 +55,12 @@ jobs:
         }
     
     - name: Build EXE with Nuitka
+      shell: pwsh
       run: |
         python scripts/build_exe.py
     
     - name: Verify EXE creation
+      shell: pwsh
       run: |
         if (Test-Path dist\GROBI.exe) {
           $size = (Get-Item dist\GROBI.exe).Length / 1MB
@@ -174,6 +178,7 @@ jobs:
     
     - name: Build Summary
       if: always()
+      shell: pwsh
       run: |
         Write-Host "`n========================================" -ForegroundColor Cyan
         Write-Host "Build Summary" -ForegroundColor Cyan
