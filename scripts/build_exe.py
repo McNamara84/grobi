@@ -137,6 +137,7 @@ def build_exe() -> bool:
         
         # Optimization
         "--assume-yes-for-downloads",
+        "--remove-output",  # Remove build directories after successful build
         
         # Progress display
         "--show-progress",
