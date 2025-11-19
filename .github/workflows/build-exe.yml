@@ -1,0 +1,184 @@
+name: Build Windows EXE
+
+on:
+  # Trigger on version tags (e.g., v0.1.0, v1.0.0)
+  push:
+    tags:
+      - 'v*.*.*'
+  
+  # Allow manual trigger from Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: write  # Required to upload release assets
+
+jobs:
+  build-exe:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'  # Use Python 3.12 for better MSVC compatibility
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~\AppData\Local\pip\Cache
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-build.txt
+    
+    - name: Verify MSVC installation
+      run: |
+        $vsPath = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC"
+        if (Test-Path $vsPath) {
+          Write-Host "✓ MSVC found at: $vsPath"
+          Get-ChildItem $vsPath | Select-Object -First 1
+        } else {
+          Write-Host "Using GitHub Actions pre-installed MSVC"
+        }
+    
+    - name: Build EXE with Nuitka
+      run: |
+        python scripts/build_exe.py
+    
+    - name: Verify EXE creation
+      run: |
+        if (Test-Path dist\GROBI.exe) {
+          $size = (Get-Item dist\GROBI.exe).Length / 1MB
+          Write-Host "✓ GROBI.exe created successfully"
+          Write-Host "File size: $([math]::Round($size, 2)) MB"
+        } else {
+          Write-Host "❌ GROBI.exe not found!"
+          exit 1
+        }
+    
+    - name: Create distribution package
+      shell: pwsh
+      run: |
+        # Create a distribution folder with EXE and documentation
+        New-Item -ItemType Directory -Path dist-release -Force
+        Copy-Item dist\GROBI.exe dist-release\
+        Copy-Item dist\BUILD_INFO.txt dist-release\
+        Copy-Item README.md dist-release\
+        Copy-Item LICENSE dist-release\
+    
+    - name: Create QUICK_START.txt
+      shell: pwsh
+      run: |
+        $content = "GROBI - Windows Executable`r`n"
+        $content += "===========================`r`n`r`n"
+        $content += "Version: ${{ github.ref_name }}`r`n"
+        $content += "Build Date: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`r`n`r`n"
+        $content += "Quick Start:`r`n"
+        $content += "1. Double-click GROBI.exe to start the application`r`n"
+        $content += "2. If Windows SmartScreen appears, click 'More info' then 'Run anyway'`r`n"
+        $content += "3. Enter your DataCite credentials when prompted`r`n"
+        $content += "4. Follow the on-screen instructions`r`n`r`n"
+        $content += "Files:`r`n"
+        $content += "- GROBI.exe: Main application (standalone, no installation required)`r`n"
+        $content += "- BUILD_INFO.txt: Detailed build information`r`n"
+        $content += "- README.md: Full documentation`r`n"
+        $content += "- LICENSE: Software license (MIT)`r`n`r`n"
+        $content += "Notes:`r`n"
+        $content += "- First run may trigger Windows Defender (false positive)`r`n"
+        $content += "- The application creates grobi.log in the same directory`r`n"
+        $content += "- CSV exports are saved in the same directory`r`n`r`n"
+        $content += "Support:`r`n"
+        $content += "- GitHub: https://github.com/McNamara84/grobi`r`n"
+        $content += "- Issues: https://github.com/McNamara84/grobi/issues`r`n"
+        [System.IO.File]::WriteAllText("dist-release\QUICK_START.txt", $content)
+    
+    - name: Create ZIP archive
+      shell: pwsh
+      run: |
+        $version = "${{ github.ref_name }}"
+        Compress-Archive -Path dist-release\* -DestinationPath "GROBI-$version-Windows.zip"
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: GROBI-Windows-EXE
+        path: |
+          dist\GROBI.exe
+          dist\BUILD_INFO.txt
+          GROBI-*.zip
+        retention-days: 90
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          GROBI-${{ github.ref_name }}-Windows.zip
+          dist/GROBI.exe
+          dist/BUILD_INFO.txt
+        body: |
+          # GROBI ${{ github.ref_name }}
+          
+          ## 📦 Windows Executable Release
+          
+          ### Download Options:
+          - **Recommended**: `GROBI-${{ github.ref_name }}-Windows.zip` - Complete package with documentation
+          - **Standalone**: `GROBI.exe` - Just the executable
+          
+          ### Installation:
+          1. Download the ZIP file or standalone EXE
+          2. Extract (if ZIP) and double-click `GROBI.exe`
+          3. No installation required - runs directly
+          
+          ### First Run:
+          - Windows SmartScreen may warn about unknown publisher
+          - Click "More info" → "Run anyway" to proceed
+          - This is normal for unsigned executables
+          
+          ### What's Included:
+          - Standalone Windows executable (no Python required)
+          - PySide6 (Qt6) GUI framework
+          - All dependencies bundled
+          - DataCite API integration
+          
+          ### System Requirements:
+          - Windows 10 or 11 (64-bit)
+          - ~25 MB disk space
+          - Internet connection for DataCite API
+          
+          ### Changes:
+          See [CHANGELOG.md](https://github.com/McNamara84/grobi/blob/main/CHANGELOG.md) for detailed changes.
+          
+          ### Support:
+          - Report issues: [GitHub Issues](https://github.com/McNamara84/grobi/issues)
+          - Documentation: [README.md](https://github.com/McNamara84/grobi/blob/main/README.md)
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Build Summary
+      if: always()
+      run: |
+        Write-Host "`n========================================" -ForegroundColor Cyan
+        Write-Host "Build Summary" -ForegroundColor Cyan
+        Write-Host "========================================`n" -ForegroundColor Cyan
+        
+        if (Test-Path dist\GROBI.exe) {
+          $size = (Get-Item dist\GROBI.exe).Length / 1MB
+          Write-Host "✓ Status: SUCCESS" -ForegroundColor Green
+          Write-Host "✓ File: dist\GROBI.exe" -ForegroundColor Green
+          Write-Host "✓ Size: $([math]::Round($size, 2)) MB" -ForegroundColor Green
+          Write-Host "✓ Tag: ${{ github.ref_name }}" -ForegroundColor Green
+        } else {
+          Write-Host "❌ Status: FAILED" -ForegroundColor Red
+          Write-Host "❌ GROBI.exe not created" -ForegroundColor Red
+        }

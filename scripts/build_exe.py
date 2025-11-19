@@ -132,6 +132,9 @@ def build_exe() -> bool:
         # Plugin configuration
         "--enable-plugin=pyside6",
         
+        # Compiler configuration
+        "--msvc=latest",  # Use latest MSVC version (required for Python 3.13)
+        
         # Optimization
         "--assume-yes-for-downloads",
         

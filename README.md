@@ -18,12 +18,38 @@ A modern GUI tool for GFZ Data Services to manage DataCite DOIs.
 - ⚡ Non-blocking API calls with progress indication
 - 🛡️ Comprehensive error handling
 
-## Requirements
+## Download
+
+### Windows Executable (Recommended for End Users)
+
+Download the latest standalone executable - no Python installation required!
+
+**[📥 Download Latest Release](https://github.com/McNamara84/grobi/releases/latest)**
+
+**Quick Start:**
+1. Download `GROBI-vX.X.X-Windows.zip` from the latest release
+2. Extract the ZIP file
+3. Double-click `GROBI.exe` to start
+4. If Windows SmartScreen appears, click "More info" → "Run anyway"
+
+**Note:** The executable is unsigned, which may trigger Windows SmartScreen warnings. This is normal and safe.
+
+### Requirements for Standalone EXE
+
+- Windows 10 or 11 (64-bit)
+- ~25 MB disk space
+- Internet connection for DataCite API
+
+## Installation from Source
+
+For developers who want to run from source code:
+
+### Requirements
 
 - Python 3.10 or higher
 - Windows 11 (recommended for optimal appearance)
 
-## Installation
+### Steps
 
 1. Clone repository:
 ```bash
@@ -74,6 +100,42 @@ Test coverage by module:
 - `credentials_dialog.py`: 95% - GUI dialog for credentials
 - `main_window.py`: 61% - Main window and threading
 - **Overall**: 77%
+
+### Building Windows Executable
+
+To build your own standalone executable:
+
+**Prerequisites:**
+- Visual Studio 2022 Build Tools (or MSVC 14.3+)
+- All dependencies installed
+
+**Build Steps:**
+```bash
+# 1. Install build dependencies
+pip install -r requirements-build.txt
+
+# 2. Run build script
+python scripts/build_exe.py
+
+# 3. Find executable
+.\dist\GROBI.exe
+```
+
+**Build Output:**
+- `dist/GROBI.exe` - Standalone executable (~23 MB)
+- `dist/BUILD_INFO.txt` - Build information
+- Build time: ~4-5 minutes
+
+**Automated Builds:**
+
+GitHub Actions automatically builds and releases executables when you push a version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+See [.github/workflows/README.md](.github/workflows/README.md) for details.
 
 ## Usage
 
