@@ -1,0 +1,7 @@
+# GROBI - Production Dependencies
+
+# GUI Framework
+PySide6>=6.6.0
+
+# HTTP Requests
+requests>=2.31.0

@@ -1,0 +1,13 @@
+# GROBI - Development Dependencies
+
+# Testing Framework
+pytest>=7.4.0
+pytest-qt>=4.2.0
+pytest-cov>=4.1.0
+
+# HTTP Mocking for Tests
+responses>=0.24.0
+
+# Code Quality
+flake8>=6.1.0
+black>=23.12.0
