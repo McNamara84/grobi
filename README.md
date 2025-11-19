@@ -11,12 +11,19 @@ A modern GUI tool for GFZ Data Services to manage DataCite DOIs.
 
 ## Features
 
-- 🔍 Retrieve all registered DOIs from DataCite API
-- 📊 Export as CSV file (DOI + Landing Page URL)
+### DOI Management
+- 🔍 **Retrieve DOIs**: Fetch all registered DOIs from DataCite API
+- 📊 **Export to CSV**: Export DOI list with landing page URLs
+- 🔄 **Update Landing Page URLs**: Bulk update landing page URLs via CSV import
+- 📝 **Detailed Logging**: Automatic creation of update logs with success/error reports
+
+### Technical Features
 - 🧪 Support for test and production API
 - 🎨 Modern user interface with PySide6 (Qt6)
 - ⚡ Non-blocking API calls with progress indication
-- 🛡️ Comprehensive error handling
+- 📈 Real-time progress tracking for bulk operations
+- 🛡️ Comprehensive error handling and validation
+- 📋 CSV format validation (DOI and URL format checks)
 
 ## Download
 
@@ -148,9 +155,11 @@ Start the application:
 python -m src.main
 ```
 
-### Step-by-Step Guide:
+### Workflow 1: Export DOIs to CSV
 
-1. **Start application**: Run `python -m src.main`
+**Step-by-Step Guide:**
+
+1. **Start application**: Run `python -m src.main` or double-click `GROBI.exe`
 2. **Load DOIs**: Click the "📥 DOIs laden" (Load DOIs) button
 3. **Enter credentials**: 
    - Enter your DataCite username (e.g., `TIB.GFZ`)
@@ -160,20 +169,83 @@ python -m src.main
 5. **Wait**: The application displays progress in the status area
 6. **Done**: A CSV file is created in the current directory
 
-### CSV File Format:
-
-The exported CSV file contains:
+**CSV Output Format:**
 - **Filename**: `{username}.csv` (e.g., `TIB.GFZ.csv`)
 - **Encoding**: UTF-8
 - **Columns**:
   - `DOI`: The Digital Object Identifier
   - `Landing_Page_URL`: The URL to the dataset's landing page
 
-Example:
+**Example Output:**
 ```csv
 DOI,Landing_Page_URL
 10.5880/GFZ.1.1.2021.001,https://dataservices.gfz-potsdam.de/panmetaworks/showshort.php?id=1234
 10.5880/GFZ.1.1.2021.002,https://dataservices.gfz-potsdam.de/panmetaworks/showshort.php?id=5678
+```
+
+### Workflow 2: Update Landing Page URLs
+
+**Step-by-Step Guide:**
+
+1. **Prepare CSV file**: Create a CSV file with updated landing page URLs
+   - Required format: `DOI,Landing_Page_URL`
+   - Must include header row
+   - Each DOI must have a corresponding URL
+   - URLs must start with `http://` or `https://`
+
+2. **Start update**: Click the "🔄 Landing Page URLs aktualisieren" (Update Landing Page URLs) button
+
+3. **Enter credentials and select file**:
+   - Enter your DataCite username
+   - Enter your DataCite password
+   - Optional: Enable "Test-API verwenden" for testing
+   - Click "Durchsuchen..." (Browse) to select your CSV file
+   - Button becomes active when credentials and file are provided
+
+4. **Start update process**: Click "Landing Page URLs aktualisieren" (Update Landing Page URLs)
+
+5. **Monitor progress**: 
+   - Real-time progress bar shows X/Y DOIs processed
+   - Status messages display current operation
+   - Errors are logged but process continues
+
+6. **Review results**:
+   - Summary dialog shows successful and failed updates
+   - Detailed log file created: `update_log_YYYYMMDD_HHMMSS.txt`
+   - Log contains all errors with DOI and error message
+
+**CSV Input Format:**
+```csv
+DOI,Landing_Page_URL
+10.5880/GFZ.1.1.2021.001,https://new-url.example.org/dataset1
+10.5880/GFZ.1.1.2021.002,https://new-url.example.org/dataset2
+```
+
+**Validation Rules:**
+- ✅ DOI format: `10.XXXX/...` (where XXXX is 4+ digits)
+- ✅ URL format: Must start with `http://` or `https://`
+- ✅ All rows must have both DOI and URL
+- ❌ Rows with missing DOI are skipped with warning
+- ❌ Rows with missing URL cause error
+
+**Update Log Example:**
+```
+======================================================================
+GROBI - Landing Page URL Update Log
+======================================================================
+Date: 2025-11-19 14:30:00
+
+ZUSAMMENFASSUNG:
+  Gesamt: 100 DOIs
+  Erfolgreich: 98
+  Fehlgeschlagen: 2
+
+======================================================================
+FEHLER:
+======================================================================
+  - 10.5880/GFZ.xxx: DOI nicht gefunden (404)
+  - 10.5880/GFZ.yyy: Keine Berechtigung (403)
+======================================================================
 ```
 
 ### Notes:
@@ -182,20 +254,33 @@ DOI,Landing_Page_URL
 - For many DOIs, retrieval may take several seconds
 - Progress indicator shows real-time status
 - Error messages are displayed in German
-- CSV file is automatically overwritten if it already exists
+- CSV files are automatically overwritten if they already exist
+- Update process continues even if individual DOIs fail
+- Each update creates a timestamped log file for auditing
 
 ## Project Structure
 
 ```
 grobi/
 ├── src/
-│   ├── main.py              # Entry point
-│   ├── ui/                  # GUI components
-│   ├── api/                 # DataCite API client
-│   └── utils/               # Utility functions
-├── tests/                   # Unit tests
-├── requirements.txt         # Production dependencies
-└── requirements-dev.txt     # Development dependencies
+│   ├── main.py                      # Entry point
+│   ├── ui/                          # GUI components
+│   │   ├── main_window.py          # Main window with DOI export and URL update
+│   │   └── credentials_dialog.py   # Credentials dialog (dual mode)
+│   ├── api/                         # DataCite API client
+│   │   └── datacite_client.py      # API methods (fetch, update)
+│   ├── workers/                     # Background workers
+│   │   └── update_worker.py        # URL update worker with threading
+│   └── utils/                       # Utility functions
+│       ├── csv_exporter.py         # CSV export functionality
+│       └── csv_parser.py           # CSV parsing and validation
+├── tests/                           # Unit tests (96 tests, 77% coverage)
+│   ├── test_csv_parser.py          # CSV parsing tests
+│   ├── test_datacite_client_update.py  # API update tests
+│   └── test_update_worker.py       # Worker tests
+├── requirements.txt                 # Production dependencies
+├── requirements-dev.txt             # Development dependencies
+└── requirements-build.txt           # Build dependencies (Nuitka)
 ```
 
 ## DataCite API
@@ -216,16 +301,42 @@ The application handles the following error scenarios:
 - **Rate limiting**: Too many requests to the API
 - **CSV errors**: No write permissions or insufficient disk space
 - **No DOIs**: User has no registered DOIs
+- **CSV Validation Errors**: Invalid DOI format (must be `10.XXXX/...`) or invalid URL format (must be `http://` or `https://`)
+- **DOI Not Found (404)**: DOI does not exist in DataCite registry
+- **No Permission (403)**: User does not have permission to update the DOI
 
-All errors are displayed in a user-friendly manner.
+All errors are displayed in a user-friendly manner. For bulk update operations, the application **continues processing even if individual DOIs fail**, logging all errors to a timestamped log file (`update_log_YYYYMMDD_HHMMSS.txt`).
 
 ## Logging
 
-The application creates a `grobi.log` file in the application directory with detailed information about:
+The application creates log files in the application directory:
+
+### Application Log (`grobi.log`)
+Contains detailed information about:
 - Started operations
 - API calls and responses
 - Errors and exceptions
 - CSV export operations
+
+### Update Log Files (`update_log_YYYYMMDD_HHMMSS.txt`)
+Created for each bulk update operation with:
+- Timestamp and operation summary
+- Success and error counts
+- Detailed list of all failed DOIs with error messages
+- Complete audit trail for troubleshooting
+
+Example:
+```
+Update Log - 2025-01-27 14:30:45
+================================
+Total DOIs processed: 10
+Successful updates: 8
+Failed updates: 2
+
+Failed DOI Details:
+- DOI: 10.5555/example1 | Error: DOI not found (404)
+- DOI: 10.5555/example2 | Error: No permission to update DOI (403)
+```
 
 ## Technical Details
 
@@ -235,6 +346,12 @@ The application creates a `grobi.log` file in the application directory with det
 - **Automatic pagination** for large datasets
 - **UTF-8 encoding** for international characters
 - **Thread-safe implementation** with Qt Signals/Slots
+- **CSV validation** with regex patterns:
+  - DOI format: `10\.\d{4,}/\S+`
+  - URL format: `http(s)://...`
+- **Background threading** for long-running bulk update operations
+- **Real-time progress tracking** with X/Y counter display
+- **Continue-on-error strategy** for bulk operations with comprehensive logging
 
 ## License
 
