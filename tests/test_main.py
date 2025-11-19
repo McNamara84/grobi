@@ -16,15 +16,9 @@ class TestMainModule:
         """Test that setup_logging function can be called without error."""
         from src.main import setup_logging
         
-        # Just test that setup_logging can be called without error
-        # The actual directory creation is tested by running the app
-        try:
-            setup_logging()
-            success = True
-        except Exception:
-            success = False
-        
-        assert success
+        # If setup_logging raises an exception, the test will fail
+        # which is the desired behavior
+        setup_logging()
     
     def test_qapplication_attributes(self):
         """Test that QApplication has required attributes for High DPI."""

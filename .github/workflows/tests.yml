@@ -92,26 +92,9 @@ jobs:
     
     - name: Update README with coverage badge
       run: |
-        python -c "
-        import re
-        with open('README.md', 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        # Badge markdown
-        badge = '![Coverage](https://img.shields.io/badge/coverage-badge-brightgreen)'
-        
-        # Check if badge already exists
-        if '![Coverage]' not in content:
-            # Add badge after title
-            content = re.sub(
-                r'(# GROBI\n\n)',
-                r'\1' + badge + '\n\n',
-                content
-            )
-            
-            with open('README.md', 'w', encoding='utf-8') as f:
-                f.write(content)
-        "
+        # Badge is already generated as coverage.svg file by coverage-badge
+        # Just ensure it's tracked in git
+        echo "Coverage badge generated at coverage.svg"
     
     - name: Commit and push if changed
       run: |

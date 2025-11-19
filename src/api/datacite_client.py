@@ -178,9 +178,9 @@ class DataCiteClient:
         if "meta" in data:
             meta = data["meta"]
             page = meta.get("page", page_number)
-            page_size = meta.get("totalPages", 1)
+            total_pages = meta.get("totalPages", 1)
             
-            if page < page_size:
+            if page < total_pages:
                 has_more = True
         
         return dois, has_more

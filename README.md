@@ -180,7 +180,7 @@ Holger Ehrmann, GFZ Data Services, GFZ Helmholtz Centre for Geosciences
 
 ## Built With
 
-- Python 3.13
+- Python 3.10+ (Developed and tested with Python 3.13)
 - PySide6 (Qt6)
 - DataCite REST API v2
 
