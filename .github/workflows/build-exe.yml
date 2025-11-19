@@ -23,7 +23,9 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.12'  # Use Python 3.12 for better MSVC compatibility
+        # Python 3.12 for releases: better MSVC compatibility and stable Nuitka support
+        # Development uses 3.13 for latest features and testing
+        python-version: '3.12'
     
     - name: Cache pip dependencies
       uses: actions/cache@v4
@@ -90,7 +92,7 @@ jobs:
         $content += "- GROBI.exe: Main application (standalone, no installation required)`r`n"
         $content += "- BUILD_INFO.txt: Detailed build information`r`n"
         $content += "- README.md: Full documentation`r`n"
-        $content += "- LICENSE: Software license (MIT)`r`n`r`n"
+        $content += "- LICENSE: Software license (GPLv3)`r`n`r`n"
         $content += "Notes:`r`n"
         $content += "- First run may trigger Windows Defender (false positive)`r`n"
         $content += "- The application creates grobi.log in the same directory`r`n"

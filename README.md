@@ -247,6 +247,7 @@ Holger Ehrmann, GFZ Data Services, GFZ Helmholtz Centre for Geosciences
 ## Built With
 
 - Python 3.10+ (Developed and tested with Python 3.13)
+  - **Note:** Release executables are built with Python 3.12 for better MSVC compatibility and stable Nuitka support
 - PySide6 (Qt6)
 - DataCite REST API v2
 
