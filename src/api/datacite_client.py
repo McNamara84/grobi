@@ -78,12 +78,12 @@ class DataCiteClient:
                 page_number += 1
                 
             except requests.exceptions.Timeout:
-                error_msg = "Die Anfrage hat zu lange gedauert. Bitte versuchen Sie es erneut."
+                error_msg = "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut."
                 logger.error(f"Timeout on page {page_number}")
                 raise DataCiteAPIError(error_msg)
             
             except requests.exceptions.ConnectionError as e:
-                error_msg = "Verbindung zur DataCite API fehlgeschlagen. Bitte überprüfen Sie Ihre Internetverbindung."
+                error_msg = "Verbindung zur DataCite API fehlgeschlagen. Bitte überprüfe deine Internetverbindung."
                 logger.error(f"Connection error: {e}")
                 raise NetworkError(error_msg)
             
@@ -128,13 +128,13 @@ class DataCiteClient:
         
         # Handle authentication errors
         if response.status_code == 401:
-            error_msg = "Anmeldung fehlgeschlagen. Bitte überprüfen Sie Benutzername und Passwort."
+            error_msg = "Anmeldung fehlgeschlagen. Bitte überprüfe deinen Benutzernamen und dein Passwort."
             logger.error(f"Authentication failed for user: {self.username}")
             raise AuthenticationError(error_msg)
         
         # Handle rate limiting
         if response.status_code == 429:
-            error_msg = "Zu viele Anfragen. Bitte warten Sie einen Moment und versuchen Sie es erneut."
+            error_msg = "Zu viele Anfragen. Bitte warte einen Moment und versuche es erneut."
             logger.error("Rate limit exceeded")
             raise DataCiteAPIError(error_msg)
         

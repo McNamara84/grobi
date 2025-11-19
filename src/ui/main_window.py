@@ -144,7 +144,7 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         
         # Initial log message
-        self._log("Bereit. Klicken Sie auf 'DOIs laden' um zu beginnen.")
+        self._log("Bereit. Klicke auf 'DOIs laden' um zu beginnen.")
     
     def _apply_styles(self):
         """Apply modern styling to the window."""

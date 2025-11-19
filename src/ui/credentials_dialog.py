@@ -56,11 +56,11 @@ class CredentialsDialog(QDialog):
         # Description - varies by mode
         if self.mode == "update":
             description_text = (
-                "Geben Sie Ihre DataCite Zugangsdaten ein und wählen Sie eine CSV-Datei "
+                "Gib deine DataCite Zugangsdaten ein und wähle eine CSV-Datei "
                 "mit DOIs und Landing Page URLs aus."
             )
         else:
-            description_text = "Geben Sie Ihre DataCite Zugangsdaten ein, um DOIs abzurufen."
+            description_text = "Gib deine DataCite Zugangsdaten ein, um DOIs abzurufen."
         
         description = QLabel(description_text)
         description.setWordWrap(True)
@@ -86,7 +86,7 @@ class CredentialsDialog(QDialog):
         # Test API checkbox
         self.test_api_checkbox = QCheckBox("Test-API verwenden (https://api.test.datacite.org)")
         self.test_api_checkbox.setToolTip(
-            "Aktivieren Sie diese Option, um die Test-API anstelle der Produktions-API zu verwenden."
+            "Aktiviere diese Option, um die Test-API anstelle der Produktions-API zu verwenden."
         )
         layout.addWidget(self.test_api_checkbox)
         
