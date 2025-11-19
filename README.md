@@ -30,9 +30,13 @@ Download the latest standalone executable - no Python installation required!
 1. Download `GROBI-vX.X.X-Windows.zip` from the latest release
 2. Extract the ZIP file
 3. Double-click `GROBI.exe` to start
-4. If Windows SmartScreen appears, click "More info" → "Run anyway"
+4. **If Windows SmartScreen appears:**
+   - Click "More info"
+   - Click "Run anyway"
+   - This is a one-time warning
 
-**Note:** The executable is unsigned, which may trigger Windows SmartScreen warnings. This is normal and safe.
+**About SmartScreen Warning:**
+GROBI is an open-source project and the executable is not code-signed (commercial certificates cost €300-500/year). Windows SmartScreen shows a warning for unsigned executables. This is expected and safe - the application is built automatically via GitHub Actions and the source code is publicly available for inspection.
 
 ### Requirements for Standalone EXE
 
