@@ -31,8 +31,9 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~\AppData\Local\pip\Cache
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        key: ${{ runner.os }}-pip-3.12-${{ hashFiles('**/requirements*.txt') }}
         restore-keys: |
+          ${{ runner.os }}-pip-3.12-
           ${{ runner.os }}-pip-
     
     - name: Install dependencies
@@ -106,6 +107,10 @@ jobs:
       shell: pwsh
       run: |
         $version = "${{ github.ref_name }}"
+        # Validate version tag format (v*.*.* or fallback to branch name)
+        if ($version -notmatch '^v\d+\.\d+\.\d+$') {
+          Write-Host "Warning: Not a version tag, using: $version"
+        }
         Compress-Archive -Path dist-release\* -DestinationPath "GROBI-$version-Windows.zip"
     
     - name: Upload artifact
@@ -120,7 +125,7 @@ jobs:
     
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
-      if: startsWith(github.ref, 'refs/tags/')
+      if: startsWith(github.ref, 'refs/tags/') && startsWith(github.ref_name, 'v')
       with:
         files: |
           GROBI-${{ github.ref_name }}-Windows.zip

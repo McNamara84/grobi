@@ -133,7 +133,7 @@ def build_exe() -> bool:
         "--enable-plugin=pyside6",
         
         # Compiler configuration
-        "--msvc=latest",  # Use latest MSVC version (required for Python 3.13)
+        "--msvc=latest",  # Use latest MSVC version for best compatibility
         
         # Optimization
         "--assume-yes-for-downloads",
@@ -155,6 +155,7 @@ def build_exe() -> bool:
     start_time = datetime.now()
     
     try:
+        # Run Nuitka - output goes to console (no sensitive info in standard build)
         subprocess.run(
             nuitka_args,
             check=True
@@ -174,7 +175,9 @@ def build_exe() -> bool:
             print(f"File size: {size_mb:.1f} MB")
             return True
         else:
-            print("❌ EXE file not found after build")
+            print(f"❌ EXE file not found at {exe_path}")
+            print("Check Nuitka output above for errors.")
+            print(f"Expected location: {exe_path.absolute()}")
             return False
             
     except subprocess.CalledProcessError as e:
@@ -204,7 +207,7 @@ Application Details:
 - Full Name: GFZ Repository Operations & Batch Interface
 - Company: GFZ Helmholtz Centre for Geosciences
 - Copyright: {__copyright__}
-- License: MIT
+- License: GPLv3
 
 Features:
 - DataCite API Integration
