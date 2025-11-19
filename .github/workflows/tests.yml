@@ -64,6 +64,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         ref: main
+        token: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -92,15 +93,9 @@ jobs:
       run: |
         coverage-badge -o coverage.svg -f
     
-    - name: Update README with coverage badge
-      run: |
-        # Badge is already generated as coverage.svg file by coverage-badge
-        # Just ensure it's tracked in git
-        echo "Coverage badge generated at coverage.svg"
-    
-    - name: Commit and push if changed
-      run: |
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
-        git add coverage.svg README.md
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Update coverage badge [skip ci]" && git push)
+    - name: Upload coverage badge as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-badge
+        path: coverage.svg
+        retention-days: 90

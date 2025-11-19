@@ -1,9 +1,8 @@
 # GROBI
 
 ![Tests](https://github.com/McNamara84/grobi/workflows/Tests/badge.svg)
-![Coverage](coverage.svg)
 ![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12%20|%203.13-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-GPLv3-green)
 
 **G**FZ **R**esearch Data Repository **O**perations & **B**atch **I**nterface
 

@@ -222,7 +222,7 @@ Usage:
 
 Notes:
 - First run may trigger Windows SmartScreen (unsigned executable)
-- Click "More info" → "Run anyway" to proceed
+- Click "More info" -> "Run anyway" to proceed
 - Some antivirus software may flag the executable (false positive)
 
 Support:
@@ -257,7 +257,7 @@ def main() -> int:
     # Final summary
     print_header("Build Complete!")
     print("Your executable is ready:")
-    print("  → dist/GROBI.exe")
+    print("  -> dist/GROBI.exe")
     print("\nTest it with:")
     print("  .\\dist\\GROBI.exe")
     print("\nNext steps:")
