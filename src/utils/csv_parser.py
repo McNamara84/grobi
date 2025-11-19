@@ -117,13 +117,13 @@ class CSVParser:
         except UnicodeDecodeError:
             raise CSVParseError(
                 "CSV-Datei konnte nicht gelesen werden. "
-                "Stellen Sie sicher, dass die Datei UTF-8 kodiert ist."
+                "Stelle sicher, dass die Datei UTF-8 kodiert ist."
             )
         
         if not doi_url_pairs:
             raise CSVParseError(
                 "Keine gültigen DOI/URL-Paare in der CSV-Datei gefunden. "
-                "Stellen Sie sicher, dass die Datei mindestens eine Datenzeile enthält."
+                "Stelle sicher, dass die Datei mindestens eine Datenzeile enthält."
             )
         
         logger.info(f"Successfully parsed {len(doi_url_pairs)} DOI/URL pairs from CSV")

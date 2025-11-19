@@ -3,23 +3,37 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, 
     QLineEdit, QCheckBox, QFormLayout,
-    QDialogButtonBox
+    QDialogButtonBox, QPushButton, QFileDialog, QHBoxLayout
 )
 from PySide6.QtGui import QFont
+from PySide6.QtCore import Signal
 
 
 class CredentialsDialog(QDialog):
     """Dialog for entering DataCite credentials."""
     
-    def __init__(self, parent=None):
+    # Signals
+    csv_file_selected = Signal(str)  # Emitted when CSV file is selected
+    update_started = Signal(str, str, str, bool)  # username, password, csv_path, use_test_api
+    
+    def __init__(self, parent=None, mode="export"):
         """
         Initialize the credentials dialog.
         
         Args:
             parent: Parent widget
+            mode: Dialog mode - "export" for DOI export or "update" for URL update
         """
         super().__init__(parent)
-        self.setWindowTitle("DataCite Anmeldung")
+        self.mode = mode
+        self.csv_file_path = None
+        
+        # Set window title based on mode
+        if mode == "update":
+            self.setWindowTitle("Landing Page URLs aktualisieren")
+        else:
+            self.setWindowTitle("DataCite Anmeldung")
+        
         self.setModal(True)
         self.setMinimumWidth(400)
         
@@ -39,10 +53,16 @@ class CredentialsDialog(QDialog):
         title.setFont(title_font)
         layout.addWidget(title)
         
-        # Description
-        description = QLabel(
-            "Geben Sie Ihre DataCite Zugangsdaten ein, um DOIs abzurufen."
-        )
+        # Description - varies by mode
+        if self.mode == "update":
+            description_text = (
+                "Geben Sie Ihre DataCite Zugangsdaten ein und wählen Sie eine CSV-Datei "
+                "mit DOIs und Landing Page URLs aus."
+            )
+        else:
+            description_text = "Geben Sie Ihre DataCite Zugangsdaten ein, um DOIs abzurufen."
+        
+        description = QLabel(description_text)
         description.setWordWrap(True)
         layout.addWidget(description)
         
@@ -70,6 +90,29 @@ class CredentialsDialog(QDialog):
         )
         layout.addWidget(self.test_api_checkbox)
         
+        # CSV file selection (only for update mode)
+        if self.mode == "update":
+            layout.addSpacing(10)
+            
+            csv_label = QLabel("CSV-Datei auswählen:")
+            csv_label_font = QFont()
+            csv_label_font.setBold(True)
+            csv_label.setFont(csv_label_font)
+            layout.addWidget(csv_label)
+            
+            # CSV file selection layout
+            csv_layout = QHBoxLayout()
+            
+            self.csv_file_label = QLabel("Keine Datei ausgewählt")
+            self.csv_file_label.setStyleSheet("color: #666;")
+            csv_layout.addWidget(self.csv_file_label, 1)
+            
+            self.csv_browse_button = QPushButton("Durchsuchen...")
+            self.csv_browse_button.clicked.connect(self._browse_csv_file)
+            csv_layout.addWidget(self.csv_browse_button)
+            
+            layout.addLayout(csv_layout)
+        
         # Add some spacing
         layout.addSpacing(10)
         
@@ -80,13 +123,24 @@ class CredentialsDialog(QDialog):
         button_box.accepted.connect(self._validate_and_accept)
         button_box.rejected.connect(self.reject)
         
-        # Customize button text
-        ok_button = button_box.button(QDialogButtonBox.Ok)
-        ok_button.setText("DOIs holen")
+        # Customize button text based on mode
+        self.ok_button = button_box.button(QDialogButtonBox.Ok)
+        if self.mode == "update":
+            self.ok_button.setText("Landing Page URLs aktualisieren")
+            # Disable button initially for update mode (needs CSV file)
+            self.ok_button.setEnabled(False)
+        else:
+            self.ok_button.setText("DOIs holen")
+        
         cancel_button = button_box.button(QDialogButtonBox.Cancel)
         cancel_button.setText("Abbrechen")
         
         layout.addWidget(button_box)
+        
+        # Connect input changes to validation for update mode
+        if self.mode == "update":
+            self.username_input.textChanged.connect(self._check_update_ready)
+            self.password_input.textChanged.connect(self._check_update_ready)
         
         # Set focus to username field
         self.username_input.setFocus()
@@ -158,17 +212,52 @@ class CredentialsDialog(QDialog):
         
         self.accept()
     
+    def _browse_csv_file(self):
+        """Open file dialog to select CSV file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "CSV-Datei auswählen",
+            "",
+            "CSV-Dateien (*.csv);;Alle Dateien (*.*)"
+        )
+        
+        if file_path:
+            self.csv_file_path = file_path
+            # Show shortened path in label
+            from pathlib import Path
+            self.csv_file_label.setText(Path(file_path).name)
+            self.csv_file_label.setStyleSheet("color: #333; font-weight: bold;")
+            self.csv_file_selected.emit(file_path)
+            
+            # Check if we can enable the OK button
+            self._check_update_ready()
+    
+    def _check_update_ready(self):
+        """Check if all requirements for update are met and enable/disable OK button."""
+        if self.mode == "update":
+            has_credentials = (
+                bool(self.username_input.text().strip()) and 
+                bool(self.password_input.text().strip())
+            )
+            has_csv = self.csv_file_path is not None
+            
+            self.ok_button.setEnabled(has_credentials and has_csv)
+    
     def get_credentials(self):
         """
         Get the entered credentials.
         
         Returns:
-            Tuple of (username, password, use_test_api) or None if canceled
+            For export mode: Tuple of (username, password, use_test_api) or None if canceled
+            For update mode: Tuple of (username, password, csv_path, use_test_api) or None if canceled
         """
         if self.exec() == QDialog.Accepted:
-            return (
-                self.username_input.text().strip(),
-                self.password_input.text().strip(),
-                self.test_api_checkbox.isChecked()
-            )
+            username = self.username_input.text().strip()
+            password = self.password_input.text().strip()
+            use_test_api = self.test_api_checkbox.isChecked()
+            
+            if self.mode == "update":
+                return (username, password, self.csv_file_path, use_test_api)
+            else:
+                return (username, password, use_test_api)
         return None
