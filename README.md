@@ -89,7 +89,7 @@ python -m src.main
 3. **Enter credentials**: 
    - Enter your DataCite username (e.g., `TIB.GFZ`)
    - Enter your DataCite password
-   - Optional: Enable "Test-API verwenden" (Use Test API) for testing with the test API
+   - Optional: Enable "Test-API verwenden" (Use Test API) to use the test API instead of production
 4. **Retrieve DOIs**: Click "DOIs holen" (Get DOIs)
 5. **Wait**: The application displays progress in the status area
 6. **Done**: A CSV file is created in the current directory
