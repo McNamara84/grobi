@@ -1,6 +1,7 @@
 # GROBI
 
 ![Tests](https://github.com/McNamara84/grobi/workflows/Tests/badge.svg)
+[![codecov](https://codecov.io/gh/McNamara84/grobi/branch/main/graph/badge.svg)](https://codecov.io/gh/McNamara84/grobi)
 ![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12%20|%203.13-blue)
 ![License](https://img.shields.io/badge/license-GPLv3-green)
 
