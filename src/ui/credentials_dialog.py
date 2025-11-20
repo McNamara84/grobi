@@ -37,6 +37,8 @@ class CredentialsDialog(QDialog):
         # Set window title based on mode
         if mode == "update":
             self.setWindowTitle("Landing Page URLs aktualisieren")
+        elif mode == "update_authors":
+            self.setWindowTitle("Autoren-Metadaten aktualisieren")
         else:
             self.setWindowTitle("DataCite Anmeldung")
         
@@ -64,6 +66,11 @@ class CredentialsDialog(QDialog):
             description_text = (
                 "Gib deine DataCite Zugangsdaten ein und wähle eine CSV-Datei "
                 "mit DOIs und Landing Page URLs aus."
+            )
+        elif self.mode == "update_authors":
+            description_text = (
+                "Gib deine DataCite Zugangsdaten ein und wähle eine CSV-Datei "
+                "mit DOIs und Autoren-Metadaten aus."
             )
         else:
             description_text = "Gib deine DataCite Zugangsdaten ein, um DOIs abzurufen."
@@ -96,8 +103,8 @@ class CredentialsDialog(QDialog):
         )
         layout.addWidget(self.test_api_checkbox)
         
-        # CSV file selection (only for update mode)
-        if self.mode == "update":
+        # CSV file selection (only for update modes)
+        if self.mode in ["update", "update_authors"]:
             layout.addSpacing(10)
             
             csv_label = QLabel("CSV-Datei auswählen:")
@@ -134,6 +141,10 @@ class CredentialsDialog(QDialog):
         if self.mode == "update":
             self.ok_button.setText("Landing Page URLs aktualisieren")
             # Disable button initially for update mode (needs CSV file)
+            self.ok_button.setEnabled(False)
+        elif self.mode == "update_authors":
+            self.ok_button.setText("Autoren-Metadaten aktualisieren")
+            # Disable button initially for update_authors mode (needs CSV file)
             self.ok_button.setEnabled(False)
         else:
             self.ok_button.setText("DOIs holen")
@@ -248,7 +259,7 @@ class CredentialsDialog(QDialog):
     
     def _check_update_ready(self):
         """Check if all requirements for update are met and enable/disable OK button."""
-        if self.mode == "update":
+        if self.mode in ["update", "update_authors"]:
             has_credentials = (
                 bool(self.username_input.text().strip()) and 
                 bool(self.password_input.text().strip())
@@ -271,7 +282,7 @@ class CredentialsDialog(QDialog):
             use_test_api = self.test_api_checkbox.isChecked()
             
             # Always return 4-tuple for consistency
-            if self.mode == "update":
+            if self.mode in ["update", "update_authors"]:
                 csv_path = self.csv_file_path
             else:
                 csv_path = None

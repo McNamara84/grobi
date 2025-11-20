@@ -205,3 +205,249 @@ class TestCSVParser:
         
         finally:
             os.unlink(csv_path)
+    
+    # Tests for parse_authors_update_csv()
+    
+    def test_validate_orcid_format_valid(self):
+        """Test ORCID format validation with valid ORCIDs."""
+        valid_orcids = [
+            "0000-0001-5000-0007",
+            "0000-0002-1825-0097",
+            "0000-0001-5109-3700",
+            "0000-0002-1694-233X",  # X checksum
+            "https://orcid.org/0000-0001-5000-0007",
+            "https://orcid.org/0000-0002-1694-233X",
+        ]
+        
+        for orcid in valid_orcids:
+            assert CSVParser.validate_orcid_format(orcid), f"ORCID should be valid: {orcid}"
+    
+    def test_validate_orcid_format_invalid(self):
+        """Test ORCID format validation with invalid ORCIDs."""
+        invalid_orcids = [
+            "0000-0001-5000",  # Too short
+            "0000-0001-5000-00",  # Too short
+            "0000-0001-5000-00077",  # Too long
+            "1234-5678-9012-3456",  # Doesn't start with 0000
+            "not-an-orcid",
+            "https://example.org/0000-0001-5000-0007",  # Wrong domain
+        ]
+        
+        for orcid in invalid_orcids:
+            assert not CSVParser.validate_orcid_format(orcid), f"ORCID should be invalid: {orcid}"
+    
+    def test_parse_authors_update_csv_valid(self):
+        """Test parsing a valid authors CSV file."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8', newline='') as f:
+            f.write("DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifier Scheme,Scheme URI\n")
+            f.write('10.5880/GFZ.1.1.2021.001,"Smith, John",Personal,John,Smith,0000-0001-5000-0007,ORCID,https://orcid.org\n')
+            f.write('10.5880/GFZ.1.1.2021.001,"Doe, Jane",Personal,Jane,Doe,0000-0002-1825-0097,ORCID,https://orcid.org\n')
+            f.write("10.5880/GFZ.1.1.2021.002,Example Org,Organizational,,,,,\n")
+            csv_path = f.name
+        
+        try:
+            creators_by_doi, warnings = CSVParser.parse_authors_update_csv(csv_path)
+            
+            assert len(creators_by_doi) == 2
+            assert "10.5880/GFZ.1.1.2021.001" in creators_by_doi
+            assert "10.5880/GFZ.1.1.2021.002" in creators_by_doi
+            
+            # First DOI has 2 creators
+            creators_doi1 = creators_by_doi["10.5880/GFZ.1.1.2021.001"]
+            assert len(creators_doi1) == 2
+            assert creators_doi1[0]["name"] == "Smith, John"
+            assert creators_doi1[0]["nameType"] == "Personal"
+            assert creators_doi1[0]["givenName"] == "John"
+            assert creators_doi1[0]["familyName"] == "Smith"
+            assert creators_doi1[0]["nameIdentifier"] == "0000-0001-5000-0007"
+            
+            # Second DOI has 1 creator (organizational)
+            creators_doi2 = creators_by_doi["10.5880/GFZ.1.1.2021.002"]
+            assert len(creators_doi2) == 1
+            assert creators_doi2[0]["name"] == "Example Org"
+            assert creators_doi2[0]["nameType"] == "Organizational"
+            assert creators_doi2[0]["givenName"] == ""
+            assert creators_doi2[0]["familyName"] == ""
+            
+            # Should have no warnings for valid data
+            assert len(warnings) == 0
+        
+        finally:
+            os.unlink(csv_path)
+    
+    def test_parse_authors_update_csv_missing_headers(self):
+        """Test parsing CSV with missing required headers."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as f:
+            f.write("DOI,Creator_Name,Name_Type\n")  # Missing other columns
+            f.write("10.5880/GFZ.1.1.2021.001,Smith, John,Personal\n")
+            csv_path = f.name
+        
+        try:
+            with pytest.raises(CSVParseError) as exc_info:
+                CSVParser.parse_authors_update_csv(csv_path)
+            
+            assert "fehlen folgende Header" in str(exc_info.value)
+        
+        finally:
+            os.unlink(csv_path)
+    
+    def test_parse_authors_update_csv_invalid_doi_format(self):
+        """Test parsing CSV with invalid DOI format."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8', newline='') as f:
+            f.write("DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifier Scheme,Scheme URI\n")
+            f.write('invalid-doi,"Smith, John",Personal,John,Smith,,,\n')
+            csv_path = f.name
+        
+        try:
+            with pytest.raises(CSVParseError) as exc_info:
+                CSVParser.parse_authors_update_csv(csv_path)
+            
+            assert "Ungültiges DOI-Format" in str(exc_info.value)
+        
+        finally:
+            os.unlink(csv_path)
+    
+    def test_parse_authors_update_csv_missing_creator_name(self):
+        """Test parsing CSV with missing creator name."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as f:
+            f.write("DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifier Scheme,Scheme URI\n")
+            f.write("10.5880/GFZ.1.1.2021.001,,Personal,John,Smith,,,\n")
+            csv_path = f.name
+        
+        try:
+            with pytest.raises(CSVParseError) as exc_info:
+                CSVParser.parse_authors_update_csv(csv_path)
+            
+            assert "Creator Name fehlt" in str(exc_info.value)
+        
+        finally:
+            os.unlink(csv_path)
+    
+    def test_parse_authors_update_csv_invalid_name_type(self):
+        """Test parsing CSV with invalid name type."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8', newline='') as f:
+            f.write("DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifier Scheme,Scheme URI\n")
+            f.write('10.5880/GFZ.1.1.2021.001,"Smith, John",InvalidType,John,Smith,,,\n')
+            csv_path = f.name
+        
+        try:
+            with pytest.raises(CSVParseError) as exc_info:
+                CSVParser.parse_authors_update_csv(csv_path)
+            
+            assert "Ungültiger Name Type" in str(exc_info.value) or "Name Type" in str(exc_info.value)
+        
+        finally:
+            os.unlink(csv_path)
+    
+    def test_parse_authors_update_csv_organizational_with_names(self):
+        """Test parsing CSV with organizational creator that has given/family names."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as f:
+            f.write("DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifier Scheme,Scheme URI\n")
+            f.write("10.5880/GFZ.1.1.2021.001,Example Org,Organizational,John,Smith,,,\n")
+            csv_path = f.name
+        
+        try:
+            with pytest.raises(CSVParseError) as exc_info:
+                CSVParser.parse_authors_update_csv(csv_path)
+            
+            assert "Organizational" in str(exc_info.value)
+            assert "Given Name oder Family Name" in str(exc_info.value)
+        
+        finally:
+            os.unlink(csv_path)
+    
+    def test_parse_authors_update_csv_personal_missing_names(self):
+        """Test parsing CSV with personal creator missing both given and family names."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8', newline='') as f:
+            f.write("DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifier Scheme,Scheme URI\n")
+            f.write("10.5880/GFZ.1.1.2021.001,Smith,Personal,,,,,\n")
+            csv_path = f.name
+        
+        try:
+            # This should pass - Personal creators don't require given/family names
+            # The name field is sufficient
+            creators_by_doi, warnings = CSVParser.parse_authors_update_csv(csv_path)
+            assert len(creators_by_doi) == 1
+            assert creators_by_doi["10.5880/GFZ.1.1.2021.001"][0]["name"] == "Smith"
+        
+        finally:
+            os.unlink(csv_path)
+    
+    def test_parse_authors_update_csv_invalid_orcid_warning(self):
+        """Test that invalid ORCID format generates warning but doesn't fail."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8', newline='') as f:
+            f.write("DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifier Scheme,Scheme URI\n")
+            f.write('10.5880/GFZ.1.1.2021.001,"Smith, John",Personal,John,Smith,invalid-orcid,ORCID,https://orcid.org\n')
+            csv_path = f.name
+        
+        try:
+            creators_by_doi, warnings = CSVParser.parse_authors_update_csv(csv_path)
+            
+            # Should parse successfully
+            assert len(creators_by_doi) == 1
+            
+            # But should have a warning about invalid ORCID
+            assert len(warnings) > 0
+            assert any("ORCID" in w and "invalid-orcid" in w for w in warnings)
+        
+        finally:
+            os.unlink(csv_path)
+    
+    def test_parse_authors_update_csv_preserves_order(self):
+        """Test that creator order is preserved within each DOI."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as f:
+            f.write("DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifier Scheme,Scheme URI\n")
+            f.write("10.5880/GFZ.1.1.2021.001,First Author,Personal,First,Author,,,\n")
+            f.write("10.5880/GFZ.1.1.2021.001,Second Author,Personal,Second,Author,,,\n")
+            f.write("10.5880/GFZ.1.1.2021.001,Third Author,Personal,Third,Author,,,\n")
+            csv_path = f.name
+        
+        try:
+            creators_by_doi, warnings = CSVParser.parse_authors_update_csv(csv_path)
+            
+            creators = creators_by_doi["10.5880/GFZ.1.1.2021.001"]
+            assert len(creators) == 3
+            
+            # Check order is preserved
+            assert creators[0]["name"] == "First Author"
+            assert creators[1]["name"] == "Second Author"
+            assert creators[2]["name"] == "Third Author"
+        
+        finally:
+            os.unlink(csv_path)
+    
+    def test_parse_authors_update_csv_empty_file(self):
+        """Test parsing empty CSV file."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as f:
+            f.write("DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifier Scheme,Scheme URI\n")
+            csv_path = f.name
+        
+        try:
+            with pytest.raises(CSVParseError) as exc_info:
+                CSVParser.parse_authors_update_csv(csv_path)
+            
+            assert "Keine gültigen Creator-Daten" in str(exc_info.value)
+        
+        finally:
+            os.unlink(csv_path)
+    
+    def test_parse_authors_update_csv_with_whitespace(self):
+        """Test parsing CSV with whitespace in values."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8', newline='') as f:
+            f.write("DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifier Scheme,Scheme URI\n")
+            f.write('  10.5880/GFZ.1.1.2021.001  ,"  Smith, John  ",  Personal  ,  John  ,  Smith  ,,,\n')
+            csv_path = f.name
+        
+        try:
+            creators_by_doi, warnings = CSVParser.parse_authors_update_csv(csv_path)
+            
+            # Should strip whitespace
+            assert len(creators_by_doi) == 1
+            creators = creators_by_doi["10.5880/GFZ.1.1.2021.001"]
+            assert creators[0]["name"] == "Smith, John"
+            assert creators[0]["nameType"] == "Personal"
+            assert creators[0]["givenName"] == "John"
+            assert creators[0]["familyName"] == "Smith"
+        
+        finally:
+            os.unlink(csv_path)

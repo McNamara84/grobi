@@ -86,7 +86,7 @@ def clean_build_dirs() -> None:
     
     dirs_to_clean = [
         Path("build"),
-        Path("dist"),
+        # Path("dist"),  # Don't clean dist - causes permission errors on Windows
         Path("src/main.build"),
         Path("src/main.dist"),
         Path("src/main.onefile-build"),

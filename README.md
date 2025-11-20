@@ -16,6 +16,7 @@ A modern GUI tool for GFZ Data Services to manage DataCite DOIs.
 - 📊 **Export to CSV**: Export DOI list with landing page URLs
 - 👥 **Export Authors**: Export DOI list with creator/author information (ORCID support)
 - 🔄 **Update Landing Page URLs**: Bulk update landing page URLs via CSV import
+- 🖊️ **Update Authors**: Bulk update creator/author metadata with dry run validation
 - 📝 **Detailed Logging**: Automatic creation of update logs with success/error reports
 
 ### Technical Features
@@ -94,7 +95,7 @@ pip install -r requirements-dev.txt
 
 The project includes a comprehensive test suite:
 
-- **139 Unit Tests** for all modules
+- **183 Unit Tests** for all modules
 - **77% Code Coverage** (Business Logic 90%+)
 - **Automated CI/CD** with GitHub Actions
 
@@ -327,6 +328,137 @@ DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifie
 - **Other Identifiers**: Only ORCID identifiers are exported; other identifier schemes (e.g., ResearcherID) are ignored
 - **No Creators**: DOIs without creators are skipped with a warning in the log
 
+### Workflow 5: Update Authors/Creators
+
+**Step-by-Step Guide:**
+
+1. **Prepare CSV file**: Create a CSV file with updated creator information
+   - **Required format**: 8 columns with exact header names (see below)
+   - Must include header row with spaces (not underscores)
+   - Each creator appears as a separate row
+   - DOI can appear multiple times (one row per creator)
+   - Order of rows determines creator order in DataCite
+
+2. **Start update**: Click the "🖊️ Autoren aktualisieren" (Update Authors) button
+
+3. **Enter credentials and select file**:
+   - Enter your DataCite username
+   - Enter your DataCite password
+   - Optional: Enable "Test-API verwenden" for testing
+   - Click "Durchsuchen..." (Browse) to select your CSV file
+   - Button becomes active when credentials and file are provided
+
+4. **Dry Run Validation**:
+   - Click "Autoren aktualisieren" (Update Authors)
+   - Application performs **automatic validation** (dry run):
+     - Fetches current metadata for each DOI
+     - Checks if creator count matches between CSV and DataCite
+     - Validates CSV format and data integrity
+   - Review validation results in dialog:
+     - ✅ Valid: Shows creator count, ready for update
+     - ❌ Invalid: Shows specific error (DOI not found, count mismatch, etc.)
+
+5. **Confirm and Update**:
+   - Review dry run results carefully
+   - Click "Weiter mit Update" (Continue with Update) to proceed
+   - Or click "Abbrechen" (Cancel) to abort
+   - Only validated DOIs will be updated
+
+6. **Monitor progress**:
+   - Real-time progress bar shows X/Y DOIs processed
+   - Status messages display current operation
+   - Each DOI update is logged individually
+
+7. **Review results**:
+   - Summary dialog shows successful and failed updates
+   - Validation results from dry run included
+   - Application log contains detailed information
+
+**CSV Input Format:**
+
+The CSV must have these **exact column headers** (with spaces, not underscores):
+
+```csv
+DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifier Scheme,Scheme URI
+10.5880/GFZ.1.1.2021.001,"Smith, John",Personal,John,Smith,0000-0001-5000-0007,ORCID,https://orcid.org
+10.5880/GFZ.1.1.2021.001,"Doe, Jane",Personal,Jane,Doe,,,
+10.5880/GFZ.1.1.2021.002,GFZ Data Services,Organizational,,,,,,
+```
+
+**Important:** Use the exported CSV from "👥 DOIs und Autoren laden" as a template!
+
+**Validation Rules:**
+
+**DOI Format:**
+- ✅ Must match pattern: `10.X/...` (where X is 1+ digits)
+- ❌ Invalid: `10.5880` (missing suffix), `DOI:10.5880/test` (prefix not allowed)
+
+**Creator Name:**
+- ✅ Required for all creators
+- ✅ Use quotes for names with commas: `"Smith, John"`
+- ❌ Empty creator name causes error
+
+**Name Type:**
+- ✅ Must be either "Personal" or "Organizational"
+- ✅ If empty, defaults to "Personal"
+- ❌ Invalid values (e.g., "Person") cause error
+
+**Given/Family Name:**
+- ✅ Personal: Can be empty (flexible for single names)
+- ✅ Organizational: Must be empty
+- ❌ Organizational with Given/Family Name causes error
+
+**ORCID (Name Identifier):**
+- ✅ Must start with `0000-` if provided
+- ✅ Full format: `0000-XXXX-XXXX-XXX[X or digit]`
+- ✅ Invalid ORCID generates warning (non-fatal)
+- ✅ Can be empty
+- ℹ️ Example valid ORCIDs:
+  - `0000-0001-5000-0007`
+  - `0000-0002-1825-0097`
+- ❌ Example invalid: `1234-5678-9012-3456` (must start with 0000)
+
+**Name Identifier Scheme / Scheme URI:**
+- ✅ Only used when Name Identifier is provided
+- ✅ Typical values: `ORCID` and `https://orcid.org`
+- ✅ Can be empty if no identifier
+
+**Row Order:**
+- ⚠️ **CRITICAL**: Row order in CSV determines creator order in DataCite
+- First row for a DOI = First creator (primary author)
+- Maintain proper order when editing CSV
+
+**Dry Run Validation:**
+- ✅ Automatic validation before any updates
+- ✅ Checks creator count match (CSV vs. DataCite)
+- ✅ Verifies DOI exists and is accessible
+- ✅ Only validated DOIs proceed to update
+- ℹ️ Validation errors prevent updates to affected DOIs
+
+**Examples:**
+
+**Valid Personal Creator with ORCID:**
+```csv
+10.5880/GFZ.1.1.2021.001,"Miller, Elizabeth",Personal,Elizabeth,Miller,0000-0001-5000-0007,ORCID,https://orcid.org
+```
+
+**Valid Personal Creator without ORCID:**
+```csv
+10.5880/GFZ.1.1.2021.002,"Smith, John",Personal,John,Smith,,,
+```
+
+**Valid Organizational Creator:**
+```csv
+10.5880/GFZ.1.1.2021.003,GFZ Data Services,Organizational,,,,,,
+```
+
+**Multiple Creators for Same DOI:**
+```csv
+10.5880/GFZ.1.1.2021.004,"Doe, Jane",Personal,Jane,Doe,,,
+10.5880/GFZ.1.1.2021.004,"Smith, Bob",Personal,Bob,Smith,0000-0002-1234-5678,ORCID,https://orcid.org
+10.5880/GFZ.1.1.2021.004,Example Institute,Organizational,,,,,,
+```
+
 ### Notes:
 
 - The application retrieves **all** DOIs registered with the specified username
@@ -339,6 +471,8 @@ DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifie
 - Each update creates a timestamped log file for auditing
 - Theme preference persists across application restarts
 - Author export: One row per creator (DOIs with multiple creators appear multiple times)
+- **Author updates: Automatic dry run validation prevents errors before making changes**
+- Creator order in CSV determines order in DataCite (first row = primary author)
 
 ## Project Structure
 
@@ -347,23 +481,26 @@ grobi/
 ├── src/
 │   ├── main.py                      # Entry point
 │   ├── ui/                          # GUI components
-│   │   ├── main_window.py          # Main window with DOI export and URL update
+│   │   ├── main_window.py          # Main window with all DOI operations
 │   │   ├── credentials_dialog.py   # Credentials dialog (dual mode)
 │   │   └── theme_manager.py        # Theme management (AUTO/LIGHT/DARK)
 │   ├── api/                         # DataCite API client
-│   │   └── datacite_client.py      # API methods (fetch, update)
+│   │   └── datacite_client.py      # API methods (fetch, update metadata/URLs)
 │   ├── workers/                     # Background workers
-│   │   └── update_worker.py        # URL update worker with threading
+│   │   ├── update_worker.py        # URL update worker with threading
+│   │   └── authors_update_worker.py # Creator update worker with dry run
 │   └── utils/                       # Utility functions
 │       ├── csv_exporter.py         # CSV export functionality
 │       └── csv_parser.py           # CSV parsing and validation
-├── tests/                           # Unit tests (139 tests, 77% coverage)
-│   ├── test_csv_parser.py          # CSV parsing tests
+├── tests/                           # Unit tests (183 tests, 77% coverage)
+│   ├── test_csv_parser.py          # CSV parsing tests (26 tests)
 │   ├── test_datacite_client.py     # API fetch tests
 │   ├── test_datacite_client_creators.py  # API creator fetch tests
 │   ├── test_datacite_client_update.py  # API update tests
+│   ├── test_datacite_client_authors_update.py  # API creator update tests (17 tests)
 │   ├── test_csv_exporter.py        # CSV export tests
-│   ├── test_update_worker.py       # Worker tests
+│   ├── test_update_worker.py       # URL worker tests
+│   ├── test_authors_update_worker.py # Creator worker tests (14 tests)
 │   └── test_theme_manager.py       # Theme management tests
 ├── requirements.txt                 # Production dependencies
 ├── requirements-dev.txt             # Development dependencies

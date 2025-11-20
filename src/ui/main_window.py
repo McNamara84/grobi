@@ -17,6 +17,7 @@ from src.ui.theme_manager import ThemeManager, Theme
 from src.api.datacite_client import DataCiteClient, DataCiteAPIError, AuthenticationError, NetworkError
 from src.utils.csv_exporter import export_dois_to_csv, export_dois_with_creators_to_csv, CSVExportError
 from src.workers.update_worker import UpdateWorker
+from src.workers.authors_update_worker import AuthorsUpdateWorker
 
 
 logger = logging.getLogger(__name__)
@@ -143,6 +144,10 @@ class MainWindow(QMainWindow):
         self.update_thread = None
         self.update_worker = None
         
+        # Thread and worker for authors update
+        self.authors_update_thread = None
+        self.authors_update_worker = None
+        
         # Initialize theme manager
         self.theme_manager = ThemeManager()
         self.theme_manager.theme_changed.connect(self._on_theme_changed)
@@ -200,6 +205,12 @@ class MainWindow(QMainWindow):
         self.update_button.setMinimumHeight(50)
         self.update_button.clicked.connect(self._on_update_urls_clicked)
         layout.addWidget(self.update_button)
+        
+        # Update Authors button
+        self.update_authors_button = QPushButton("🖊️ Autoren aktualisieren")
+        self.update_authors_button.setMinimumHeight(50)
+        self.update_authors_button.clicked.connect(self._on_update_authors_clicked)
+        layout.addWidget(self.update_authors_button)
         
         # Theme toggle button
         self.theme_button = QPushButton(self._get_theme_button_text())
@@ -358,7 +369,9 @@ class MainWindow(QMainWindow):
         
         # Disable buttons and show progress
         self.load_button.setEnabled(False)
+        self.load_authors_button.setEnabled(False)
         self.update_button.setEnabled(False)
+        self.update_authors_button.setEnabled(False)
         self.progress_bar.setVisible(True)
         
         # Create worker and thread
@@ -446,6 +459,7 @@ class MainWindow(QMainWindow):
         self.load_button.setEnabled(True)
         self.load_authors_button.setEnabled(True)
         self.update_button.setEnabled(True)
+        self.update_authors_button.setEnabled(True)
         
         # Reset references (objects are deleted via deleteLater)
         self.thread = None
@@ -473,6 +487,7 @@ class MainWindow(QMainWindow):
         self.load_button.setEnabled(False)
         self.load_authors_button.setEnabled(False)
         self.update_button.setEnabled(False)
+        self.update_authors_button.setEnabled(False)
         self.progress_bar.setVisible(True)
         
         # Create worker and thread
@@ -563,6 +578,7 @@ class MainWindow(QMainWindow):
         self.load_button.setEnabled(True)
         self.load_authors_button.setEnabled(True)
         self.update_button.setEnabled(True)
+        self.update_authors_button.setEnabled(True)
         
         # Reset references (objects are deleted via deleteLater)
         self.creator_thread = None
@@ -588,7 +604,9 @@ class MainWindow(QMainWindow):
         
         # Disable buttons and show progress
         self.load_button.setEnabled(False)
+        self.load_authors_button.setEnabled(False)
         self.update_button.setEnabled(False)
+        self.update_authors_button.setEnabled(False)
         self.progress_bar.setVisible(True)
         
         # Create worker and thread
@@ -711,7 +729,9 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         self.progress_bar.setMaximum(0)  # Reset to indeterminate
         self.load_button.setEnabled(True)
+        self.load_authors_button.setEnabled(True)
         self.update_button.setEnabled(True)
+        self.update_authors_button.setEnabled(True)
         
         # Reset references (objects are deleted via deleteLater)
         self.update_thread = None
@@ -762,6 +782,326 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._log(f"[WARNUNG] Log-Datei konnte nicht erstellt werden: {str(e)}")
     
+    def _on_update_authors_clicked(self):
+        """Handle update authors button click."""
+        # Show credentials dialog in update_authors mode
+        dialog = CredentialsDialog(self, mode="update_authors")
+        credentials = dialog.get_credentials()
+        
+        if credentials is None:
+            self._log("Autoren-Update abgebrochen.")
+            return
+        
+        username, password, csv_path, use_test_api = credentials
+        
+        # Store credentials for second worker (actual update)
+        self._authors_update_username = username
+        self._authors_update_password = password
+        self._authors_update_csv_path = csv_path
+        self._authors_update_use_test_api = use_test_api
+        
+        api_type = "Test-API" if use_test_api else "Produktions-API"
+        self._log(f"Starte Autoren-Update für Benutzer '{username}' ({api_type})...")
+        self._log(f"CSV-Datei: {Path(csv_path).name}")
+        
+        # Disable buttons and show progress
+        self.load_button.setEnabled(False)
+        self.load_authors_button.setEnabled(False)
+        self.update_button.setEnabled(False)
+        self.update_authors_button.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        
+        # Create worker and thread for DRY RUN
+        self.authors_update_worker = AuthorsUpdateWorker(
+            username, password, csv_path, use_test_api, dry_run_only=True
+        )
+        self.authors_update_thread = QThread()
+        self.authors_update_worker.moveToThread(self.authors_update_thread)
+        
+        # Connect signals
+        self.authors_update_thread.started.connect(self.authors_update_worker.run)
+        self.authors_update_worker.progress_update.connect(self._on_authors_update_progress)
+        self.authors_update_worker.dry_run_complete.connect(self._on_dry_run_complete)
+        self.authors_update_worker.finished.connect(self._on_authors_update_finished)
+        self.authors_update_worker.error_occurred.connect(self._on_authors_update_error)
+        
+        # Clean up after worker finishes
+        self.authors_update_worker.finished.connect(self.authors_update_worker.deleteLater)
+        self.authors_update_worker.finished.connect(self.authors_update_thread.quit)
+        
+        # Clean up thread when it finishes
+        self.authors_update_thread.finished.connect(self.authors_update_thread.deleteLater)
+        self.authors_update_thread.finished.connect(self._cleanup_authors_update_thread)
+        
+        # Start the thread
+        self.authors_update_thread.start()
+    
+    def _on_authors_update_progress(self, current, total, message):
+        """
+        Handle authors update progress signal.
+        
+        Args:
+            current: Current DOI number
+            total: Total number of DOIs
+            message: Progress message
+        """
+        self._log(message)
+        
+        # Update progress bar if we have valid numbers
+        if total > 0:
+            self.progress_bar.setMaximum(total)
+            self.progress_bar.setValue(current)
+    
+    def _on_dry_run_complete(self, valid_count, invalid_count, validation_results):
+        """
+        Handle dry run validation completion.
+        
+        Args:
+            valid_count: Number of valid DOIs
+            invalid_count: Number of invalid DOIs
+            validation_results: List of validation result dicts
+        """
+        total = valid_count + invalid_count
+        
+        self._log("=" * 60)
+        self._log(f"Dry Run abgeschlossen: {valid_count}/{total} validiert")
+        self._log("=" * 60)
+        
+        # Show validation errors if any
+        if invalid_count > 0:
+            self._log(f"\n[WARNUNG] {invalid_count} DOI(s) sind ungültig:")
+            for result in validation_results:
+                if not result['valid']:
+                    self._log(f"  - {result['doi']}: {result['message']}")
+        
+        # Show dry run results dialog
+        if total == 0:
+            QMessageBox.warning(
+                self,
+                "Keine DOIs gefunden",
+                "Die CSV-Datei enthielt keine DOIs zum Validieren."
+            )
+            return
+        
+        if invalid_count > 0:
+            # Show errors and ask if user wants to continue
+            error_details = "\n".join(
+                f"• {r['doi']}: {r['message']}"
+                for r in validation_results if not r['valid']
+            )[:500]  # Limit to 500 chars
+            
+            reply = QMessageBox.question(
+                self,
+                "Validierung abgeschlossen mit Fehlern",
+                f"Dry Run Ergebnisse:\n\n"
+                f"✓ Gültig: {valid_count}\n"
+                f"✗ Ungültig: {invalid_count}\n\n"
+                f"Erste Fehler:\n{error_details}\n\n"
+                f"Möchtest du nur die {valid_count} gültigen DOIs aktualisieren?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                self._start_actual_authors_update()
+            else:
+                self._log("Autoren-Update abgebrochen.")
+        else:
+            # All valid - ask for confirmation
+            reply = QMessageBox.question(
+                self,
+                "Validierung erfolgreich",
+                f"Alle {valid_count} DOIs wurden erfolgreich validiert.\n\n"
+                f"Möchtest du jetzt die Autoren-Metadaten bei DataCite aktualisieren?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                self._start_actual_authors_update()
+            else:
+                self._log("Autoren-Update abgebrochen.")
+    
+    def _start_actual_authors_update(self):
+        """Start the actual authors update process (not dry run)."""
+        self._log("\n" + "=" * 60)
+        self._log("Starte ECHTES Update der Autoren-Metadaten...")
+        self._log("=" * 60)
+        
+        # Get credentials from stored instance variables (not from worker which may be deleted)
+        username = self._authors_update_username
+        password = self._authors_update_password
+        csv_path = self._authors_update_csv_path
+        use_test_api = self._authors_update_use_test_api
+        
+        # Disable buttons again
+        self.load_button.setEnabled(False)
+        self.load_authors_button.setEnabled(False)
+        self.update_button.setEnabled(False)
+        self.update_authors_button.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setMaximum(0)  # Indeterminate
+        
+        # Create new worker with dry_run_only=False
+        self.authors_update_worker = AuthorsUpdateWorker(
+            username, password, csv_path, use_test_api, dry_run_only=False
+        )
+        self.authors_update_thread = QThread()
+        self.authors_update_worker.moveToThread(self.authors_update_thread)
+        
+        # Connect signals (no dry_run_complete this time)
+        self.authors_update_thread.started.connect(self.authors_update_worker.run)
+        self.authors_update_worker.progress_update.connect(self._on_authors_update_progress)
+        self.authors_update_worker.doi_updated.connect(self._on_author_doi_updated)
+        self.authors_update_worker.finished.connect(self._on_authors_update_finished)
+        self.authors_update_worker.error_occurred.connect(self._on_authors_update_error)
+        
+        # Clean up after worker finishes
+        self.authors_update_worker.finished.connect(self.authors_update_worker.deleteLater)
+        self.authors_update_worker.finished.connect(self.authors_update_thread.quit)
+        
+        # Clean up thread when it finishes
+        self.authors_update_thread.finished.connect(self.authors_update_thread.deleteLater)
+        self.authors_update_thread.finished.connect(self._cleanup_authors_update_thread)
+        
+        # Start the thread
+        self.authors_update_thread.start()
+    
+    def _on_author_doi_updated(self, doi, success, message):
+        """
+        Handle individual DOI author update result.
+        
+        Args:
+            doi: DOI that was updated
+            success: Whether update was successful
+            message: Result message
+        """
+        # Only log errors to avoid cluttering the log
+        if not success:
+            self._log(f"[FEHLER] {doi}: {message}")
+    
+    def _on_authors_update_finished(self, success_count, error_count, error_list):
+        """
+        Handle authors update completion.
+        
+        Args:
+            success_count: Number of successful updates
+            error_count: Number of failed updates
+            error_list: List of error messages
+        """
+        total = success_count + error_count
+        
+        self._log("=" * 60)
+        if total > 0:
+            self._log(f"Autoren-Update abgeschlossen: {success_count}/{total} erfolgreich")
+        else:
+            self._log("Autoren-Update abgeschlossen")
+        self._log("=" * 60)
+        
+        # Show summary dialog (only if not dry run)
+        if self.authors_update_worker and not self.authors_update_worker.dry_run_only:
+            if total == 0:
+                QMessageBox.information(
+                    self,
+                    "Keine Updates",
+                    "Es wurden keine DOIs aktualisiert (möglicherweise waren alle ungültig)."
+                )
+            elif error_count == 0:
+                QMessageBox.information(
+                    self,
+                    "Update erfolgreich",
+                    f"Alle {success_count} DOIs wurden erfolgreich aktualisiert!"
+                )
+            else:
+                error_details = "\n".join(error_list[:10])  # Show first 10 errors
+                if len(error_list) > 10:
+                    error_details += f"\n... und {len(error_list) - 10} weitere Fehler"
+                
+                QMessageBox.warning(
+                    self,
+                    "Update abgeschlossen mit Fehlern",
+                    f"Erfolgreich: {success_count}\n"
+                    f"Fehlgeschlagen: {error_count}\n\n"
+                    f"Erste Fehler:\n{error_details}"
+                )
+            
+            # Create log file for actual updates
+            if total > 0:
+                self._create_authors_update_log(success_count, error_count, error_list)
+    
+    def _on_authors_update_error(self, error_message):
+        """
+        Handle critical authors update error.
+        
+        Args:
+            error_message: Error message
+        """
+        self._log(f"[KRITISCHER FEHLER] {error_message}")
+        
+        QMessageBox.critical(
+            self,
+            "Autoren-Update Fehler",
+            f"Ein kritischer Fehler ist aufgetreten:\n\n{error_message}"
+        )
+    
+    def _cleanup_authors_update_thread(self):
+        """Clean up authors update thread and worker after completion."""
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setMaximum(0)  # Reset to indeterminate
+        self.load_button.setEnabled(True)
+        self.load_authors_button.setEnabled(True)
+        self.update_button.setEnabled(True)
+        self.update_authors_button.setEnabled(True)
+        
+        # Reset references (objects are deleted via deleteLater)
+        self.authors_update_thread = None
+        self.authors_update_worker = None
+        
+        self._log("Bereit für nächsten Vorgang.")
+    
+    def _create_authors_update_log(self, success_count, error_count, error_list):
+        """
+        Create a log file with authors update results.
+        
+        Args:
+            success_count: Number of successful updates
+            error_count: Number of failed updates
+            error_list: List of error messages
+        """
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_filename = f"authors_update_log_{timestamp}.txt"
+            log_path = Path(os.getcwd()) / log_filename
+            
+            with open(log_path, 'w', encoding='utf-8') as f:
+                f.write("=" * 70 + "\n")
+                f.write("GROBI - Autoren-Metadaten Update Log\n")
+                f.write("=" * 70 + "\n")
+                f.write(f"Datum: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("\n")
+                f.write("ZUSAMMENFASSUNG:\n")
+                f.write(f"  Gesamt: {success_count + error_count} DOIs\n")
+                f.write(f"  Erfolgreich: {success_count}\n")
+                f.write(f"  Fehlgeschlagen: {error_count}\n")
+                f.write("\n")
+                
+                if error_list:
+                    f.write("=" * 70 + "\n")
+                    f.write("FEHLER:\n")
+                    f.write("=" * 70 + "\n")
+                    for error in error_list:
+                        f.write(f"  - {error}\n")
+                else:
+                    f.write("Keine Fehler aufgetreten.\n")
+                
+                f.write("\n")
+                f.write("=" * 70 + "\n")
+            
+            self._log(f"[OK] Log-Datei erstellt: {log_filename}")
+            
+        except Exception as e:
+            self._log(f"[WARNUNG] Log-Datei konnte nicht erstellt werden: {str(e)}")
+    
     def closeEvent(self, event):
         """
         Handle window close event.
@@ -782,5 +1122,13 @@ class MainWindow(QMainWindow):
                 self.update_worker.stop()
             self.update_thread.quit()
             self.update_thread.wait(3000)  # Wait max 3 seconds
+        
+        # If authors update thread is running, stop worker and wait for it to finish
+        if self.authors_update_thread is not None and self.authors_update_thread.isRunning():
+            self._log("Warte auf Abschluss des Autoren-Updates...")
+            if self.authors_update_worker is not None:
+                self.authors_update_worker.stop()
+            self.authors_update_thread.quit()
+            self.authors_update_thread.wait(3000)  # Wait max 3 seconds
         
         event.accept()
