@@ -15,7 +15,7 @@ from PySide6.QtGui import QFont
 from src.ui.credentials_dialog import CredentialsDialog
 from src.ui.theme_manager import ThemeManager, Theme
 from src.api.datacite_client import DataCiteClient, DataCiteAPIError, AuthenticationError, NetworkError
-from src.utils.csv_exporter import export_dois_to_csv, CSVExportError
+from src.utils.csv_exporter import export_dois_to_csv, export_dois_with_creators_to_csv, CSVExportError
 from src.workers.update_worker import UpdateWorker
 
 
@@ -71,6 +71,57 @@ class DOIFetchWorker(QObject):
             self.error.emit(f"Unerwarteter Fehler: {str(e)}")
 
 
+class DOICreatorFetchWorker(QObject):
+    """Worker for fetching DOIs with creator information in a separate thread."""
+    
+    # Signals
+    progress = Signal(str)  # Progress message
+    finished = Signal(list, str)  # List of creator tuples and username
+    error = Signal(str)  # Error message
+    
+    def __init__(self, username, password, use_test_api):
+        """
+        Initialize the worker.
+        
+        Args:
+            username: DataCite username
+            password: DataCite password
+            use_test_api: Whether to use test API
+        """
+        super().__init__()
+        self.username = username
+        self.password = password
+        self.use_test_api = use_test_api
+    
+    def run(self):
+        """Fetch DOIs with creator information from DataCite API."""
+        try:
+            self.progress.emit("Verbindung zur DataCite API wird hergestellt...")
+            
+            client = DataCiteClient(
+                self.username,
+                self.password,
+                self.use_test_api
+            )
+            
+            self.progress.emit("DOIs und Autoren werden abgerufen...")
+            creator_data = client.fetch_all_dois_with_creators()
+            
+            # Count unique DOIs for better user feedback
+            unique_dois = len(set(row[0] for row in creator_data))
+            self.progress.emit(f"[OK] {unique_dois} DOIs mit {len(creator_data)} Autoren erfolgreich abgerufen")
+            self.finished.emit(creator_data, self.username)
+            
+        except AuthenticationError as e:
+            self.error.emit(str(e))
+        except NetworkError as e:
+            self.error.emit(str(e))
+        except DataCiteAPIError as e:
+            self.error.emit(str(e))
+        except Exception as e:
+            self.error.emit(f"Unerwarteter Fehler: {str(e)}")
+
+
 class MainWindow(QMainWindow):
     """Main application window."""
     
@@ -83,6 +134,10 @@ class MainWindow(QMainWindow):
         # Thread and worker for DOI fetch
         self.thread = None
         self.worker = None
+        
+        # Thread and worker for DOI creator fetch
+        self.creator_thread = None
+        self.creator_worker = None
         
         # Thread and worker for URL update
         self.update_thread = None
@@ -133,6 +188,12 @@ class MainWindow(QMainWindow):
         self.load_button.setMinimumHeight(50)
         self.load_button.clicked.connect(self._on_load_dois_clicked)
         layout.addWidget(self.load_button)
+        
+        # Load Authors button
+        self.load_authors_button = QPushButton("👥 DOIs und Autoren laden")
+        self.load_authors_button.setMinimumHeight(50)
+        self.load_authors_button.clicked.connect(self._on_load_authors_clicked)
+        layout.addWidget(self.load_authors_button)
         
         # Update URLs button
         self.update_button = QPushButton("🔄 Landing Page URLs aktualisieren")
@@ -383,11 +444,129 @@ class MainWindow(QMainWindow):
         """Clean up thread and worker after completion."""
         self.progress_bar.setVisible(False)
         self.load_button.setEnabled(True)
+        self.load_authors_button.setEnabled(True)
         self.update_button.setEnabled(True)
         
         # Reset references (objects are deleted via deleteLater)
         self.thread = None
         self.worker = None
+        
+        self._log("Bereit für nächsten Vorgang.")
+    
+    def _on_load_authors_clicked(self):
+        """Handle load authors button click."""
+        # Show credentials dialog
+        dialog = CredentialsDialog(self)
+        credentials = dialog.get_credentials()
+        
+        if credentials is None:
+            self._log("Vorgang abgebrochen.")
+            return
+        
+        username, password, csv_path, use_test_api = credentials
+        # csv_path is None in export mode, we don't need it here
+        
+        api_type = "Test-API" if use_test_api else "Produktions-API"
+        self._log(f"Starte Autoren-Abruf für Benutzer '{username}' ({api_type})...")
+        
+        # Disable buttons and show progress
+        self.load_button.setEnabled(False)
+        self.load_authors_button.setEnabled(False)
+        self.update_button.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        
+        # Create worker and thread
+        self.creator_worker = DOICreatorFetchWorker(username, password, use_test_api)
+        self.creator_thread = QThread()
+        self.creator_worker.moveToThread(self.creator_thread)
+        
+        # Connect signals
+        self.creator_thread.started.connect(self.creator_worker.run)
+        self.creator_worker.progress.connect(self._log)
+        self.creator_worker.finished.connect(self._on_creator_fetch_finished)
+        self.creator_worker.error.connect(self._on_creator_fetch_error)
+        
+        # Clean up after worker finishes or errors
+        self.creator_worker.finished.connect(self.creator_worker.deleteLater)
+        self.creator_worker.error.connect(self.creator_worker.deleteLater)
+        self.creator_worker.finished.connect(self.creator_thread.quit)
+        self.creator_worker.error.connect(self.creator_thread.quit)
+        
+        # Clean up thread when it finishes
+        self.creator_thread.finished.connect(self.creator_thread.deleteLater)
+        self.creator_thread.finished.connect(self._cleanup_creator_thread)
+        
+        # Start the thread
+        self.creator_thread.start()
+    
+    def _on_creator_fetch_finished(self, creator_data, username):
+        """
+        Handle successful creator fetch.
+        
+        Args:
+            creator_data: List of creator tuples (DOI, Creator Name, Name Type, etc.)
+            username: DataCite username
+        """
+        if not creator_data:
+            self._log("[WARNUNG] Keine DOIs mit Autoren gefunden.")
+            QMessageBox.information(
+                self,
+                "Keine Autoren",
+                f"Für den Benutzer '{username}' wurden keine DOIs mit Autoren gefunden."
+            )
+            return
+        
+        # Export to CSV
+        try:
+            output_dir = os.getcwd()
+            filepath = export_dois_with_creators_to_csv(creator_data, username, output_dir)
+            
+            # Count unique DOIs
+            unique_dois = len(set(row[0] for row in creator_data))
+            
+            self._log(f"[OK] CSV-Datei erfolgreich erstellt: {filepath}")
+            
+            QMessageBox.information(
+                self,
+                "Erfolg",
+                f"{unique_dois} DOIs mit {len(creator_data)} Autoren wurden erfolgreich exportiert.\n\n"
+                f"Datei: {Path(filepath).name}\n"
+                f"Verzeichnis: {output_dir}"
+            )
+            
+        except CSVExportError as e:
+            self._log(f"[FEHLER] Fehler beim CSV-Export: {str(e)}")
+            QMessageBox.critical(
+                self,
+                "Fehler beim Export",
+                f"Die CSV-Datei konnte nicht erstellt werden:\n\n{str(e)}"
+            )
+    
+    def _on_creator_fetch_error(self, error_message):
+        """
+        Handle creator fetch error.
+        
+        Args:
+            error_message: Error message
+        """
+        self._log(f"[FEHLER] {error_message}")
+        
+        QMessageBox.critical(
+            self,
+            "Fehler",
+            f"Beim Abrufen der Autoren ist ein Fehler aufgetreten:\n\n{error_message}"
+        )
+    
+    def _cleanup_creator_thread(self):
+        """Clean up creator thread and worker after completion."""
+        self.progress_bar.setVisible(False)
+        self.load_button.setEnabled(True)
+        self.load_authors_button.setEnabled(True)
+        self.update_button.setEnabled(True)
+        
+        # Reset references (objects are deleted via deleteLater)
+        self.creator_thread = None
+        self.creator_worker = None
         
         self._log("Bereit für nächsten Vorgang.")
     

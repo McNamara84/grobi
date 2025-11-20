@@ -95,6 +95,58 @@ class DataCiteClient:
         logger.info(f"Successfully fetched {len(all_dois)} DOIs in total")
         return all_dois
     
+    def fetch_all_dois_with_creators(self) -> List[Tuple[str, str, str, str, str, str, str, str]]:
+        """
+        Fetch all DOIs with creator information from DataCite API.
+        
+        Returns one row per creator, so a DOI with multiple creators will appear multiple times.
+        Only ORCID identifiers are included; other identifier schemes are ignored.
+        
+        Returns:
+            List of tuples containing:
+            (DOI, Creator Name, Name Type, Given Name, Family Name, 
+             Name Identifier, Name Identifier Scheme, Scheme URI)
+            
+        Raises:
+            AuthenticationError: If credentials are invalid
+            NetworkError: If connection to API fails
+            DataCiteAPIError: For other API errors
+        """
+        all_creator_data = []
+        page_number = 1
+        
+        logger.info(f"Starting to fetch DOIs with creators for client: {self.username}")
+        
+        while True:
+            try:
+                creator_data, has_more = self._fetch_page_with_creators(page_number)
+                all_creator_data.extend(creator_data)
+                
+                logger.info(f"Fetched page {page_number}: {len(creator_data)} creator entries (Total: {len(all_creator_data)})")
+                
+                if not has_more:
+                    break
+                    
+                page_number += 1
+                
+            except requests.exceptions.Timeout:
+                error_msg = "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut."
+                logger.error(f"Timeout on page {page_number}")
+                raise DataCiteAPIError(error_msg)
+            
+            except requests.exceptions.ConnectionError as e:
+                error_msg = "Verbindung zur DataCite API fehlgeschlagen. Bitte überprüfe deine Internetverbindung."
+                logger.error(f"Connection error: {e}")
+                raise NetworkError(error_msg)
+            
+            except requests.exceptions.RequestException as e:
+                error_msg = f"Netzwerkfehler bei der Kommunikation mit DataCite: {str(e)}"
+                logger.error(f"Request exception: {e}")
+                raise NetworkError(error_msg)
+        
+        logger.info(f"Successfully fetched {len(all_creator_data)} creator entries in total")
+        return all_creator_data
+    
     def _fetch_page(self, page_number: int) -> Tuple[List[Tuple[str, str]], bool]:
         """
         Fetch a single page of DOIs from the API.
@@ -184,6 +236,137 @@ class DataCiteClient:
                 has_more = True
         
         return dois, has_more
+    
+    def _fetch_page_with_creators(self, page_number: int) -> Tuple[List[Tuple[str, str, str, str, str, str, str, str]], bool]:
+        """
+        Fetch a single page of DOIs with creator information from the API.
+        
+        Args:
+            page_number: Page number to fetch (1-indexed)
+            
+        Returns:
+            Tuple of (list of creator tuples, has_more_pages boolean)
+            Each tuple contains: (DOI, Creator Name, Name Type, Given Name, Family Name,
+                                 Name Identifier, Name Identifier Scheme, Scheme URI)
+            
+        Raises:
+            AuthenticationError: If credentials are invalid
+            DataCiteAPIError: For other API errors
+        """
+        url = f"{self.base_url}/dois"
+        params = {
+            "client-id": self.username,
+            "page[size]": self.PAGE_SIZE,
+            "page[number]": page_number
+        }
+        
+        logger.debug(f"Requesting creators from: {url} with params: {params}")
+        
+        response = requests.get(
+            url,
+            auth=self.auth,
+            params=params,
+            timeout=self.TIMEOUT,
+            headers={"Accept": "application/vnd.api+json"}
+        )
+        
+        # Handle authentication errors
+        if response.status_code == 401:
+            error_msg = "Anmeldung fehlgeschlagen. Bitte überprüfe deinen Benutzernamen und dein Passwort."
+            logger.error(f"Authentication failed for user: {self.username}")
+            raise AuthenticationError(error_msg)
+        
+        # Handle rate limiting
+        if response.status_code == 429:
+            error_msg = "Zu viele Anfragen. Bitte warte einen Moment und versuche es erneut."
+            logger.error("Rate limit exceeded")
+            raise DataCiteAPIError(error_msg)
+        
+        # Handle other HTTP errors
+        if response.status_code != 200:
+            error_msg = f"DataCite API Fehler (HTTP {response.status_code}): {response.text}"
+            logger.error(f"API error: {response.status_code} - {response.text}")
+            raise DataCiteAPIError(error_msg)
+        
+        # Parse JSON response
+        try:
+            data = response.json()
+        except ValueError as e:
+            error_msg = "Ungültige Antwort von der DataCite API (kein gültiges JSON)."
+            logger.error(f"Invalid JSON response: {e}")
+            raise DataCiteAPIError(error_msg)
+        
+        # Extract DOIs and creator information
+        creator_entries = []
+        if "data" in data and isinstance(data["data"], list):
+            for item in data["data"]:
+                try:
+                    doi = item.get("id")
+                    if not doi:
+                        logger.warning("DOI entry without ID, skipping")
+                        continue
+                    
+                    attributes = item.get("attributes", {})
+                    creators = attributes.get("creators", [])
+                    
+                    # Skip DOIs without creators
+                    if not creators:
+                        logger.warning(f"DOI {doi} has no creators, skipping")
+                        continue
+                    
+                    # Process each creator
+                    for creator in creators:
+                        creator_name = creator.get("name", "")
+                        name_type = creator.get("nameType", "")
+                        given_name = creator.get("givenName", "")
+                        family_name = creator.get("familyName", "")
+                        
+                        # Extract ORCID identifier if present
+                        name_identifier = ""
+                        name_identifier_scheme = ""
+                        scheme_uri = ""
+                        
+                        name_identifiers = creator.get("nameIdentifiers", [])
+                        for identifier in name_identifiers:
+                            scheme = identifier.get("nameIdentifierScheme", "")
+                            if scheme.upper() == "ORCID":
+                                name_identifier = identifier.get("nameIdentifier", "")
+                                name_identifier_scheme = identifier.get("nameIdentifierScheme", "")
+                                scheme_uri = identifier.get("schemeUri", "")
+                                break  # Only take the first ORCID
+                        
+                        # Create tuple entry
+                        entry = (
+                            doi,
+                            creator_name,
+                            name_type,
+                            given_name,
+                            family_name,
+                            name_identifier,
+                            name_identifier_scheme,
+                            scheme_uri
+                        )
+                        creator_entries.append(entry)
+                        
+                except (KeyError, AttributeError, TypeError) as e:
+                    logger.warning(f"Error parsing creator data for DOI {item.get('id', 'unknown')}: {e}")
+                    continue
+        
+        # Check if there are more pages
+        has_more = False
+        if "links" in data and "next" in data["links"]:
+            has_more = True
+        
+        # Alternative: Check meta information
+        if "meta" in data:
+            meta = data["meta"]
+            page = meta.get("page", page_number)
+            total_pages = meta.get("totalPages", 1)
+            
+            if page < total_pages:
+                has_more = True
+        
+        return creator_entries, has_more
     
     def update_doi_url(self, doi: str, new_url: str) -> Tuple[bool, str]:
         """
