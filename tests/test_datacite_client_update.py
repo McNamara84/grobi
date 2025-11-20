@@ -1,0 +1,185 @@
+"""Tests for DataCite Client update_doi_url method."""
+
+import pytest
+from unittest.mock import Mock, patch
+import requests
+
+from src.api.datacite_client import DataCiteClient, NetworkError
+
+
+class TestDataCiteClientUpdate:
+    """Test suite for DataCite Client URL update functionality."""
+    
+    @pytest.fixture
+    def client(self):
+        """Create a DataCite client instance."""
+        return DataCiteClient("test_user", "test_pass", use_test_api=True)
+    
+    def test_update_doi_url_success(self, client):
+        """Test successful DOI URL update."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = "OK"
+        
+        with patch('requests.put', return_value=mock_response) as mock_put:
+            success, message = client.update_doi_url(
+                "10.5880/GFZ.1.1.2021.001",
+                "https://new-url.example.org"
+            )
+            
+            assert success is True
+            assert "erfolgreich aktualisiert" in message
+            
+            # Verify PUT request was made correctly
+            mock_put.assert_called_once()
+            call_args = mock_put.call_args
+            
+            # Check URL
+            assert "10.5880/GFZ.1.1.2021.001" in call_args[0][0]
+            
+            # Check JSON payload
+            assert call_args[1]['json']['data']['type'] == 'dois'
+            assert call_args[1]['json']['data']['attributes']['url'] == "https://new-url.example.org"
+            
+            # Check headers
+            assert call_args[1]['headers']['Content-Type'] == 'application/vnd.api+json'
+    
+    def test_update_doi_url_authentication_error(self, client):
+        """Test update with authentication error."""
+        mock_response = Mock()
+        mock_response.status_code = 401
+        mock_response.text = "Unauthorized"
+        
+        with patch('requests.put', return_value=mock_response):
+            success, message = client.update_doi_url(
+                "10.5880/GFZ.1.1.2021.001",
+                "https://new-url.example.org"
+            )
+            
+            assert success is False
+            assert "Authentifizierung fehlgeschlagen" in message
+    
+    def test_update_doi_url_forbidden(self, client):
+        """Test update with forbidden error (DOI belongs to another client)."""
+        mock_response = Mock()
+        mock_response.status_code = 403
+        mock_response.text = "Forbidden"
+        
+        with patch('requests.put', return_value=mock_response):
+            success, message = client.update_doi_url(
+                "10.5880/GFZ.1.1.2021.001",
+                "https://new-url.example.org"
+            )
+            
+            assert success is False
+            assert "Keine Berechtigung" in message
+    
+    def test_update_doi_url_not_found(self, client):
+        """Test update with DOI not found error."""
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.text = "Not Found"
+        
+        with patch('requests.put', return_value=mock_response):
+            success, message = client.update_doi_url(
+                "10.5880/GFZ.1.1.2021.999",
+                "https://new-url.example.org"
+            )
+            
+            assert success is False
+            assert "nicht gefunden" in message
+    
+    def test_update_doi_url_validation_error(self, client):
+        """Test update with validation error (invalid URL)."""
+        mock_response = Mock()
+        mock_response.status_code = 422
+        mock_response.text = "Unprocessable Entity"
+        
+        with patch('requests.put', return_value=mock_response):
+            success, message = client.update_doi_url(
+                "10.5880/GFZ.1.1.2021.001",
+                "invalid-url"
+            )
+            
+            assert success is False
+            assert "Ungültige URL" in message
+    
+    def test_update_doi_url_rate_limit(self, client):
+        """Test update with rate limit error."""
+        mock_response = Mock()
+        mock_response.status_code = 429
+        mock_response.text = "Too Many Requests"
+        
+        with patch('requests.put', return_value=mock_response):
+            success, message = client.update_doi_url(
+                "10.5880/GFZ.1.1.2021.001",
+                "https://new-url.example.org"
+            )
+            
+            assert success is False
+            assert "Rate Limit" in message
+    
+    def test_update_doi_url_timeout(self, client):
+        """Test update with timeout error."""
+        with patch('requests.put', side_effect=requests.exceptions.Timeout):
+            success, message = client.update_doi_url(
+                "10.5880/GFZ.1.1.2021.001",
+                "https://new-url.example.org"
+            )
+            
+            assert success is False
+            assert "Zeitüberschreitung" in message
+    
+    def test_update_doi_url_connection_error(self, client):
+        """Test update with connection error."""
+        with patch('requests.put', side_effect=requests.exceptions.ConnectionError):
+            with pytest.raises(NetworkError):
+                client.update_doi_url(
+                    "10.5880/GFZ.1.1.2021.001",
+                    "https://new-url.example.org"
+                )
+    
+    def test_update_doi_url_unexpected_status(self, client):
+        """Test update with unexpected status code."""
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.text = "Internal Server Error"
+        
+        with patch('requests.put', return_value=mock_response):
+            success, message = client.update_doi_url(
+                "10.5880/GFZ.1.1.2021.001",
+                "https://new-url.example.org"
+            )
+            
+            assert success is False
+            assert "API Fehler" in message
+            assert "500" in message
+    
+    def test_update_doi_url_production_endpoint(self):
+        """Test that production client uses correct endpoint."""
+        client = DataCiteClient("test_user", "test_pass", use_test_api=False)
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        
+        with patch('requests.put', return_value=mock_response) as mock_put:
+            client.update_doi_url("10.5880/GFZ.1.1.2021.001", "https://example.org")
+            
+            # Check that production endpoint was used
+            call_url = mock_put.call_args[0][0]
+            assert "api.datacite.org" in call_url
+            assert "api.test.datacite.org" not in call_url
+    
+    def test_update_doi_url_test_endpoint(self):
+        """Test that test client uses correct endpoint."""
+        client = DataCiteClient("test_user", "test_pass", use_test_api=True)
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        
+        with patch('requests.put', return_value=mock_response) as mock_put:
+            client.update_doi_url("10.5880/GFZ.1.1.2021.001", "https://example.org")
+            
+            # Check that test endpoint was used
+            call_url = mock_put.call_args[0][0]
+            assert "api.test.datacite.org" in call_url
