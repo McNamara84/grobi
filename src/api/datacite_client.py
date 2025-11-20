@@ -586,7 +586,7 @@ class DataCiteClient:
         # Validate order and consistency
         for i, (current, csv_creator) in enumerate(zip(current_creators, csv_creators), 1):
             current_name = current.get("name", "")
-            csv_name = csv_creator.get("creator_name", "")
+            csv_name = csv_creator.get("name", "")
             
             # Compare names (basic check - names should match or be similar)
             # We're lenient here since we mainly care about count and order

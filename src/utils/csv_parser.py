@@ -300,12 +300,9 @@ class CSVParser:
                                 "darf keine Given Name oder Family Name haben."
                             )
                     elif name_type == 'Personal':
-                        # Personal creators should have at least one of name components
-                        if not creator_name and not (given_name and family_name):
-                            raise CSVParseError(
-                                f"Zeile {row_num}: Personal Creator muss entweder "
-                                "'Creator Name' oder 'Given Name' + 'Family Name' haben."
-                            )
+                        # Personal creators already validated to have creator_name above
+                        # No additional validation needed here
+                        pass
                     
                     # Validate ORCID format (if provided)
                     if name_identifier:
