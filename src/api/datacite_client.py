@@ -519,7 +519,6 @@ class DataCiteClient:
                 raise DataCiteAPIError(error_msg)
                 
         except requests.exceptions.Timeout:
-            error_msg = f"Zeitüberschreitung bei DOI {doi}"
             logger.error(f"Timeout fetching DOI metadata: {doi}")
             return None  # Return None like 404 - let caller handle this gracefully
         

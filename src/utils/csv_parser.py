@@ -346,13 +346,8 @@ class CSVParser:
                 "Stelle sicher, dass die Datei mindestens eine Datenzeile enthält."
             )
         
-        # Validate each DOI has at least one creator
-        for doi, creators in creators_by_doi.items():
-            if not creators:
-                raise CSVParseError(
-                    f"DOI '{doi}' hat keine Creators. "
-                    "Jeder DOI muss mindestens einen Creator haben."
-                )
+        # Note: No need to validate empty creator lists - a DOI is only added to
+        # creators_by_doi when at least one creator is appended (line 331)
         
         total_creators = sum(len(creators) for creators in creators_by_doi.values())
         logger.info(
@@ -367,7 +362,7 @@ class CSVParser:
         """
         Validate ORCID format.
         
-        A valid ORCID is a 16-digit number separated by hyphens in groups of 4.
+        A valid ORCID is a 16-character identifier (15 digits plus a checksum digit which can be 0-9 or X) separated by hyphens in groups of 4.
         Format: XXXX-XXXX-XXXX-XXXX or full URL: https://orcid.org/XXXX-XXXX-XXXX-XXXX
         
         Examples:
