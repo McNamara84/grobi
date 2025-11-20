@@ -29,6 +29,11 @@ class CredentialsDialog(QDialog):
         self.mode = mode
         self.csv_file_path = None
         
+        # Get theme manager from parent if available
+        self.theme_manager = None
+        if parent and hasattr(parent, 'theme_manager'):
+            self.theme_manager = parent.theme_manager
+        
         # Set window title based on mode
         if mode == "update":
             self.setWindowTitle("Landing Page URLs aktualisieren")
@@ -147,7 +152,16 @@ class CredentialsDialog(QDialog):
         self.username_input.setFocus()
     
     def _apply_styles(self):
-        """Apply modern styling to the dialog."""
+        """Apply styling to the dialog based on current theme."""
+        if self.theme_manager:
+            stylesheet = self.theme_manager.get_credentials_dialog_stylesheet()
+            self.setStyleSheet(stylesheet)
+        else:
+            # Fallback to light theme if no theme manager available
+            self._apply_light_styles()
+    
+    def _apply_light_styles(self):
+        """Apply light theme styling (fallback)."""
         self.setStyleSheet("""
             QDialog {
                 background-color: #f5f5f5;
