@@ -14,6 +14,7 @@ A modern GUI tool for GFZ Data Services to manage DataCite DOIs.
 ### DOI Management
 - 🔍 **Retrieve DOIs**: Fetch all registered DOIs from DataCite API
 - 📊 **Export to CSV**: Export DOI list with landing page URLs
+- 👥 **Export Authors**: Export DOI list with creator/author information (ORCID support)
 - 🔄 **Update Landing Page URLs**: Bulk update landing page URLs via CSV import
 - 📝 **Detailed Logging**: Automatic creation of update logs with success/error reports
 
@@ -93,7 +94,7 @@ pip install -r requirements-dev.txt
 
 The project includes a comprehensive test suite:
 
-- **63 Unit Tests** for all modules
+- **139 Unit Tests** for all modules
 - **77% Code Coverage** (Business Logic 90%+)
 - **Automated CI/CD** with GitHub Actions
 
@@ -172,7 +173,7 @@ python -m src.main
 6. **Done**: A CSV file is created in the current directory
 
 **CSV Output Format:**
-- **Filename**: `{username}.csv` (e.g., `TIB.GFZ.csv`)
+- **Filename**: `{username}_urls.csv` (e.g., `TIB.GFZ_urls.csv`)
 - **Encoding**: UTF-8
 - **Columns**:
   - `DOI`: The Digital Object Identifier
@@ -284,6 +285,48 @@ The application supports three theme modes:
 - Windows 10/11: Automatically detects system-wide dark mode setting
 - Settings → Personalization → Colors → "Choose your color"
 
+### Workflow 4: Export DOIs with Authors to CSV
+
+**Step-by-Step Guide:**
+
+1. **Start application**: Run `python -m src.main` or double-click `GROBI.exe`
+2. **Load Authors**: Click the "👥 DOIs und Autoren laden" (Load DOIs and authors) button
+3. **Enter credentials**: 
+   - Enter your DataCite username (e.g., `TIB.GFZ`)
+   - Enter your DataCite password
+   - Optional: Enable "Test-API verwenden" (Use Test API) to use the test API instead of production
+4. **Retrieve DOIs**: Click "DOIs holen" (Get DOIs)
+5. **Wait**: The application displays progress in the status area
+6. **Done**: A CSV file with creator information is created in the current directory
+
+**CSV Output Format:**
+- **Filename**: `{username}_authors.csv` (e.g., `TIB.GFZ_authors.csv`)
+- **Encoding**: UTF-8
+- **Columns**:
+  - `DOI`: The Digital Object Identifier
+  - `Creator Name`: Full name of the creator
+  - `Name Type`: Either "Personal" or "Organizational"
+  - `Given Name`: First name (empty for organizations)
+  - `Family Name`: Last name (empty for organizations)
+  - `Name Identifier`: ORCID URL if available
+  - `Name Identifier Scheme`: "ORCID" if available
+  - `Scheme URI`: ORCID scheme URI if available
+
+**Example Output:**
+```csv
+DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifier Scheme,Scheme URI
+10.5880/GFZ.1.1.2021.001,Miller, Elizabeth,Personal,Elizabeth,Miller,https://orcid.org/0000-0001-5000-0007,ORCID,https://orcid.org
+10.5880/GFZ.1.1.2021.001,Smith, John,Personal,John,Smith,,,
+10.5880/GFZ.1.1.2021.002,GFZ Data Services,Organizational,,,,,
+```
+
+**Special Cases:**
+- **Multiple Creators**: Each creator appears as a separate row, so a DOI may appear multiple times
+- **Organizations**: `Given Name` and `Family Name` fields are empty
+- **No ORCID**: `Name Identifier`, `Name Identifier Scheme`, and `Scheme URI` fields are empty
+- **Other Identifiers**: Only ORCID identifiers are exported; other identifier schemes (e.g., ResearcherID) are ignored
+- **No Creators**: DOIs without creators are skipped with a warning in the log
+
 ### Notes:
 
 - The application retrieves **all** DOIs registered with the specified username
@@ -291,9 +334,11 @@ The application supports three theme modes:
 - Progress indicator shows real-time status
 - Error messages are displayed in German
 - CSV files are automatically overwritten if they already exist
+- CSV filenames: `{username}_urls.csv` for URL export, `{username}_authors.csv` for author export
 - Update process continues even if individual DOIs fail
 - Each update creates a timestamped log file for auditing
 - Theme preference persists across application restarts
+- Author export: One row per creator (DOIs with multiple creators appear multiple times)
 
 ## Project Structure
 
@@ -312,9 +357,12 @@ grobi/
 │   └── utils/                       # Utility functions
 │       ├── csv_exporter.py         # CSV export functionality
 │       └── csv_parser.py           # CSV parsing and validation
-├── tests/                           # Unit tests (121 tests, 77% coverage)
+├── tests/                           # Unit tests (139 tests, 77% coverage)
 │   ├── test_csv_parser.py          # CSV parsing tests
+│   ├── test_datacite_client.py     # API fetch tests
+│   ├── test_datacite_client_creators.py  # API creator fetch tests
 │   ├── test_datacite_client_update.py  # API update tests
+│   ├── test_csv_exporter.py        # CSV export tests
 │   ├── test_update_worker.py       # Worker tests
 │   └── test_theme_manager.py       # Theme management tests
 ├── requirements.txt                 # Production dependencies
