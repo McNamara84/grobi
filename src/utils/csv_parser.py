@@ -20,7 +20,8 @@ class CSVParser:
     
     # DOI regex pattern (basic validation)
     # Matches format: 10.X/... where X is the registrant code (1+ digits)
-    # Note: Allows registrant codes of any length (1+ digits) to support all valid DOIs
+    # Pattern: ^10\.\d+/\S+$ allows any registrant code with 1+ digits
+    # Note: Supports all valid DOI registrant codes (e.g., 10.1/..., 10.1234/..., 10.12345/...)
     DOI_PATTERN = re.compile(r'^10\.\d+/\S+$')
     
     # URL regex pattern (basic validation)
@@ -100,7 +101,7 @@ class CSVParser:
                     if not CSVParser.validate_doi_format(doi):
                         raise CSVParseError(
                             f"Zeile {row_num}: Ungültiges DOI-Format '{doi}'. "
-                            "Erwartetes Format: 10.XXXX/..."
+                            "Erwartetes Format: 10.X/... (wobei X ein oder mehrere Ziffern sind)"
                         )
                     
                     # Validate URL format
