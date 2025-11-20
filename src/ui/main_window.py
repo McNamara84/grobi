@@ -116,12 +116,14 @@ class MainWindow(QMainWindow):
         layout.addWidget(title)
         
         # Subtitle
-        subtitle = QLabel("GFZ Research Data Repository Operations & Batch Interface")
+        self.subtitle = QLabel("GFZ Research Data Repository Operations & Batch Interface")
         subtitle_font = QFont()
         subtitle_font.setPointSize(10)
-        subtitle.setFont(subtitle_font)
-        subtitle.setStyleSheet("color: #666;")
-        layout.addWidget(subtitle)
+        self.subtitle.setFont(subtitle_font)
+        effective_theme = self.theme_manager.get_effective_theme()
+        subtitle_color = "#999" if effective_theme == Theme.DARK else "#666"
+        self.subtitle.setStyleSheet(f"color: {subtitle_color};")
+        layout.addWidget(self.subtitle)
         
         # Add spacing
         layout.addSpacing(20)
@@ -139,7 +141,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.update_button)
         
         # Theme toggle button
-        self.theme_button = QPushButton("🌙 Dark Mode" if self.theme_manager.get_current_theme() == Theme.LIGHT else "☀️ Light Mode")
+        self.theme_button = QPushButton(self._get_theme_button_text())
         self.theme_button.setMinimumHeight(40)
         self.theme_button.clicked.connect(self._on_theme_toggle)
         layout.addWidget(self.theme_button)
@@ -174,10 +176,13 @@ class MainWindow(QMainWindow):
         stylesheet = self.theme_manager.get_main_window_stylesheet()
         self.setStyleSheet(stylesheet)
         
-        # Update subtitle color based on theme
-        theme = self.theme_manager.get_current_theme()
-        subtitle_color = "#999" if theme == Theme.DARK else "#666"
-        self.findChild(QLabel, "").setStyleSheet(f"color: {subtitle_color};")
+        # Update subtitle color based on effective theme
+        effective_theme = self.theme_manager.get_effective_theme()
+        subtitle_color = "#999" if effective_theme == Theme.DARK else "#666"
+        # Find subtitle label (second QLabel)
+        labels = self.findChildren(QLabel)
+        if len(labels) > 1:
+            labels[1].setStyleSheet(f"color: {subtitle_color};")
     
     def _apply_styles_old(self):
         """Legacy styling method - kept for reference."""
@@ -233,6 +238,22 @@ class MainWindow(QMainWindow):
         self.log_text.append(message)
         logger.info(message)
     
+    def _get_theme_button_text(self) -> str:
+        """
+        Get appropriate button text based on current theme.
+        
+        Returns:
+            str: Button text
+        """
+        current_theme = self.theme_manager.get_current_theme()
+        if current_theme == Theme.AUTO:
+            effective = self.theme_manager.get_effective_theme()
+            return f"🔄 Auto ({('Light' if effective == Theme.LIGHT else 'Dark')})"
+        elif current_theme == Theme.LIGHT:
+            return "🌙 Dark Mode"
+        else:
+            return "☀️ Light Mode"
+    
     def _on_theme_toggle(self):
         """Handle theme toggle button click."""
         self.theme_manager.toggle_theme()
@@ -245,11 +266,15 @@ class MainWindow(QMainWindow):
             theme: New theme
         """
         # Update button text
-        if theme == Theme.DARK:
-            self.theme_button.setText("☀️ Light Mode")
+        self.theme_button.setText(self._get_theme_button_text())
+        
+        # Log message
+        if theme == Theme.AUTO:
+            effective = self.theme_manager.get_effective_theme()
+            self._log(f"🔄 Auto Mode aktiviert (System: {('Light' if effective == Theme.LIGHT else 'Dark')} Mode)")
+        elif theme == Theme.DARK:
             self._log("🌙 Dark Mode aktiviert")
         else:
-            self.theme_button.setText("🌙 Dark Mode")
             self._log("☀️ Light Mode aktiviert")
         
         # Apply new styles

@@ -2,12 +2,15 @@
 
 from enum import Enum
 from PySide6.QtCore import QObject, Signal, QSettings
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QPalette
 
 
 class Theme(Enum):
     """Available themes."""
     LIGHT = "light"
     DARK = "dark"
+    AUTO = "auto"
 
 
 class ThemeManager(QObject):
@@ -26,13 +29,13 @@ class ThemeManager(QObject):
         Load theme preference from settings.
         
         Returns:
-            Theme: Saved theme or default (LIGHT)
+            Theme: Saved theme or default (AUTO)
         """
-        theme_str = self.settings.value("theme", Theme.LIGHT.value)
+        theme_str = self.settings.value("theme", Theme.AUTO.value)
         try:
             return Theme(theme_str)
         except ValueError:
-            return Theme.LIGHT
+            return Theme.AUTO
     
     def _save_theme(self, theme: Theme):
         """
@@ -65,9 +68,48 @@ class ThemeManager(QObject):
             self.theme_changed.emit(theme)
     
     def toggle_theme(self):
-        """Toggle between light and dark theme."""
-        new_theme = Theme.DARK if self._current_theme == Theme.LIGHT else Theme.LIGHT
+        """Cycle through themes: AUTO -> LIGHT -> DARK -> AUTO."""
+        if self._current_theme == Theme.AUTO:
+            new_theme = Theme.LIGHT
+        elif self._current_theme == Theme.LIGHT:
+            new_theme = Theme.DARK
+        else:
+            new_theme = Theme.AUTO
         self.set_theme(new_theme)
+    
+    def is_system_dark_mode(self) -> bool:
+        """
+        Detect if system is using dark mode.
+        
+        Returns:
+            bool: True if system is in dark mode
+        """
+        app = QApplication.instance()
+        if app:
+            palette = app.palette()
+            # Check if window background is darker than text color
+            window_color = palette.color(QPalette.Window)
+            text_color = palette.color(QPalette.WindowText)
+            # Calculate relative luminance
+            window_luminance = (0.299 * window_color.red() + 
+                              0.587 * window_color.green() + 
+                              0.114 * window_color.blue())
+            text_luminance = (0.299 * text_color.red() + 
+                            0.587 * text_color.green() + 
+                            0.114 * text_color.blue())
+            return window_luminance < text_luminance
+        return False
+    
+    def get_effective_theme(self) -> Theme:
+        """
+        Get the effective theme (resolves AUTO to LIGHT or DARK).
+        
+        Returns:
+            Theme: LIGHT or DARK (never AUTO)
+        """
+        if self._current_theme == Theme.AUTO:
+            return Theme.DARK if self.is_system_dark_mode() else Theme.LIGHT
+        return self._current_theme
     
     def get_main_window_stylesheet(self) -> str:
         """
@@ -76,7 +118,8 @@ class ThemeManager(QObject):
         Returns:
             str: CSS stylesheet
         """
-        if self._current_theme == Theme.DARK:
+        effective_theme = self.get_effective_theme()
+        if effective_theme == Theme.DARK:
             return self._get_dark_main_window_stylesheet()
         else:
             return self._get_light_main_window_stylesheet()
@@ -88,7 +131,8 @@ class ThemeManager(QObject):
         Returns:
             str: CSS stylesheet
         """
-        if self._current_theme == Theme.DARK:
+        effective_theme = self.get_effective_theme()
+        if effective_theme == Theme.DARK:
             return self._get_dark_credentials_dialog_stylesheet()
         else:
             return self._get_light_credentials_dialog_stylesheet()
