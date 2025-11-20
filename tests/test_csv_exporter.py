@@ -7,7 +7,12 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from src.utils.csv_exporter import export_dois_to_csv, validate_csv_format, CSVExportError
+from src.utils.csv_exporter import (
+    export_dois_to_csv,
+    export_dois_with_creators_to_csv,
+    validate_csv_format,
+    CSVExportError
+)
 
 
 @pytest.fixture
@@ -27,6 +32,43 @@ def sample_dois():
     ]
 
 
+@pytest.fixture
+def sample_creator_data():
+    """Sample creator data for testing."""
+    return [
+        (
+            "10.5880/GFZ.1.1.2021.001",
+            "Miller, Elizabeth",
+            "Personal",
+            "Elizabeth",
+            "Miller",
+            "https://orcid.org/0000-0001-5000-0007",
+            "ORCID",
+            "https://orcid.org"
+        ),
+        (
+            "10.5880/GFZ.1.1.2021.001",
+            "Smith, John",
+            "Personal",
+            "John",
+            "Smith",
+            "",
+            "",
+            ""
+        ),
+        (
+            "10.5880/GFZ.1.1.2021.002",
+            "GFZ Data Services",
+            "Organizational",
+            "",
+            "",
+            "",
+            "",
+            ""
+        ),
+    ]
+
+
 class TestExportDOIsToCSV:
     """Test CSV export functionality."""
     
@@ -38,7 +80,7 @@ class TestExportDOIsToCSV:
         
         # Check that file was created
         assert os.path.exists(filepath)
-        assert filepath.endswith("TIB.GFZ.csv")
+        assert filepath.endswith("TIB.GFZ_urls.csv")
         
         # Read and verify content
         with open(filepath, 'r', encoding='utf-8') as f:
@@ -158,7 +200,165 @@ class TestExportDOIsToCSV:
         filepath = export_dois_to_csv(sample_dois, username, temp_dir)
         
         assert isinstance(filepath, str)
-        assert filepath.endswith(f"{username}.csv")
+        assert filepath.endswith(f"{username}_urls.csv")
+        assert os.path.isabs(filepath)
+
+
+class TestExportDOIsWithCreatorsToCSV:
+    """Test CSV export functionality for DOIs with creators."""
+    
+    def test_successful_export_with_creators(self, temp_dir, sample_creator_data):
+        """Test successful export of DOIs with creator information to CSV."""
+        username = "TIB.GFZ"
+        
+        filepath = export_dois_with_creators_to_csv(sample_creator_data, username, temp_dir)
+        
+        # Check that file was created
+        assert os.path.exists(filepath)
+        assert filepath.endswith("TIB.GFZ_authors.csv")
+        
+        # Read and verify content
+        with open(filepath, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+        
+        # Check header
+        expected_header = [
+            'DOI',
+            'Creator Name',
+            'Name Type',
+            'Given Name',
+            'Family Name',
+            'Name Identifier',
+            'Name Identifier Scheme',
+            'Scheme URI'
+        ]
+        assert rows[0] == expected_header
+        
+        # Check data rows
+        assert len(rows) == 4  # Header + 3 data rows
+        
+        # First creator with ORCID
+        assert rows[1][0] == "10.5880/GFZ.1.1.2021.001"
+        assert rows[1][1] == "Miller, Elizabeth"
+        assert rows[1][2] == "Personal"
+        assert rows[1][3] == "Elizabeth"
+        assert rows[1][4] == "Miller"
+        assert rows[1][5] == "https://orcid.org/0000-0001-5000-0007"
+        assert rows[1][6] == "ORCID"
+        assert rows[1][7] == "https://orcid.org"
+        
+        # Second creator without ORCID
+        assert rows[2][0] == "10.5880/GFZ.1.1.2021.001"
+        assert rows[2][1] == "Smith, John"
+        assert rows[2][5] == ""  # No ORCID
+        
+        # Organizational creator
+        assert rows[3][0] == "10.5880/GFZ.1.1.2021.002"
+        assert rows[3][1] == "GFZ Data Services"
+        assert rows[3][2] == "Organizational"
+        assert rows[3][3] == ""  # No given name
+        assert rows[3][4] == ""  # No family name
+    
+    def test_empty_creator_list_export(self, temp_dir):
+        """Test export with empty creator list."""
+        username = "EMPTY.USER"
+        
+        filepath = export_dois_with_creators_to_csv([], username, temp_dir)
+        
+        # File should still be created with header
+        assert os.path.exists(filepath)
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+        
+        # Only header should be present
+        assert len(rows) == 1
+        assert len(rows[0]) == 8  # 8 columns
+    
+    def test_organizational_creators(self, temp_dir):
+        """Test export of organizational creators with empty fields."""
+        creator_data = [
+            (
+                "10.5880/GFZ.1.1.2021.001",
+                "GFZ Data Services",
+                "Organizational",
+                "",
+                "",
+                "",
+                "",
+                ""
+            )
+        ]
+        
+        filepath = export_dois_with_creators_to_csv(creator_data, "ORG.TEST", temp_dir)
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+        
+        assert len(rows) == 2  # Header + 1 data row
+        assert rows[1][2] == "Organizational"
+        assert rows[1][3] == ""  # Empty given name
+        assert rows[1][4] == ""  # Empty family name
+    
+    def test_creators_without_orcid(self, temp_dir):
+        """Test export of creators without ORCID identifiers."""
+        creator_data = [
+            (
+                "10.5880/GFZ.1.1.2021.001",
+                "Smith, John",
+                "Personal",
+                "John",
+                "Smith",
+                "",  # No ORCID
+                "",
+                ""
+            )
+        ]
+        
+        filepath = export_dois_with_creators_to_csv(creator_data, "NO_ORCID.TEST", temp_dir)
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+        
+        assert len(rows) == 2
+        assert rows[1][5] == ""  # Empty name identifier
+        assert rows[1][6] == ""  # Empty scheme
+        assert rows[1][7] == ""  # Empty scheme URI
+    
+    def test_utf8_encoding_creators(self, temp_dir):
+        """Test that CSV with creators is properly encoded in UTF-8."""
+        creator_data = [
+            (
+                "10.5880/GFZ.Ö.Ä.Ü",
+                "Müller, Hans",
+                "Personal",
+                "Hans",
+                "Müller",
+                "https://orcid.org/0000-0001-2345-6789",
+                "ORCID",
+                "https://orcid.org"
+            )
+        ]
+        
+        filepath = export_dois_with_creators_to_csv(creator_data, "UTF8.TEST", temp_dir)
+        
+        # Read with UTF-8 encoding
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+            assert "Müller" in content
+    
+    def test_returns_filepath_creators(self, temp_dir, sample_creator_data):
+        """Test that function returns the filepath."""
+        username = "RETURN.TEST"
+        
+        filepath = export_dois_with_creators_to_csv(sample_creator_data, username, temp_dir)
+        
+        assert isinstance(filepath, str)
+        assert filepath.endswith(f"{username}_authors.csv")
         assert os.path.isabs(filepath)
 
 
