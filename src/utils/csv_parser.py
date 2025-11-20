@@ -387,10 +387,10 @@ class CSVParser:
         if not orcid:
             return False
         
-        # Pattern for ORCID ID: XXXX-XXXX-XXXX-XXXX (where X is digit or X in last position)
+        # Pattern for ORCID ID: 0000-XXXX-XXXX-XXXX (must start with 0000)
         orcid_pattern = re.compile(
             r'^(?:https?://orcid\.org/)?'  # Optional URL prefix
-            r'(\d{4}-\d{4}-\d{4}-\d{3}[0-9X])$',  # ORCID format
+            r'(0000-\d{4}-\d{4}-\d{3}[0-9X])$',  # ORCID format (must start with 0000)
             re.IGNORECASE
         )
         
