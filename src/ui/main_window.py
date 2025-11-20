@@ -13,6 +13,7 @@ from PySide6.QtCore import QThread, Signal, QObject
 from PySide6.QtGui import QFont
 
 from src.ui.credentials_dialog import CredentialsDialog
+from src.ui.theme_manager import ThemeManager, Theme
 from src.api.datacite_client import DataCiteClient, DataCiteAPIError, AuthenticationError, NetworkError
 from src.utils.csv_exporter import export_dois_to_csv, CSVExportError
 from src.workers.update_worker import UpdateWorker
@@ -87,6 +88,10 @@ class MainWindow(QMainWindow):
         self.update_thread = None
         self.update_worker = None
         
+        # Initialize theme manager
+        self.theme_manager = ThemeManager()
+        self.theme_manager.theme_changed.connect(self._on_theme_changed)
+        
         self._setup_ui()
         self._apply_styles()
         
@@ -111,18 +116,20 @@ class MainWindow(QMainWindow):
         layout.addWidget(title)
         
         # Subtitle
-        subtitle = QLabel("GFZ Research Data Repository Operations & Batch Interface")
+        self.subtitle = QLabel("GFZ Research Data Repository Operations & Batch Interface")
         subtitle_font = QFont()
         subtitle_font.setPointSize(10)
-        subtitle.setFont(subtitle_font)
-        subtitle.setStyleSheet("color: #666;")
-        layout.addWidget(subtitle)
+        self.subtitle.setFont(subtitle_font)
+        effective_theme = self.theme_manager.get_effective_theme()
+        subtitle_color = "#999" if effective_theme == Theme.DARK else "#666"
+        self.subtitle.setStyleSheet(f"color: {subtitle_color};")
+        layout.addWidget(self.subtitle)
         
         # Add spacing
         layout.addSpacing(20)
         
         # Load DOIs button
-        self.load_button = QPushButton("📥 DOIs laden")
+        self.load_button = QPushButton("📥 DOIs und Landing Page URLs laden")
         self.load_button.setMinimumHeight(50)
         self.load_button.clicked.connect(self._on_load_dois_clicked)
         layout.addWidget(self.load_button)
@@ -132,6 +139,12 @@ class MainWindow(QMainWindow):
         self.update_button.setMinimumHeight(50)
         self.update_button.clicked.connect(self._on_update_urls_clicked)
         layout.addWidget(self.update_button)
+        
+        # Theme toggle button
+        self.theme_button = QPushButton(self._get_theme_button_text())
+        self.theme_button.setMinimumHeight(40)
+        self.theme_button.clicked.connect(self._on_theme_toggle)
+        layout.addWidget(self.theme_button)
         
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -156,10 +169,20 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         
         # Initial log message
-        self._log("Bereit. Klicke auf 'DOIs laden' um zu beginnen.")
+        self._log("Bereit. Klicke auf 'DOIs und Landing Page URLs laden' um zu beginnen.")
     
     def _apply_styles(self):
-        """Apply modern styling to the window."""
+        """Apply styling to the window based on current theme."""
+        stylesheet = self.theme_manager.get_main_window_stylesheet()
+        self.setStyleSheet(stylesheet)
+        
+        # Update subtitle color based on effective theme
+        effective_theme = self.theme_manager.get_effective_theme()
+        subtitle_color = "#999" if effective_theme == Theme.DARK else "#666"
+        self.subtitle.setStyleSheet(f"color: {subtitle_color};")
+    
+    def _apply_styles_old(self):
+        """Legacy styling method - kept for reference."""
         self.setStyleSheet("""
             QMainWindow {
                 background-color: #f5f5f5;
@@ -211,6 +234,50 @@ class MainWindow(QMainWindow):
         """
         self.log_text.append(message)
         logger.info(message)
+    
+    def _get_theme_button_text(self) -> str:
+        """
+        Get appropriate button text based on current theme.
+        
+        Returns:
+            str: Button text
+        """
+        current_theme = self.theme_manager.get_current_theme()
+        if current_theme == Theme.AUTO:
+            effective = self.theme_manager.get_effective_theme()
+            return f"🔄 Auto ({'Light' if effective == Theme.LIGHT else 'Dark'})"
+        elif current_theme == Theme.LIGHT:
+            return "🌙 Dark Mode"
+        else:
+            return "☀️ Light Mode"
+    
+    def _on_theme_toggle(self):
+        """Handle theme toggle button click."""
+        self.theme_manager.toggle_theme()
+    
+    def _on_theme_changed(self, theme: Theme):
+        """
+        Handle theme change.
+        
+        Args:
+            theme: New theme
+        """
+        # Update button text
+        self.theme_button.setText(self._get_theme_button_text())
+        
+        # Log message
+        if theme == Theme.AUTO:
+            effective = self.theme_manager.get_effective_theme()
+            self._log(f"🔄 Auto Mode aktiviert (System: {('Light' if effective == Theme.LIGHT else 'Dark')} Mode)")
+        elif theme == Theme.DARK:
+            self._log("🌙 Dark Mode aktiviert")
+        else:
+            self._log("☀️ Light Mode aktiviert")
+        
+        # Apply new styles
+        self._apply_styles()
+        
+        logger.info(f"Theme changed to: {theme.value}")
     
     def _on_load_dois_clicked(self):
         """Handle load DOIs button click."""
@@ -493,7 +560,7 @@ class MainWindow(QMainWindow):
                 f.write("=" * 70 + "\n")
                 f.write(f"Datum: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write("\n")
-                f.write(f"ZUSAMMENFASSUNG:\n")
+                f.write("ZUSAMMENFASSUNG:\n")
                 f.write(f"  Gesamt: {success_count + error_count} DOIs\n")
                 f.write(f"  Erfolgreich: {success_count}\n")
                 f.write(f"  Fehlgeschlagen: {error_count}\n")
