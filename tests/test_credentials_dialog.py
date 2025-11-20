@@ -71,7 +71,7 @@ class TestCredentialsDialogWidgets:
 class TestCredentialsDialogValidation:
     """Test input validation."""
     
-    def test_empty_username_validation(self, dialog, qtbot):
+    def test_empty_username_validation(self, dialog):
         """Test validation fails with empty username."""
         dialog.username_input.clear()
         dialog.password_input.setText("password123")
@@ -82,7 +82,7 @@ class TestCredentialsDialogValidation:
         # Dialog should not be accepted
         assert dialog.result() != QDialog.Accepted
     
-    def test_empty_password_validation(self, dialog, qtbot):
+    def test_empty_password_validation(self, dialog):
         """Test validation fails with empty password."""
         dialog.username_input.setText("TIB.GFZ")
         dialog.password_input.clear()
@@ -93,7 +93,7 @@ class TestCredentialsDialogValidation:
         # Dialog should not be accepted
         assert dialog.result() != QDialog.Accepted
     
-    def test_valid_credentials(self, dialog, qtbot):
+    def test_valid_credentials(self, dialog):
         """Test validation succeeds with valid credentials."""
         dialog.username_input.setText("TIB.GFZ")
         dialog.password_input.setText("password123")
@@ -124,10 +124,11 @@ class TestCredentialsDialogGetCredentials:
         credentials = (
             dialog.username_input.text().strip(),
             dialog.password_input.text().strip(),
+            None,  # csv_path is None in export mode
             dialog.test_api_checkbox.isChecked()
         )
         
-        assert credentials == ("TIB.GFZ", "secret", False)
+        assert credentials == ("TIB.GFZ", "secret", None, False)
     
     def test_get_credentials_with_test_api(self, qapp, qtbot):
         """Test getting credentials with test API checked."""
@@ -144,10 +145,11 @@ class TestCredentialsDialogGetCredentials:
         credentials = (
             dialog.username_input.text().strip(),
             dialog.password_input.text().strip(),
+            None,  # csv_path is None in export mode
             dialog.test_api_checkbox.isChecked()
         )
         
-        assert credentials == ("TEST.USER", "testpass", True)
+        assert credentials == ("TEST.USER", "testpass", None, True)
     
     def test_get_credentials_cancelled(self, qapp, qtbot):
         """Test get_credentials returns None when cancelled."""
@@ -177,11 +179,14 @@ class TestCredentialsDialogGetCredentials:
         credentials = (
             dialog.username_input.text().strip(),
             dialog.password_input.text().strip(),
+            None,  # csv_path is None in export mode
             dialog.test_api_checkbox.isChecked()
         )
         
         assert credentials[0] == "TIB.GFZ"
         assert credentials[1] == "password"
+        assert credentials[2] is None  # csv_path
+        assert credentials[3] is False  # use_test_api
 
 
 class TestCredentialsDialogInteraction:
