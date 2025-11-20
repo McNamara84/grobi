@@ -179,10 +179,7 @@ class MainWindow(QMainWindow):
         # Update subtitle color based on effective theme
         effective_theme = self.theme_manager.get_effective_theme()
         subtitle_color = "#999" if effective_theme == Theme.DARK else "#666"
-        # Find subtitle label (second QLabel)
-        labels = self.findChildren(QLabel)
-        if len(labels) > 1:
-            labels[1].setStyleSheet(f"color: {subtitle_color};")
+        self.subtitle.setStyleSheet(f"color: {subtitle_color};")
     
     def _apply_styles_old(self):
         """Legacy styling method - kept for reference."""
@@ -248,7 +245,7 @@ class MainWindow(QMainWindow):
         current_theme = self.theme_manager.get_current_theme()
         if current_theme == Theme.AUTO:
             effective = self.theme_manager.get_effective_theme()
-            return f"🔄 Auto ({('Light' if effective == Theme.LIGHT else 'Dark')})"
+            return f"🔄 Auto ({'Light' if effective == Theme.LIGHT else 'Dark'})"
         elif current_theme == Theme.LIGHT:
             return "🌙 Dark Mode"
         else:
@@ -563,7 +560,7 @@ class MainWindow(QMainWindow):
                 f.write("=" * 70 + "\n")
                 f.write(f"Datum: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write("\n")
-                f.write(f"ZUSAMMENFASSUNG:\n")
+                f.write("ZUSAMMENFASSUNG:\n")
                 f.write(f"  Gesamt: {success_count + error_count} DOIs\n")
                 f.write(f"  Erfolgreich: {success_count}\n")
                 f.write(f"  Fehlgeschlagen: {error_count}\n")
