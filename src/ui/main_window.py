@@ -784,8 +784,8 @@ class MainWindow(QMainWindow):
     
     def _on_update_authors_clicked(self):
         """Handle update authors button click."""
-        # Show credentials dialog in update mode
-        dialog = CredentialsDialog(self, mode="update")
+        # Show credentials dialog in update_authors mode
+        dialog = CredentialsDialog(self, mode="update_authors")
         credentials = dialog.get_credentials()
         
         if credentials is None:
@@ -793,6 +793,12 @@ class MainWindow(QMainWindow):
             return
         
         username, password, csv_path, use_test_api = credentials
+        
+        # Store credentials for second worker (actual update)
+        self._authors_update_username = username
+        self._authors_update_password = password
+        self._authors_update_csv_path = csv_path
+        self._authors_update_use_test_api = use_test_api
         
         api_type = "Test-API" if use_test_api else "Produktions-API"
         self._log(f"Starte Autoren-Update für Benutzer '{username}' ({api_type})...")
@@ -922,11 +928,11 @@ class MainWindow(QMainWindow):
         self._log("Starte ECHTES Update der Autoren-Metadaten...")
         self._log("=" * 60)
         
-        # Get credentials from previous worker (they're stored in the worker)
-        username = self.authors_update_worker.username
-        password = self.authors_update_worker.password
-        csv_path = self.authors_update_worker.csv_path
-        use_test_api = self.authors_update_worker.use_test_api
+        # Get credentials from stored instance variables (not from worker which may be deleted)
+        username = self._authors_update_username
+        password = self._authors_update_password
+        csv_path = self._authors_update_csv_path
+        use_test_api = self._authors_update_use_test_api
         
         # Disable buttons again
         self.load_button.setEnabled(False)

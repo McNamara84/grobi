@@ -111,6 +111,83 @@ class TestMainWindowDialogIntegration:
         assert main_window.worker is None
 
 
+class TestMainWindowAuthorsUpdate:
+    """Test authors update functionality and credential storage."""
+    
+    @patch('src.ui.main_window.CredentialsDialog')
+    @patch('src.ui.main_window.AuthorsUpdateWorker')
+    @patch('src.ui.main_window.QThread')
+    def test_credentials_stored_before_worker_creation(self, mock_thread_class, mock_worker_class, mock_dialog_class, main_window):
+        """Test that credentials are stored in instance variables before creating worker."""
+        # Mock dialog to return credentials
+        mock_dialog = Mock()
+        mock_dialog.get_credentials.return_value = ("test_user", "test_pass", "/path/to/file.csv", True)
+        mock_dialog_class.return_value = mock_dialog
+        
+        # Mock worker and thread
+        mock_worker = Mock()
+        mock_thread = Mock()
+        mock_worker_class.return_value = mock_worker
+        mock_thread_class.return_value = mock_thread
+        
+        # Call the method
+        main_window._on_update_authors_clicked()
+        
+        # Verify credentials are stored in instance variables
+        assert hasattr(main_window, '_authors_update_username')
+        assert hasattr(main_window, '_authors_update_password')
+        assert hasattr(main_window, '_authors_update_csv_path')
+        assert hasattr(main_window, '_authors_update_use_test_api')
+        
+        assert main_window._authors_update_username == "test_user"
+        assert main_window._authors_update_password == "test_pass"
+        assert main_window._authors_update_csv_path == "/path/to/file.csv"
+        assert main_window._authors_update_use_test_api is True
+        
+        # Verify worker was created with correct credentials
+        mock_worker_class.assert_called_once_with(
+            "test_user", "test_pass", "/path/to/file.csv", True, dry_run_only=True
+        )
+    
+    @patch('src.ui.main_window.AuthorsUpdateWorker')
+    @patch('src.ui.main_window.QThread')
+    def test_second_worker_uses_stored_credentials(self, mock_thread_class, mock_worker_class, main_window):
+        """Test that second worker (actual update) uses stored credentials, not deleted worker."""
+        # Set up stored credentials (as if first worker was created)
+        main_window._authors_update_username = "stored_user"
+        main_window._authors_update_password = "stored_pass"
+        main_window._authors_update_csv_path = "/stored/path.csv"
+        main_window._authors_update_use_test_api = False
+        
+        # Mock worker and thread
+        mock_worker = Mock()
+        mock_thread = Mock()
+        mock_worker_class.return_value = mock_worker
+        mock_thread_class.return_value = mock_thread
+        
+        # Call the method that starts actual update (second worker)
+        main_window._start_actual_authors_update()
+        
+        # Verify worker was created with stored credentials
+        mock_worker_class.assert_called_once_with(
+            "stored_user", "stored_pass", "/stored/path.csv", False, dry_run_only=False
+        )
+    
+    @patch('src.ui.main_window.CredentialsDialog')
+    def test_authors_update_cancelled(self, mock_dialog_class, main_window):
+        """Test that nothing happens when authors update dialog is cancelled."""
+        # Mock dialog to return None (cancelled)
+        mock_dialog = Mock()
+        mock_dialog.get_credentials.return_value = None
+        mock_dialog_class.return_value = mock_dialog
+        
+        # Call method
+        main_window._on_update_authors_clicked()
+        
+        # Verify no credentials stored
+        assert not hasattr(main_window, '_authors_update_username')
+
+
 class TestMainWindowCleanup:
     """Test cleanup functionality."""
     

@@ -205,7 +205,6 @@ class AuthorsUpdateWorker(QObject):
                 return
             
             # Step 4: Perform actual updates (only if not dry_run_only)
-            logger.info("Starting actual creator updates...")
             success_count = 0
             error_count = 0
             error_list = []
