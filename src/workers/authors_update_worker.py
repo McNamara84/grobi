@@ -126,10 +126,10 @@ class AuthorsUpdateWorker(QObject):
                         result = {
                             'doi': doi,
                             'valid': False,
-                            'message': f"DOI {doi} nicht gefunden"
+                            'message': f"DOI {doi} nicht gefunden oder nicht erreichbar"
                         }
                         validation_results.append(result)
-                        logger.warning(f"DOI not found: {doi}")
+                        logger.warning(f"DOI not found or unreachable: {doi}")
                         continue
                     
                     # Cache metadata for potential updates

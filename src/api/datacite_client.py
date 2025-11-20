@@ -521,7 +521,7 @@ class DataCiteClient:
         except requests.exceptions.Timeout:
             error_msg = f"Zeitüberschreitung bei DOI {doi}"
             logger.error(f"Timeout fetching DOI metadata: {doi}")
-            raise DataCiteAPIError(error_msg)
+            return None  # Return None like 404 - let caller handle this gracefully
         
         except requests.exceptions.ConnectionError as e:
             error_msg = "Verbindung zur DataCite API fehlgeschlagen. Bitte überprüfe deine Internetverbindung."
@@ -533,7 +533,7 @@ class DataCiteClient:
             logger.error(f"Request exception: {e}")
             raise NetworkError(error_msg)
     
-    def validate_creators_match(self, doi: str, csv_creators: List[Dict[str, str]]) -> Tuple[bool, str]:
+    def validate_creators_match(self, doi: str, csv_creators: List[Dict[str, Any]]) -> Tuple[bool, str]:
         """
         Validate that CSV creators match the current DataCite metadata exactly.
         
@@ -561,7 +561,7 @@ class DataCiteClient:
             return False, f"Fehler beim Abrufen der Metadaten: {str(e)}"
         
         if metadata is None:
-            return False, f"DOI {doi} nicht gefunden"
+            return False, f"DOI {doi} nicht gefunden oder nicht erreichbar"
         
         # Extract current creators from metadata
         try:
@@ -605,7 +605,7 @@ class DataCiteClient:
     def update_doi_creators(
         self, 
         doi: str, 
-        new_creators: List[Dict[str, str]], 
+        new_creators: List[Dict[str, Any]], 
         current_metadata: Dict[str, Any]
     ) -> Tuple[bool, str]:
         """
