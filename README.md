@@ -20,10 +20,12 @@ A modern GUI tool for GFZ Data Services to manage DataCite DOIs.
 ### Technical Features
 - 🧪 Support for test and production API
 - 🎨 Modern user interface with PySide6 (Qt6)
+- 🌓 **Dark Mode Support**: Auto-detection of system theme with manual override (AUTO/LIGHT/DARK)
 - ⚡ Non-blocking API calls with progress indication
 - 📈 Real-time progress tracking for bulk operations
 - 🛡️ Comprehensive error handling and validation
 - 📋 CSV format validation (DOI and URL format checks)
+- 💾 Persistent theme preference across sessions
 
 ## Download
 
@@ -160,7 +162,7 @@ python -m src.main
 **Step-by-Step Guide:**
 
 1. **Start application**: Run `python -m src.main` or double-click `GROBI.exe`
-2. **Load DOIs**: Click the "📥 DOIs laden" (Load DOIs) button
+2. **Load DOIs**: Click the "📥 DOIs & Landing Page URLs laden" (Load DOIs and landing page URLs) button
 3. **Enter credentials**: 
    - Enter your DataCite username (e.g., `TIB.GFZ`)
    - Enter your DataCite password
@@ -250,6 +252,38 @@ FEHLER:
 ======================================================================
 ```
 
+### Workflow 3: Theme Switching
+
+**Change Application Theme:**
+
+The application supports three theme modes:
+
+1. **🔄 Auto Mode** (Default):
+   - Automatically detects Windows system theme
+   - Switches between Light and Dark based on your system settings
+   - Button shows: `🔄 Auto (Light)` or `🔄 Auto (Dark)`
+
+2. **🌙 Dark Mode**:
+   - Manually activate dark theme
+   - Dark background (#1e1e1e) with light text (#d4d4d4)
+   - Optimized for low-light environments
+   - Button shows: `☀️ Light Mode` (to switch back)
+
+3. **☀️ Light Mode**:
+   - Manually activate light theme
+   - Light background (#f5f5f5) with dark text (#333)
+   - Classic appearance
+   - Button shows: `🌙 Dark Mode` (to switch)
+
+**How to Switch:**
+- Click the theme button in the main window
+- Cycles through: AUTO → LIGHT → DARK → AUTO
+- Theme preference is saved and restored on next launch
+
+**System Theme Detection:**
+- Windows 10/11: Automatically detects system-wide dark mode setting
+- Settings → Personalization → Colors → "Choose your color"
+
 ### Notes:
 
 - The application retrieves **all** DOIs registered with the specified username
@@ -259,6 +293,7 @@ FEHLER:
 - CSV files are automatically overwritten if they already exist
 - Update process continues even if individual DOIs fail
 - Each update creates a timestamped log file for auditing
+- Theme preference persists across application restarts
 
 ## Project Structure
 
@@ -268,7 +303,8 @@ grobi/
 │   ├── main.py                      # Entry point
 │   ├── ui/                          # GUI components
 │   │   ├── main_window.py          # Main window with DOI export and URL update
-│   │   └── credentials_dialog.py   # Credentials dialog (dual mode)
+│   │   ├── credentials_dialog.py   # Credentials dialog (dual mode)
+│   │   └── theme_manager.py        # Theme management (AUTO/LIGHT/DARK)
 │   ├── api/                         # DataCite API client
 │   │   └── datacite_client.py      # API methods (fetch, update)
 │   ├── workers/                     # Background workers
@@ -276,10 +312,11 @@ grobi/
 │   └── utils/                       # Utility functions
 │       ├── csv_exporter.py         # CSV export functionality
 │       └── csv_parser.py           # CSV parsing and validation
-├── tests/                           # Unit tests (96 tests, 77% coverage)
+├── tests/                           # Unit tests (121 tests, 77% coverage)
 │   ├── test_csv_parser.py          # CSV parsing tests
 │   ├── test_datacite_client_update.py  # API update tests
-│   └── test_update_worker.py       # Worker tests
+│   ├── test_update_worker.py       # Worker tests
+│   └── test_theme_manager.py       # Theme management tests
 ├── requirements.txt                 # Production dependencies
 ├── requirements-dev.txt             # Development dependencies
 └── requirements-build.txt           # Build dependencies (Nuitka)
