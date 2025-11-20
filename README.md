@@ -162,7 +162,7 @@ python -m src.main
 **Step-by-Step Guide:**
 
 1. **Start application**: Run `python -m src.main` or double-click `GROBI.exe`
-2. **Load DOIs**: Click the "📥 DOIs & Landing Page URLs laden" (Load DOIs and landing page URLs) button
+2. **Load DOIs**: Click the "📥 DOIs und Landing Page URLs laden" (Load DOIs and landing page URLs) button
 3. **Enter credentials**: 
    - Enter your DataCite username (e.g., `TIB.GFZ`)
    - Enter your DataCite password
