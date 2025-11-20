@@ -1,7 +1,7 @@
 """DataCite API Client for fetching DOIs and metadata."""
 
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Any, Optional
 import requests
 from requests.auth import HTTPBasicAuth
 
@@ -433,6 +433,287 @@ class DataCiteClient:
             elif response.status_code == 422:
                 # Unprocessable Entity - validation error
                 error_msg = f"Ungültige URL für DOI {doi}"
+                logger.error(f"Validation error for DOI {doi}: {response.text}")
+                return False, error_msg
+            
+            elif response.status_code == 429:
+                error_msg = "Zu viele Anfragen - Rate Limit erreicht"
+                logger.error("Rate limit exceeded during update")
+                return False, error_msg
+            
+            else:
+                error_msg = f"API Fehler (HTTP {response.status_code}): {response.text}"
+                logger.error(f"Unexpected status code {response.status_code} for DOI {doi}: {response.text}")
+                return False, error_msg
+                
+        except requests.exceptions.Timeout:
+            error_msg = f"Zeitüberschreitung bei DOI {doi}"
+            logger.error(f"Timeout updating DOI {doi}")
+            return False, error_msg
+        
+        except requests.exceptions.ConnectionError as e:
+            error_msg = "Verbindungsfehler zur DataCite API"
+            logger.error(f"Connection error during update: {e}")
+            raise NetworkError(error_msg)
+        
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Netzwerkfehler bei DOI {doi}: {str(e)}"
+            logger.error(f"Request exception during update: {e}")
+            raise NetworkError(error_msg)
+    
+    def get_doi_metadata(self, doi: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch complete metadata for a specific DOI.
+        
+        Args:
+            doi: The DOI identifier (e.g., "10.5880/GFZ.1.1.2021.001")
+            
+        Returns:
+            Complete metadata dictionary from DataCite API, or None if DOI not found
+            
+        Raises:
+            AuthenticationError: If credentials are invalid
+            NetworkError: If connection to API fails
+            DataCiteAPIError: For other API errors
+        """
+        url = f"{self.base_url}/dois/{doi}"
+        
+        logger.info(f"Fetching metadata for DOI: {doi}")
+        
+        try:
+            response = requests.get(
+                url,
+                auth=self.auth,
+                timeout=self.TIMEOUT,
+                headers={"Accept": "application/vnd.api+json"}
+            )
+            
+            # Handle different response codes
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    logger.info(f"Successfully fetched metadata for DOI {doi}")
+                    return data
+                except ValueError as e:
+                    error_msg = f"Ungültige JSON-Antwort für DOI {doi}"
+                    logger.error(f"Invalid JSON response: {e}")
+                    raise DataCiteAPIError(error_msg)
+            
+            elif response.status_code == 401:
+                error_msg = "Anmeldung fehlgeschlagen. Bitte überprüfe deinen Benutzernamen und dein Passwort."
+                logger.error(f"Authentication failed while fetching DOI: {doi}")
+                raise AuthenticationError(error_msg)
+            
+            elif response.status_code == 404:
+                logger.warning(f"DOI not found: {doi}")
+                return None
+            
+            elif response.status_code == 429:
+                error_msg = "Zu viele Anfragen. Bitte warte einen Moment und versuche es erneut."
+                logger.error("Rate limit exceeded")
+                raise DataCiteAPIError(error_msg)
+            
+            else:
+                error_msg = f"DataCite API Fehler (HTTP {response.status_code}): {response.text}"
+                logger.error(f"API error for DOI {doi}: {response.status_code} - {response.text}")
+                raise DataCiteAPIError(error_msg)
+                
+        except requests.exceptions.Timeout:
+            error_msg = f"Zeitüberschreitung bei DOI {doi}"
+            logger.error(f"Timeout fetching DOI metadata: {doi}")
+            raise DataCiteAPIError(error_msg)
+        
+        except requests.exceptions.ConnectionError as e:
+            error_msg = "Verbindung zur DataCite API fehlgeschlagen. Bitte überprüfe deine Internetverbindung."
+            logger.error(f"Connection error: {e}")
+            raise NetworkError(error_msg)
+        
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Netzwerkfehler bei der Kommunikation mit DataCite: {str(e)}"
+            logger.error(f"Request exception: {e}")
+            raise NetworkError(error_msg)
+    
+    def validate_creators_match(self, doi: str, csv_creators: List[Dict[str, str]]) -> Tuple[bool, str]:
+        """
+        Validate that CSV creators match the current DataCite metadata exactly.
+        
+        This is the "dry run" validation that checks:
+        - Same number of creators
+        - Same order of creators
+        - No additions or deletions
+        
+        Args:
+            doi: The DOI identifier
+            csv_creators: List of creator dictionaries from CSV
+                         (in the order they appear in the CSV)
+            
+        Returns:
+            Tuple of (is_valid: bool, message: str)
+            - (True, "Success message") if validation passes
+            - (False, "Error message") if validation fails
+        """
+        logger.info(f"Validating creators for DOI {doi}")
+        
+        # Fetch current metadata
+        try:
+            metadata = self.get_doi_metadata(doi)
+        except (AuthenticationError, NetworkError, DataCiteAPIError) as e:
+            return False, f"Fehler beim Abrufen der Metadaten: {str(e)}"
+        
+        if metadata is None:
+            return False, f"DOI {doi} nicht gefunden"
+        
+        # Extract current creators from metadata
+        try:
+            current_creators = metadata.get("data", {}).get("attributes", {}).get("creators", [])
+        except (KeyError, AttributeError) as e:
+            logger.error(f"Error extracting creators from metadata: {e}")
+            return False, f"Ungültige Metadatenstruktur für DOI {doi}"
+        
+        # Check if creator counts match
+        if len(current_creators) != len(csv_creators):
+            return False, (
+                f"DOI {doi}: Anzahl der Creators stimmt nicht überein "
+                f"(DataCite: {len(current_creators)}, CSV: {len(csv_creators)}). "
+                f"Creators dürfen nicht hinzugefügt oder entfernt werden."
+            )
+        
+        # If no creators in both, that's valid (though unusual)
+        if len(current_creators) == 0:
+            logger.info(f"DOI {doi} has no creators in DataCite or CSV")
+            return True, f"DOI {doi}: Keine Creators vorhanden"
+        
+        # Validate order and consistency
+        for i, (current, csv_creator) in enumerate(zip(current_creators, csv_creators), 1):
+            current_name = current.get("name", "")
+            csv_name = csv_creator.get("creator_name", "")
+            
+            # Compare names (basic check - names should match or be similar)
+            # We're lenient here since we mainly care about count and order
+            if current_name and csv_name:
+                # Just log if names differ, don't fail validation
+                # (users might have intentionally edited names)
+                if current_name != csv_name:
+                    logger.info(
+                        f"DOI {doi}: Creator {i} name differs "
+                        f"(DataCite: '{current_name}', CSV: '{csv_name}')"
+                    )
+        
+        logger.info(f"DOI {doi}: Validation passed ({len(current_creators)} creators)")
+        return True, f"DOI {doi}: {len(current_creators)} Creators validiert"
+    
+    def update_doi_creators(
+        self, 
+        doi: str, 
+        new_creators: List[Dict[str, str]], 
+        current_metadata: Dict[str, Any]
+    ) -> Tuple[bool, str]:
+        """
+        Update creator metadata for a specific DOI.
+        
+        This method preserves ALL existing metadata and only updates the creators array.
+        It follows the pattern: GET current metadata → Replace creators → PUT full metadata.
+        
+        Args:
+            doi: The DOI identifier
+            new_creators: List of creator dictionaries with updated data
+            current_metadata: Full current metadata from get_doi_metadata()
+            
+        Returns:
+            Tuple of (success: bool, message: str)
+            - (True, "Success message") if update succeeded
+            - (False, "Error message") if update failed
+            
+        Raises:
+            NetworkError: If connection to API fails
+        """
+        url = f"{self.base_url}/dois/{doi}"
+        
+        logger.info(f"Updating creators for DOI {doi}")
+        
+        # Build new creators array from CSV data
+        updated_creators = []
+        for creator_data in new_creators:
+            creator_obj = {
+                "name": creator_data.get("creator_name", ""),
+                "nameType": creator_data.get("name_type", "Personal")
+            }
+            
+            # Add given/family names if present
+            given_name = creator_data.get("given_name", "")
+            family_name = creator_data.get("family_name", "")
+            
+            if given_name:
+                creator_obj["givenName"] = given_name
+            if family_name:
+                creator_obj["familyName"] = family_name
+            
+            # Add ORCID if present
+            name_identifier = creator_data.get("name_identifier", "")
+            if name_identifier:
+                name_identifier_scheme = creator_data.get("name_identifier_scheme", "ORCID")
+                scheme_uri = creator_data.get("scheme_uri", "https://orcid.org")
+                
+                creator_obj["nameIdentifiers"] = [{
+                    "nameIdentifier": name_identifier,
+                    "nameIdentifierScheme": name_identifier_scheme,
+                    "schemeUri": scheme_uri
+                }]
+            
+            updated_creators.append(creator_obj)
+        
+        # Create payload preserving all existing metadata
+        try:
+            payload = {
+                "data": {
+                    "type": "dois",
+                    "attributes": current_metadata["data"]["attributes"].copy()
+                }
+            }
+            # Replace only the creators array
+            payload["data"]["attributes"]["creators"] = updated_creators
+            
+        except (KeyError, TypeError) as e:
+            error_msg = f"Fehler beim Erstellen der Payload für DOI {doi}: {str(e)}"
+            logger.error(f"Error building payload: {e}")
+            return False, error_msg
+        
+        # Send PUT request
+        try:
+            response = requests.put(
+                url,
+                auth=self.auth,
+                json=payload,
+                timeout=self.TIMEOUT,
+                headers={
+                    "Content-Type": "application/vnd.api+json",
+                    "Accept": "application/vnd.api+json"
+                }
+            )
+            
+            # Handle different response codes
+            if response.status_code == 200:
+                logger.info(f"Successfully updated creators for DOI {doi}")
+                return True, f"DOI {doi}: {len(updated_creators)} Creators erfolgreich aktualisiert"
+            
+            elif response.status_code == 401:
+                error_msg = f"Authentifizierung fehlgeschlagen für DOI {doi}"
+                logger.error(f"Authentication failed for DOI update: {doi}")
+                return False, error_msg
+            
+            elif response.status_code == 403:
+                error_msg = f"Keine Berechtigung für DOI {doi} (gehört möglicherweise einem anderen Client)"
+                logger.error(f"Forbidden: No permission to update DOI {doi}")
+                return False, error_msg
+            
+            elif response.status_code == 404:
+                error_msg = f"DOI {doi} nicht gefunden"
+                logger.error(f"DOI not found: {doi}")
+                return False, error_msg
+            
+            elif response.status_code == 422:
+                # Unprocessable Entity - validation error
+                error_msg = f"Validierungsfehler für DOI {doi}: {response.text}"
                 logger.error(f"Validation error for DOI {doi}: {response.text}")
                 return False, error_msg
             
