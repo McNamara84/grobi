@@ -45,7 +45,7 @@ class TestUpdateWorker:
         assert worker.use_test_api is True
         assert worker._is_running is False
     
-    def test_worker_run_success(self, worker, qtbot):
+    def test_worker_run_success(self, worker):
         """Test successful worker run."""
         # Mock DataCiteClient
         mock_client = Mock()
@@ -74,7 +74,7 @@ class TestUpdateWorker:
         assert error_count == 0
         assert len(error_list) == 0
     
-    def test_worker_run_with_errors(self, worker, qtbot):
+    def test_worker_run_with_errors(self, worker):
         """Test worker run with some failed updates."""
         # Mock DataCiteClient - first DOI fails, second succeeds
         mock_client = Mock()
@@ -96,7 +96,7 @@ class TestUpdateWorker:
         assert len(error_list) == 1
         assert "DOI not found" in error_list[0]
     
-    def test_worker_run_csv_parse_error(self, qtbot):
+    def test_worker_run_csv_parse_error(self):
         """Test worker run with CSV parse error."""
         # Create worker with invalid CSV path
         worker = UpdateWorker(
@@ -122,7 +122,7 @@ class TestUpdateWorker:
         assert len(finished_signal) == 1
         assert finished_signal[0] == (0, 0, [])
     
-    def test_worker_run_network_error(self, worker, qtbot):
+    def test_worker_run_network_error(self, worker):
         """Test worker run with network error during update."""
         # Mock DataCiteClient to raise NetworkError
         mock_client = Mock()
@@ -157,7 +157,7 @@ class TestUpdateWorker:
         assert hasattr(worker, 'finished')
         assert hasattr(worker, 'error_occurred')
     
-    def test_worker_progress_updates(self, worker, qtbot):
+    def test_worker_progress_updates(self, worker):
         """Test that progress updates are emitted correctly."""
         mock_client = Mock()
         mock_client.update_doi_url.return_value = (True, "Success")
@@ -172,7 +172,7 @@ class TestUpdateWorker:
         update_messages = [msg for _, _, msg in progress_signals if "Aktualisiere DOI" in msg]
         assert len(update_messages) == 2
     
-    def test_worker_unexpected_error(self, worker, qtbot):
+    def test_worker_unexpected_error(self, worker):
         """Test worker handles unexpected errors gracefully."""
         # Mock DataCiteClient to raise unexpected exception
         mock_client = Mock()

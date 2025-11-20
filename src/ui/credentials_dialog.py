@@ -14,7 +14,6 @@ class CredentialsDialog(QDialog):
     
     # Signals
     csv_file_selected = Signal(str)  # Emitted when CSV file is selected
-    update_started = Signal(str, str, str, bool)  # username, password, csv_path, use_test_api
     
     def __init__(self, parent=None, mode="export"):
         """
@@ -248,16 +247,19 @@ class CredentialsDialog(QDialog):
         Get the entered credentials.
         
         Returns:
-            For export mode: Tuple of (username, password, use_test_api) or None if canceled
-            For update mode: Tuple of (username, password, csv_path, use_test_api) or None if canceled
+            Tuple of (username, password, csv_path, use_test_api) or None if canceled.
+            For export mode, csv_path will be None.
         """
         if self.exec() == QDialog.Accepted:
             username = self.username_input.text().strip()
             password = self.password_input.text().strip()
             use_test_api = self.test_api_checkbox.isChecked()
             
+            # Always return 4-tuple for consistency
             if self.mode == "update":
-                return (username, password, self.csv_file_path, use_test_api)
+                csv_path = self.csv_file_path
             else:
-                return (username, password, use_test_api)
+                csv_path = None
+            
+            return (username, password, csv_path, use_test_api)
         return None

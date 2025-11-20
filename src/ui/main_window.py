@@ -221,7 +221,8 @@ class MainWindow(QMainWindow):
             self._log("Vorgang abgebrochen.")
             return
         
-        username, password, use_test_api = credentials
+        username, password, csv_path, use_test_api = credentials
+        # csv_path is None in export mode, we don't need it here
         
         api_type = "Test-API" if use_test_api else "Produktions-API"
         self._log(f"Starte Abruf für Benutzer '{username}' ({api_type})...")
@@ -355,11 +356,9 @@ class MainWindow(QMainWindow):
         self.update_worker.finished.connect(self._on_update_finished)
         self.update_worker.error_occurred.connect(self._on_update_error)
         
-        # Clean up after worker finishes or errors
+        # Clean up after worker finishes (finished is always emitted, even on error)
         self.update_worker.finished.connect(self.update_worker.deleteLater)
-        self.update_worker.error_occurred.connect(self.update_worker.deleteLater)
         self.update_worker.finished.connect(self.update_thread.quit)
-        self.update_worker.error_occurred.connect(self.update_thread.quit)
         
         # Clean up thread when it finishes
         self.update_thread.finished.connect(self.update_thread.deleteLater)
@@ -409,11 +408,20 @@ class MainWindow(QMainWindow):
         total = success_count + error_count
         
         self._log("=" * 60)
-        self._log(f"Update abgeschlossen: {success_count}/{total} erfolgreich")
+        if total > 0:
+            self._log(f"Update abgeschlossen: {success_count}/{total} erfolgreich")
+        else:
+            self._log("Update abgeschlossen: Keine DOIs verarbeitet")
         self._log("=" * 60)
         
         # Show summary dialog
-        if error_count == 0:
+        if total == 0:
+            QMessageBox.warning(
+                self,
+                "Keine DOIs verarbeitet",
+                "Die CSV-Datei enthielt keine gültigen DOIs zum Verarbeiten."
+            )
+        elif error_count == 0:
             QMessageBox.information(
                 self,
                 "Update erfolgreich",
