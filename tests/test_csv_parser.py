@@ -16,7 +16,10 @@ class TestCSVParser:
             "10.5880/GFZ.1.1.2021.001",
             "10.1234/example",
             "10.12345/test-doi",
-            "10.1000/182"
+            "10.1000/182",
+            "10.123/test",  # 3-digit registrant code (now valid)
+            "10.1/test",    # 1-digit registrant code (now valid)
+            "10.12/test"    # 2-digit registrant code (now valid)
         ]
         
         for doi in valid_dois:
@@ -27,8 +30,9 @@ class TestCSVParser:
         invalid_dois = [
             "",
             "11.5880/test",  # Wrong prefix
-            "10.123/test",  # Registrant code too short
-            "10/5880/test",  # Missing dot after registrant
+            "10/5880/test",  # Missing dot after prefix
+            "10./test",      # Missing registrant code
+            "10.123/",       # Empty suffix
             "not-a-doi",
             None
         ]

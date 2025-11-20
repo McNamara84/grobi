@@ -2,6 +2,7 @@
 
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -482,8 +483,6 @@ class MainWindow(QMainWindow):
             error_list: List of error messages
         """
         try:
-            from datetime import datetime
-            
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             log_filename = f"update_log_{timestamp}.txt"
             log_path = Path(os.getcwd()) / log_filename

@@ -19,14 +19,16 @@ class CSVParser:
     """Parser and validator for CSV files containing DOI and Landing Page URL data."""
     
     # DOI regex pattern (basic validation)
-    # Matches format: 10.XXXX/... where XXXX is the registrant code
-    DOI_PATTERN = re.compile(r'^10\.\d{4,}/\S+$')
+    # Matches format: 10.X/... where X is the registrant code (1+ digits)
+    # Note: Allows registrant codes of any length (1+ digits) to support all valid DOIs
+    DOI_PATTERN = re.compile(r'^10\.\d+/\S+$')
     
     # URL regex pattern (basic validation)
     # Matches http:// or https:// URLs
+    # Note: Relaxed pattern since DataCite API will perform final validation
     URL_PATTERN = re.compile(
         r'^https?://'  # http:// or https://
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,}\.?|'  # domain with 2+ char TLD
         r'localhost|'  # localhost
         r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # or IP
         r'(?::\d+)?'  # optional port
@@ -134,14 +136,16 @@ class CSVParser:
         """
         Validate DOI format.
         
-        A valid DOI starts with "10." followed by a registrant code (4+ digits),
+        A valid DOI starts with "10." followed by a registrant code (1+ digits),
         a forward slash, and a suffix.
         
         Examples:
         - Valid: 10.5880/GFZ.1.1.2021.001
         - Valid: 10.1234/example
-        - Invalid: 11.5880/test
-        - Invalid: 10.123/test (registrant code too short)
+        - Valid: 10.100/test (3-digit registrant code)
+        - Valid: 10.1/test (1-digit registrant code)
+        - Invalid: 11.5880/test (wrong prefix)
+        - Invalid: 10.123/ (empty suffix)
         
         Args:
             doi: DOI string to validate

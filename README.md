@@ -222,11 +222,12 @@ DOI,Landing_Page_URL
 ```
 
 **Validation Rules:**
-- ✅ DOI format: `10.XXXX/...` (where XXXX is 4+ digits)
+- ✅ DOI format: `10.X/...` (where X is 1+ digits, e.g., `10.1/test`, `10.5880/example`)
 - ✅ URL format: Must start with `http://` or `https://`
 - ✅ All rows must have both DOI and URL
 - ❌ Rows with missing DOI are skipped with warning
 - ❌ Rows with missing URL cause error
+- ℹ️ Final URL validation is performed by DataCite API
 
 **Update Log Example:**
 ```

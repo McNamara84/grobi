@@ -124,7 +124,9 @@ class UpdateWorker(QObject):
                     error_msg = f"Netzwerkfehler: {str(e)}"
                     logger.error(error_msg)
                     self.error_occurred.emit(error_msg)
-                    break
+                    # Emit finished signal before breaking to ensure UI cleanup
+                    self.finished.emit(success_count, error_count, error_list)
+                    return
                 
                 except Exception as e:
                     # Unexpected error - log and continue

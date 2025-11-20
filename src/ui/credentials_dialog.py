@@ -1,5 +1,7 @@
 """Credentials Dialog for DataCite API authentication."""
 
+from pathlib import Path
+
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, 
     QLineEdit, QCheckBox, QFormLayout,
@@ -223,7 +225,6 @@ class CredentialsDialog(QDialog):
         if file_path:
             self.csv_file_path = file_path
             # Show shortened path in label
-            from pathlib import Path
             self.csv_file_label.setText(Path(file_path).name)
             self.csv_file_label.setStyleSheet("color: #333; font-weight: bold;")
             self.csv_file_selected.emit(file_path)
