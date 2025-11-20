@@ -635,24 +635,26 @@ class DataCiteClient:
         updated_creators = []
         for creator_data in new_creators:
             creator_obj = {
-                "name": creator_data.get("creator_name", ""),
-                "nameType": creator_data.get("name_type", "Personal")
+                "name": creator_data.get("name", ""),
+                "nameType": creator_data.get("nameType", "Personal")
             }
             
-            # Add given/family names if present
-            given_name = creator_data.get("given_name", "")
-            family_name = creator_data.get("family_name", "")
+            # Add given/family names if present (only for Personal creators)
+            given_name = creator_data.get("givenName", "")
+            family_name = creator_data.get("familyName", "")
             
-            if given_name:
-                creator_obj["givenName"] = given_name
-            if family_name:
-                creator_obj["familyName"] = family_name
+            # Only add given/family names for Personal creators
+            if creator_obj["nameType"] == "Personal":
+                if given_name:
+                    creator_obj["givenName"] = given_name
+                if family_name:
+                    creator_obj["familyName"] = family_name
             
             # Add ORCID if present
-            name_identifier = creator_data.get("name_identifier", "")
+            name_identifier = creator_data.get("nameIdentifier", "")
             if name_identifier:
-                name_identifier_scheme = creator_data.get("name_identifier_scheme", "ORCID")
-                scheme_uri = creator_data.get("scheme_uri", "https://orcid.org")
+                name_identifier_scheme = creator_data.get("nameIdentifierScheme", "ORCID")
+                scheme_uri = creator_data.get("schemeUri", "https://orcid.org")
                 
                 creator_obj["nameIdentifiers"] = [{
                     "nameIdentifier": name_identifier,
