@@ -121,7 +121,7 @@ class CredentialsDialog(QDialog):
             self.account_selector.setToolTip(
                 "Wählen Sie einen gespeicherten Account oder geben Sie neue Zugangsdaten ein"
             )
-            self.account_selector.addItem("➥ Neue Zugangsdaten eingeben", None)
+            self.account_selector.addItem("➕ Neue Zugangsdaten eingeben", None)
             
             # Add saved accounts
             for account in self.saved_accounts:
@@ -371,6 +371,7 @@ class CredentialsDialog(QDialog):
             self.delete_button.setEnabled(False)
             self.selected_account_id = None
             self._loaded_password = None
+            self._is_new_credentials = True
         else:
             # Load account credentials
             account_id = self.account_selector.itemData(index)

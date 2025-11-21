@@ -28,7 +28,6 @@ class TestSaveCredentialsDialog:
         """Test dialog initialization."""
         assert dialog.username == "MOCK_TEST_USER"
         assert dialog.api_type == "production"
-        assert dialog.saved_account_id is None
         assert dialog.windowTitle() == "Zugangsdaten speichern"
         assert dialog.isModal()
 

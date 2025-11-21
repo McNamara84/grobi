@@ -44,8 +44,6 @@ class SaveCredentialsDialog(QDialog):
         super().__init__(parent)
         self.username = username
         self.api_type = api_type
-        self.credential_manager = CredentialManager()
-        self.saved_account_id = None
         
         self.setWindowTitle("Zugangsdaten speichern")
         self.setModal(True)
