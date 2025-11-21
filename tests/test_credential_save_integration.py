@@ -148,9 +148,20 @@ class TestCredentialsDialogNewCredentialsFlag:
 
         assert hasattr(CredentialsDialog, "is_new_credentials")
 
-    def test_new_credentials_flag_after_manual_entry(self, qtbot):
+    def test_new_credentials_flag_after_manual_entry(self, qtbot, monkeypatch):
         """Test that flag is True after manual credential entry."""
         from src.ui.credentials_dialog import CredentialsDialog
+        from src.utils.credential_manager import CredentialManager
+
+        # Mock CredentialManager to have no saved accounts
+        original_init = CredentialManager.__init__
+        
+        def mock_init(self):
+            original_init(self)
+            self.accounts = {}
+            self.last_used_account = None
+        
+        monkeypatch.setattr(CredentialManager, "__init__", mock_init)
 
         dialog = CredentialsDialog(None)
         qtbot.addWidget(dialog)

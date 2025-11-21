@@ -145,9 +145,6 @@ class CredentialsDialog(QDialog):
             separator = QLabel("─" * 50)
             separator.setStyleSheet("color: #ccc;")
             layout.addWidget(separator)
-            
-            # Pre-select last used account
-            self._preselect_last_used_account()
         
         # Form layout for input fields
         form_layout = QFormLayout()
@@ -224,13 +221,21 @@ class CredentialsDialog(QDialog):
         
         layout.addWidget(button_box)
         
-        # Connect input changes to validation for update mode
-        if self.mode == "update":
-            self.username_input.textChanged.connect(self._check_update_ready)
-            self.password_input.textChanged.connect(self._check_update_ready)
+        # Pre-select last used account AFTER ok_button is created
+        # (needs ok_button for _check_update_ready in update modes)
+        if self.credential_manager and self.saved_accounts:
+            self._preselect_last_used_account()
         
         # Set focus to username field
         self.username_input.setFocus()
+        
+        # Connect input changes to validation for update modes
+        if self.mode in ["update", "update_authors"]:
+            self.username_input.textChanged.connect(self._check_update_ready)
+            self.password_input.textChanged.connect(self._check_update_ready)
+        
+        # Log dialog initialization
+        logger.info(f"CredentialsDialog initialized: mode={self.mode}, ok_button_enabled={self.ok_button.isEnabled()}")
     
     def _apply_styles(self):
         """Apply styling to the dialog based on current theme."""
@@ -353,6 +358,8 @@ class CredentialsDialog(QDialog):
             if account_id == last_used_id:
                 self.account_selector.setCurrentIndex(i)
                 logger.info(f"Pre-selected last used account: {last_used_id}")
+                # Explicitly load credentials (setCurrentIndex doesn't trigger signal during init)
+                self._load_account_credentials(last_used_id)
                 break
     
     def _on_account_selected(self, index):
@@ -390,7 +397,7 @@ class CredentialsDialog(QDialog):
             # Make fields read-only
             self._enable_input_fields(False)
             
-            # Check if we can enable OK button (for update modes with CSV)
+            # Check if OK button should be enabled (for update modes, also needs CSV)
             self._check_update_ready()
             
             logger.info(f"Loaded credentials for account: {account_id}")
