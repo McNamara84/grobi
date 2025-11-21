@@ -8,11 +8,18 @@ Testet Sonderfälle wie:
 - Display-Name mit Sonderzeichen
 """
 
+import os
 import pytest
 from unittest.mock import Mock
 from PySide6.QtWidgets import QMessageBox
 
 from src.utils.credential_manager import CredentialManager
+
+# Skip GUI tests in CI environments (no display server available)
+skip_in_ci = pytest.mark.skipif(
+    os.environ.get('CI') == 'true',
+    reason="GUI tests require display server (not available in CI)"
+)
 
 
 class TestSaveCredentialsDialogEdgeCases:
@@ -23,6 +30,7 @@ class TestSaveCredentialsDialogEdgeCases:
         """Qt Application Fixture."""
         return qapp
 
+    @skip_in_ci
     def test_display_name_with_special_characters_accepted(self, app):
         """Test: Display-Name mit Sonderzeichen wird akzeptiert."""
         from src.ui.save_credentials_dialog import SaveCredentialsDialog
@@ -38,6 +46,7 @@ class TestSaveCredentialsDialogEdgeCases:
         assert dialog.name_input.text() == display_name
         assert dialog.save_button.isEnabled()  # Button sollte enabled sein
 
+    @skip_in_ci
     def test_ask_save_credentials_with_storage_error(self, app, monkeypatch):
         """Test: ask_save_credentials fängt Storage-Errors ab."""
         from src.ui.save_credentials_dialog import SaveCredentialsDialog
@@ -66,6 +75,7 @@ class TestSaveCredentialsDialogEdgeCases:
         assert result is False, "Sollte False bei Storage-Error zurückgeben"
         mock_critical.assert_called_once()  # Error dialog sollte angezeigt werden
 
+    @skip_in_ci
     def test_ask_save_credentials_success(self, app, monkeypatch):
         """Test: ask_save_credentials erfolgreich."""
         from src.ui.save_credentials_dialog import SaveCredentialsDialog
@@ -131,6 +141,7 @@ class TestMainWindowEdgeCases:
         """Qt Application Fixture."""
         return qapp
 
+    @skip_in_ci
     def test_slot_called_twice_in_quick_succession(self, app, monkeypatch):
         """Test: Slot wird zweimal schnell hintereinander aufgerufen."""
         from src.ui.main_window import MainWindow
@@ -150,6 +161,7 @@ class TestMainWindowEdgeCases:
         # Assert
         assert mock_ask.call_count == 2, "Dialog sollte beide Male aufgerufen werden"
 
+    @skip_in_ci
     def test_slot_handles_exception_gracefully(self, app, monkeypatch):
         """Test: Slot fängt Exceptions ab und loggt sie."""
         from src.ui.main_window import MainWindow

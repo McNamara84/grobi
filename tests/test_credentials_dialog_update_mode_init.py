@@ -5,12 +5,19 @@ in update/update_authors modes would fail because _preselect_last_used_account()
 was called before ok_button was created, causing _check_update_ready() to crash.
 """
 
+import os
 import pytest
 from unittest.mock import MagicMock, patch
 from PySide6.QtWidgets import QApplication
 
 from src.ui.credentials_dialog import CredentialsDialog
 from src.utils.credential_manager import CredentialAccount
+
+# Skip GUI tests in CI environments (no display server available)
+skip_in_ci = pytest.mark.skipif(
+    os.environ.get('CI') == 'true',
+    reason="GUI tests require display server (not available in CI)"
+)
 
 
 @pytest.fixture(scope="module")
@@ -51,6 +58,7 @@ class TestUpdateModeDialogInitWithSavedAccounts:
     before ok_button creation would cause AttributeError in _check_update_ready().
     """
     
+    @skip_in_ci
     def test_update_mode_dialog_opens_with_preselected_account(
         self, qapp, qtbot, mock_credential_manager
     ):
@@ -89,6 +97,7 @@ class TestUpdateModeDialogInitWithSavedAccounts:
             
             dialog.close()
     
+    @skip_in_ci
     def test_update_authors_mode_dialog_opens_with_preselected_account(
         self, qapp, qtbot, mock_credential_manager
     ):
@@ -121,6 +130,7 @@ class TestUpdateModeDialogInitWithSavedAccounts:
             
             dialog.close()
     
+    @skip_in_ci
     def test_export_mode_dialog_opens_with_preselected_account(
         self, qapp, qtbot, mock_credential_manager
     ):
@@ -152,6 +162,7 @@ class TestUpdateModeDialogInitWithSavedAccounts:
             
             dialog.close()
     
+    @skip_in_ci
     def test_ok_button_exists_before_preselect_is_called(
         self, qapp, qtbot, mock_credential_manager
     ):
@@ -186,6 +197,7 @@ class TestUpdateModeDialogInitWithSavedAccounts:
                 
                 dialog.close()
     
+    @skip_in_ci
     def test_csv_selection_enables_ok_button_in_update_mode(
         self, qapp, qtbot, mock_credential_manager, tmp_path
     ):
