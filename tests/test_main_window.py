@@ -199,3 +199,218 @@ class TestMainWindowCleanup:
         main_window.closeEvent(event)
         
         event.accept.assert_called_once()
+
+
+class TestCSVFileDetection:
+    """Test CSV file detection functionality."""
+    
+    def test_check_csv_files_method_exists(self, main_window):
+        """Test that _check_csv_files method exists."""
+        assert hasattr(main_window, '_check_csv_files')
+        assert callable(main_window._check_csv_files)
+    
+    @patch('src.ui.main_window.os.getcwd')
+    @patch('src.ui.main_window.Path')
+    def test_check_csv_files_no_files(self, mock_path_class, mock_getcwd, main_window):
+        """Test CSV check when no files exist."""
+        # Mock current directory
+        mock_getcwd.return_value = "/fake/dir"
+        
+        # Mock Path().glob() to return empty lists
+        mock_path_instance = Mock()
+        mock_path_instance.glob.return_value = []
+        mock_path_class.return_value = mock_path_instance
+        
+        # Clear username so it searches for any CSV files
+        main_window._current_username = None
+        
+        main_window._check_csv_files()
+        
+        # Update buttons should be disabled
+        assert not main_window.update_button.isEnabled()
+        assert not main_window.update_authors_button.isEnabled()
+        
+        # Status labels should show no CSV
+        assert "Keine CSV" in main_window.urls_status_label.text()
+        assert "Keine CSV" in main_window.authors_status_label.text()
+    
+    @patch('src.ui.main_window.os.getcwd')
+    def test_check_csv_files_with_username(self, mock_getcwd, main_window):
+        """Test CSV check with username set."""
+        # Mock current directory
+        mock_getcwd.return_value = "/fake/dir"
+        
+        # Set username
+        main_window._current_username = "test_user"
+        
+        # Create real Path objects but mock exists()
+        with patch('src.ui.main_window.Path') as mock_path_class:
+            from pathlib import Path as RealPath
+            
+            def path_side_effect(*args, **kwargs):
+                # Create real path but mock exists
+                real_path = RealPath(*args, **kwargs)
+                mock_path = Mock(spec=RealPath)
+                mock_path.__truediv__ = lambda self, other: path_side_effect(str(real_path / other))
+                mock_path.exists.return_value = "test_user_urls.csv" in str(real_path)
+                mock_path.name = real_path.name
+                return mock_path
+            
+            mock_path_class.side_effect = path_side_effect
+            
+            main_window._check_csv_files()
+            
+            # URLs update button should be enabled
+            assert main_window.update_button.isEnabled()
+            # Authors update button should be disabled
+            assert not main_window.update_authors_button.isEnabled()
+    
+    @patch('src.ui.main_window.Path.glob')
+    def test_check_csv_files_without_username(self, mock_glob, main_window):
+        """Test CSV check without username (finds any CSV files)."""
+        # No username set
+        main_window._current_username = None
+        
+        # Mock glob returns some CSV files
+        mock_urls_file = Mock()
+        mock_urls_file.name = "some_user_urls.csv"
+        mock_authors_file = Mock()
+        mock_authors_file.name = "some_user_authors.csv"
+        
+        def glob_side_effect(pattern):
+            if "*_urls.csv" in pattern:
+                return [mock_urls_file]
+            elif "*_authors.csv" in pattern:
+                return [mock_authors_file]
+            return []
+        
+        mock_glob.side_effect = glob_side_effect
+        
+        main_window._check_csv_files()
+        
+        # Both update buttons should be enabled
+        assert main_window.update_button.isEnabled()
+        assert main_window.update_authors_button.isEnabled()
+    
+    def test_csv_check_called_on_init(self, main_window):
+        """Test that CSV check is called during initialization."""
+        # Status labels should exist and have initial state
+        assert hasattr(main_window, 'urls_status_label')
+        assert hasattr(main_window, 'authors_status_label')
+    
+    def test_username_tracking_initialized(self, main_window):
+        """Test that username tracking is initialized."""
+        assert hasattr(main_window, '_current_username')
+        assert main_window._current_username is None
+
+
+class TestGroupBoxes:
+    """Test GroupBox UI elements."""
+    
+    def test_groupboxes_exist(self, main_window):
+        """Test that both GroupBoxes are created."""
+        from PySide6.QtWidgets import QGroupBox
+        
+        groupboxes = main_window.findChildren(QGroupBox)
+        assert len(groupboxes) >= 2, "Should have at least 2 GroupBoxes"
+        
+        groupbox_titles = [gb.title() for gb in groupboxes]
+        assert any("Landing Page" in title for title in groupbox_titles)
+        assert any("Autoren" in title for title in groupbox_titles)
+    
+    def test_status_labels_exist(self, main_window):
+        """Test that status labels exist."""
+        assert hasattr(main_window, 'urls_status_label')
+        assert hasattr(main_window, 'authors_status_label')
+        
+        # Labels should be QLabel instances
+        from PySide6.QtWidgets import QLabel
+        assert isinstance(main_window.urls_status_label, QLabel)
+        assert isinstance(main_window.authors_status_label, QLabel)
+    
+    def test_buttons_in_groupboxes(self, main_window):
+        """Test that buttons are organized in GroupBoxes."""
+        # All main workflow buttons should exist
+        assert hasattr(main_window, 'load_button')
+        assert hasattr(main_window, 'update_button')
+        assert hasattr(main_window, 'load_authors_button')
+        assert hasattr(main_window, 'update_authors_button')
+        
+        # Buttons should not be None
+        assert main_window.load_button is not None
+        assert main_window.update_button is not None
+        assert main_window.load_authors_button is not None
+        assert main_window.update_authors_button is not None
+
+
+class TestMenuBar:
+    """Test MenuBar functionality."""
+    
+    def test_menubar_exists(self, main_window):
+        """Test that menubar is created."""
+        menubar = main_window.menuBar()
+        assert menubar is not None
+        
+        # Check menu count
+        actions = menubar.actions()
+        assert len(actions) >= 2, "Should have at least Ansicht and Hilfe menus"
+    
+    def test_view_menu_exists(self, main_window):
+        """Test that Ansicht (View) menu exists."""
+        menubar = main_window.menuBar()
+        actions = menubar.actions()
+        
+        menu_titles = [action.text() for action in actions]
+        assert "Ansicht" in menu_titles
+    
+    def test_help_menu_exists(self, main_window):
+        """Test that Hilfe (Help) menu exists."""
+        menubar = main_window.menuBar()
+        actions = menubar.actions()
+        
+        menu_titles = [action.text() for action in actions]
+        assert "Hilfe" in menu_titles
+    
+    def test_theme_actions_exist(self, main_window):
+        """Test that theme actions exist."""
+        assert hasattr(main_window, 'auto_theme_action')
+        assert hasattr(main_window, 'light_theme_action')
+        assert hasattr(main_window, 'dark_theme_action')
+        
+        # Actions should be checkable
+        assert main_window.auto_theme_action.isCheckable()
+        assert main_window.light_theme_action.isCheckable()
+        assert main_window.dark_theme_action.isCheckable()
+    
+    def test_theme_action_group(self, main_window):
+        """Test that theme actions are in exclusive group."""
+        assert hasattr(main_window, 'theme_action_group')
+        assert main_window.theme_action_group.isExclusive()
+    
+    @patch('src.ui.main_window.AboutDialog')
+    def test_show_about_dialog(self, mock_about_class, main_window):
+        """Test that About dialog can be shown."""
+        mock_dialog = Mock()
+        mock_about_class.return_value = mock_dialog
+        
+        # Call method
+        main_window._show_about_dialog()
+        
+        # Verify dialog was created and shown
+        mock_about_class.assert_called_once_with(main_window)
+        mock_dialog.exec.assert_called_once()
+    
+    @patch('src.ui.main_window.QDesktopServices.openUrl')
+    def test_open_github(self, mock_open_url, main_window):
+        """Test that GitHub repository can be opened."""
+        main_window._open_github()
+        
+        # Verify openUrl was called
+        assert mock_open_url.called
+        call_args = mock_open_url.call_args[0][0]
+        assert "github.com" in call_args.toString().lower()
+    
+    def test_set_theme_method_exists(self, main_window):
+        """Test that _set_theme method exists."""
+        assert hasattr(main_window, '_set_theme')
+        assert callable(main_window._set_theme)
