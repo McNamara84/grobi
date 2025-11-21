@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QProgressBar, QLabel, QMessageBox
 )
 from PySide6.QtCore import QThread, Signal, QObject
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QIcon
 
 from src.ui.credentials_dialog import CredentialsDialog
 from src.ui.save_credentials_dialog import SaveCredentialsDialog
@@ -148,6 +148,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("GROBI - GFZ Data Services Tool")
         self.setMinimumSize(800, 600)
+        
+        # Set window icon
+        icon_path = Path(__file__).parent / "GROBI-Logo.ico"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
         
         # Thread and worker for DOI fetch
         self.thread = None
