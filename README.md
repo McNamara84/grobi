@@ -653,6 +653,6 @@ Holger Ehrmann, GFZ Data Services, GFZ Helmholtz Centre for Geosciences
 - Python 3.10+ (Developed and tested with Python 3.13)
   - **Note:** Release executables are built with Python 3.12 for better MSVC compatibility and stable Nuitka support
 - PySide6 (Qt6) - Modern GUI framework
-- keyring 25.7.0 - Secure credential storage with Windows Credential Manager
+- keyring >=24.3.0 - Secure credential storage with Windows Credential Manager
 - DataCite REST API v2 - DOI metadata management
 
