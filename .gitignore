@@ -183,6 +183,7 @@ cython_debug/
 # Application specific - GROBI
 *.csv
 *.log
+update_log_*.txt
 
 # Coverage badges (tracked separately)
 !coverage.svg

@@ -16,8 +16,23 @@ def qapp():
 
 
 @pytest.fixture
-def dialog(qapp, qtbot):
+def dialog(qapp, qtbot, monkeypatch):
     """Create a CredentialsDialog instance for testing."""
+    # Mock CredentialManager methods to simulate no saved accounts
+    # This ensures tests run in a clean state without real saved credentials
+    from src.utils.credential_manager import CredentialManager
+    
+    original_init = CredentialManager.__init__
+    
+    def mock_init(self):
+        """Mock init that creates empty account list."""
+        original_init(self)
+        self.accounts = {}
+        self.last_used_account = None
+    
+    monkeypatch.setattr(CredentialManager, "__init__", mock_init)
+    
+    # Now create the dialog (it will have no saved accounts)
     dlg = CredentialsDialog()
     qtbot.addWidget(dlg)
     return dlg
@@ -166,8 +181,20 @@ class TestCredentialsDialogGetCredentials:
         
         assert credentials is None
     
-    def test_whitespace_trimming(self, qapp, qtbot):
+    def test_whitespace_trimming(self, qapp, qtbot, monkeypatch):
         """Test that whitespace is trimmed from inputs."""
+        from src.utils.credential_manager import CredentialManager
+        
+        # Mock CredentialManager to have no saved accounts
+        original_init = CredentialManager.__init__
+        
+        def mock_init(self):
+            original_init(self)
+            self.accounts = {}
+            self.last_used_account = None
+        
+        monkeypatch.setattr(CredentialManager, "__init__", mock_init)
+        
         dialog = CredentialsDialog()
         qtbot.addWidget(dialog)
         

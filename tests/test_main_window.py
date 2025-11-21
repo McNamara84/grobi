@@ -146,7 +146,7 @@ class TestMainWindowAuthorsUpdate:
         
         # Verify worker was created with correct credentials
         mock_worker_class.assert_called_once_with(
-            "test_user", "test_pass", "/path/to/file.csv", True, dry_run_only=True
+            "test_user", "test_pass", "/path/to/file.csv", True, dry_run_only=True, credentials_are_new=False
         )
     
     @patch('src.ui.main_window.AuthorsUpdateWorker')
@@ -158,6 +158,7 @@ class TestMainWindowAuthorsUpdate:
         main_window._authors_update_password = "stored_pass"
         main_window._authors_update_csv_path = "/stored/path.csv"
         main_window._authors_update_use_test_api = False
+        main_window._authors_update_credentials_are_new = False
         
         # Mock worker and thread
         mock_worker = Mock()
@@ -170,7 +171,7 @@ class TestMainWindowAuthorsUpdate:
         
         # Verify worker was created with stored credentials
         mock_worker_class.assert_called_once_with(
-            "stored_user", "stored_pass", "/stored/path.csv", False, dry_run_only=False
+            "stored_user", "stored_pass", "/stored/path.csv", False, dry_run_only=False, credentials_are_new=False
         )
     
     @patch('src.ui.main_window.CredentialsDialog')

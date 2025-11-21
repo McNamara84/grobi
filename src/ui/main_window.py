@@ -10,9 +10,10 @@ from PySide6.QtWidgets import (
     QTextEdit, QProgressBar, QLabel, QMessageBox
 )
 from PySide6.QtCore import QThread, Signal, QObject
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QIcon
 
 from src.ui.credentials_dialog import CredentialsDialog
+from src.ui.save_credentials_dialog import SaveCredentialsDialog
 from src.ui.theme_manager import ThemeManager, Theme
 from src.api.datacite_client import DataCiteClient, DataCiteAPIError, AuthenticationError, NetworkError
 from src.utils.csv_exporter import export_dois_to_csv, export_dois_with_creators_to_csv, CSVExportError
@@ -30,8 +31,9 @@ class DOIFetchWorker(QObject):
     progress = Signal(str)  # Progress message
     finished = Signal(list, str)  # List of (DOI, URL) tuples and username
     error = Signal(str)  # Error message
+    request_save_credentials = Signal(str, str, str)  # username, password, api_type
     
-    def __init__(self, username, password, use_test_api):
+    def __init__(self, username, password, use_test_api, credentials_are_new=False):
         """
         Initialize the worker.
         
@@ -39,11 +41,13 @@ class DOIFetchWorker(QObject):
             username: DataCite username
             password: DataCite password
             use_test_api: Whether to use test API
+            credentials_are_new: Whether these are newly entered credentials (not from saved account)
         """
         super().__init__()
         self.username = username
         self.password = password
         self.use_test_api = use_test_api
+        self.credentials_are_new = credentials_are_new
     
     def run(self):
         """Fetch DOIs from DataCite API."""
@@ -58,6 +62,11 @@ class DOIFetchWorker(QObject):
             
             self.progress.emit("DOIs werden abgerufen...")
             dois = client.fetch_all_dois()
+            
+            # If credentials are new and API call was successful, offer to save them
+            if self.credentials_are_new and dois:
+                api_type = "test" if self.use_test_api else "production"
+                self.request_save_credentials.emit(self.username, self.password, api_type)
             
             self.progress.emit(f"[OK] {len(dois)} DOIs erfolgreich abgerufen")
             self.finished.emit(dois, self.username)
@@ -79,8 +88,9 @@ class DOICreatorFetchWorker(QObject):
     progress = Signal(str)  # Progress message
     finished = Signal(list, str)  # List of creator tuples and username
     error = Signal(str)  # Error message
+    request_save_credentials = Signal(str, str, str)  # username, password, api_type
     
-    def __init__(self, username, password, use_test_api):
+    def __init__(self, username, password, use_test_api, credentials_are_new=False):
         """
         Initialize the worker.
         
@@ -88,11 +98,13 @@ class DOICreatorFetchWorker(QObject):
             username: DataCite username
             password: DataCite password
             use_test_api: Whether to use test API
+            credentials_are_new: Whether these are newly entered credentials (not from saved account)
         """
         super().__init__()
         self.username = username
         self.password = password
         self.use_test_api = use_test_api
+        self.credentials_are_new = credentials_are_new
     
     def run(self):
         """Fetch DOIs with creator information from DataCite API."""
@@ -107,6 +119,11 @@ class DOICreatorFetchWorker(QObject):
             
             self.progress.emit("DOIs und Autoren werden abgerufen...")
             creator_data = client.fetch_all_dois_with_creators()
+            
+            # If credentials are new and API call was successful, offer to save them
+            if self.credentials_are_new and creator_data:
+                api_type = "test" if self.use_test_api else "production"
+                self.request_save_credentials.emit(self.username, self.password, api_type)
             
             # Count unique DOIs for better user feedback
             unique_dois = len(set(row[0] for row in creator_data))
@@ -131,6 +148,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("GROBI - GFZ Data Services Tool")
         self.setMinimumSize(800, 600)
+        
+        # Set window icon
+        icon_path = Path(__file__).parent / "GROBI-Logo.ico"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
         
         # Thread and worker for DOI fetch
         self.thread = None
@@ -364,6 +386,9 @@ class MainWindow(QMainWindow):
         username, password, csv_path, use_test_api = credentials
         # csv_path is None in export mode, we don't need it here
         
+        # Check if user selected new credentials or loaded saved account
+        credentials_are_new = dialog.is_new_credentials()
+        
         api_type = "Test-API" if use_test_api else "Produktions-API"
         self._log(f"Starte Abruf für Benutzer '{username}' ({api_type})...")
         
@@ -375,7 +400,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(True)
         
         # Create worker and thread
-        self.worker = DOIFetchWorker(username, password, use_test_api)
+        self.worker = DOIFetchWorker(username, password, use_test_api, credentials_are_new)
         self.thread = QThread()
         self.worker.moveToThread(self.thread)
         
@@ -384,6 +409,7 @@ class MainWindow(QMainWindow):
         self.worker.progress.connect(self._log)
         self.worker.finished.connect(self._on_fetch_finished)
         self.worker.error.connect(self._on_fetch_error)
+        self.worker.request_save_credentials.connect(self._on_request_save_credentials)
         
         # Clean up after worker finishes or errors
         self.worker.finished.connect(self.worker.deleteLater)
@@ -467,6 +493,23 @@ class MainWindow(QMainWindow):
         
         self._log("Bereit für nächsten Vorgang.")
     
+    def _on_request_save_credentials(self, username: str, password: str, api_type: str):
+        """
+        Handle request to save credentials after successful authentication.
+        
+        Args:
+            username: The DataCite username
+            password: The DataCite password
+            api_type: Either "test" or "production"
+        """
+        logger.info(f"Received request to save credentials for {username} ({api_type})")
+        
+        try:
+            # Show SaveCredentialsDialog asynchronously
+            SaveCredentialsDialog.ask_save_credentials(username, password, api_type, self)
+        except Exception as e:
+            logger.error(f"Error saving credentials: {e}")
+    
     def _on_load_authors_clicked(self):
         """Handle load authors button click."""
         # Show credentials dialog
@@ -480,6 +523,9 @@ class MainWindow(QMainWindow):
         username, password, csv_path, use_test_api = credentials
         # csv_path is None in export mode, we don't need it here
         
+        # Check if user selected new credentials or loaded saved account
+        credentials_are_new = dialog.is_new_credentials()
+        
         api_type = "Test-API" if use_test_api else "Produktions-API"
         self._log(f"Starte Autoren-Abruf für Benutzer '{username}' ({api_type})...")
         
@@ -491,7 +537,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(True)
         
         # Create worker and thread
-        self.creator_worker = DOICreatorFetchWorker(username, password, use_test_api)
+        self.creator_worker = DOICreatorFetchWorker(username, password, use_test_api, credentials_are_new)
         self.creator_thread = QThread()
         self.creator_worker.moveToThread(self.creator_thread)
         
@@ -500,6 +546,7 @@ class MainWindow(QMainWindow):
         self.creator_worker.progress.connect(self._log)
         self.creator_worker.finished.connect(self._on_creator_fetch_finished)
         self.creator_worker.error.connect(self._on_creator_fetch_error)
+        self.creator_worker.request_save_credentials.connect(self._on_request_save_credentials)
         
         # Clean up after worker finishes or errors
         self.creator_worker.finished.connect(self.creator_worker.deleteLater)
@@ -598,6 +645,9 @@ class MainWindow(QMainWindow):
         
         username, password, csv_path, use_test_api = credentials
         
+        # Check if user selected new credentials or loaded saved account
+        credentials_are_new = dialog.is_new_credentials()
+        
         api_type = "Test-API" if use_test_api else "Produktions-API"
         self._log(f"Starte Landing Page URL Update für Benutzer '{username}' ({api_type})...")
         self._log(f"CSV-Datei: {Path(csv_path).name}")
@@ -610,7 +660,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(True)
         
         # Create worker and thread
-        self.update_worker = UpdateWorker(username, password, csv_path, use_test_api)
+        self.update_worker = UpdateWorker(username, password, csv_path, use_test_api, credentials_are_new)
         self.update_thread = QThread()
         self.update_worker.moveToThread(self.update_thread)
         
@@ -619,6 +669,7 @@ class MainWindow(QMainWindow):
         self.update_worker.progress_update.connect(self._on_update_progress)
         self.update_worker.doi_updated.connect(self._on_doi_updated)
         self.update_worker.finished.connect(self._on_update_finished)
+        self.update_worker.request_save_credentials.connect(self._on_request_save_credentials)
         self.update_worker.error_occurred.connect(self._on_update_error)
         
         # Clean up after worker finishes (finished is always emitted, even on error)
@@ -794,11 +845,15 @@ class MainWindow(QMainWindow):
         
         username, password, csv_path, use_test_api = credentials
         
+        # Check if user selected new credentials or loaded saved account
+        credentials_are_new = dialog.is_new_credentials()
+        
         # Store credentials for second worker (actual update)
         self._authors_update_username = username
         self._authors_update_password = password
         self._authors_update_csv_path = csv_path
         self._authors_update_use_test_api = use_test_api
+        self._authors_update_credentials_are_new = credentials_are_new
         
         api_type = "Test-API" if use_test_api else "Produktions-API"
         self._log(f"Starte Autoren-Update für Benutzer '{username}' ({api_type})...")
@@ -813,7 +868,7 @@ class MainWindow(QMainWindow):
         
         # Create worker and thread for DRY RUN
         self.authors_update_worker = AuthorsUpdateWorker(
-            username, password, csv_path, use_test_api, dry_run_only=True
+            username, password, csv_path, use_test_api, dry_run_only=True, credentials_are_new=False
         )
         self.authors_update_thread = QThread()
         self.authors_update_worker.moveToThread(self.authors_update_thread)
@@ -933,6 +988,7 @@ class MainWindow(QMainWindow):
         password = self._authors_update_password
         csv_path = self._authors_update_csv_path
         use_test_api = self._authors_update_use_test_api
+        credentials_are_new = self._authors_update_credentials_are_new
         
         # Disable buttons again
         self.load_button.setEnabled(False)
@@ -944,7 +1000,7 @@ class MainWindow(QMainWindow):
         
         # Create new worker with dry_run_only=False
         self.authors_update_worker = AuthorsUpdateWorker(
-            username, password, csv_path, use_test_api, dry_run_only=False
+            username, password, csv_path, use_test_api, dry_run_only=False, credentials_are_new=credentials_are_new
         )
         self.authors_update_thread = QThread()
         self.authors_update_worker.moveToThread(self.authors_update_thread)
@@ -955,6 +1011,7 @@ class MainWindow(QMainWindow):
         self.authors_update_worker.doi_updated.connect(self._on_author_doi_updated)
         self.authors_update_worker.finished.connect(self._on_authors_update_finished)
         self.authors_update_worker.error_occurred.connect(self._on_authors_update_error)
+        self.authors_update_worker.request_save_credentials.connect(self._on_request_save_credentials)
         
         # Clean up after worker finishes
         self.authors_update_worker.finished.connect(self.authors_update_worker.deleteLater)
