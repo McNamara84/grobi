@@ -145,78 +145,15 @@ jobs:
           GROBI-*.zip
         retention-days: 90
     
-    - name: Create GitHub Release
+    - name: Add macOS files to GitHub Release
       uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/') && startsWith(github.ref_name, 'v')
       with:
         files: |
           GROBI-${{ github.ref_name }}-macOS.zip
           dist/GROBI-${{ github.ref_name }}-macOS.dmg
-          dist/BUILD_INFO.txt
-        body: |
-          # GROBI ${{ github.ref_name }}
-          
-          ## 🍎 macOS Application Release
-          
-          ### Download Options:
-          - **Recommended**: `GROBI-${{ github.ref_name }}-macOS.dmg` - Disk image for easy installation
-          - **Alternative**: `GROBI-${{ github.ref_name }}-macOS.zip` - Complete package with documentation
-          
-          ### Installation:
-          
-          #### From DMG:
-          1. Download the DMG file
-          2. Open the DMG
-          3. Drag GROBI.app to your Applications folder
-          4. Eject the DMG
-          
-          #### From ZIP:
-          1. Download and extract the ZIP file
-          2. Copy GROBI.app to your Applications folder
-          
-          ### First Run - Important!
-          
-          Since the app is not code-signed, macOS Gatekeeper will block it on first launch:
-          
-          **Method 1: System Settings**
-          1. Try to open GROBI.app (you'll get a warning)
-          2. Go to **System Settings** → **Privacy & Security**
-          3. Scroll down to find the message about GROBI
-          4. Click **"Open Anyway"**
-          5. Confirm by clicking **"Open"** in the next dialog
-          
-          **Method 2: Right-Click**
-          1. Right-click (or Control-click) on GROBI.app
-          2. Select **"Open"** from the context menu
-          3. Click **"Open"** in the confirmation dialog
-          
-          ⚠️ This is a **one-time process**. After the first launch, the app will open normally.
-          
-          ### Why the Warning?
-          
-          The app is not code-signed because:
-          - Code signing requires an Apple Developer Program membership ($99/year)
-          - GROBI is an open-source project built automatically via GitHub Actions
-          - The source code is publicly available for inspection
-          
-          ### What's Included:
-          - Standalone macOS application (no Python required)
-          - PySide6 (Qt6) GUI framework
-          - All dependencies bundled
-          - DataCite API integration
-          
-          ### System Requirements:
-          - macOS 10.15 (Catalina) or later
-          - Intel or Apple Silicon Mac
-          - ~30 MB disk space
-          - Internet connection for DataCite API
-          
-          ### Changes:
-          See [CHANGELOG.md](https://github.com/McNamara84/grobi/blob/main/CHANGELOG.md) for detailed changes.
-          
-          ### Support:
-          - Report issues: [GitHub Issues](https://github.com/McNamara84/grobi/issues)
-          - Documentation: [README.md](https://github.com/McNamara84/grobi/blob/main/README.md)
+        # Note: No body - Windows workflow creates the release with full description
+        # This step only adds macOS files to the existing release
         draft: false
         prerelease: false
       env:

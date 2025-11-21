@@ -138,7 +138,19 @@ jobs:
         body: |
           # GROBI ${{ github.ref_name }}
           
-          ## 📦 Windows Executable Release
+          ## 📥 Downloads
+          
+          ### 🪟 Windows
+          - **Recommended**: `GROBI-${{ github.ref_name }}-Windows.zip` - Complete package with documentation
+          - **Standalone**: `GROBI.exe` - Just the executable
+          
+          ### 🍎 macOS
+          - **Recommended**: `GROBI-${{ github.ref_name }}-macOS.dmg` - Disk image for easy installation
+          - **Alternative**: `GROBI-${{ github.ref_name }}-macOS.zip` - Complete package with documentation
+          
+          ---
+          
+          ## 🪟 Windows Installation
           
           ### Download Options:
           - **Recommended**: `GROBI-${{ github.ref_name }}-Windows.zip` - Complete package with documentation
@@ -165,10 +177,69 @@ jobs:
           - ~25 MB disk space
           - Internet connection for DataCite API
           
-          ### Changes:
+          ---
+          
+          ## 🍎 macOS Installation
+          
+          ### Download Options:
+          - **Recommended**: `GROBI-${{ github.ref_name }}-macOS.dmg` - Disk image for easy installation
+          - **Alternative**: `GROBI-${{ github.ref_name }}-macOS.zip` - Complete package with documentation
+          
+          ### Installation:
+          
+          **From DMG:**
+          1. Download the DMG file
+          2. Open the DMG
+          3. Drag GROBI.app to your Applications folder
+          4. Eject the DMG
+          
+          **From ZIP:**
+          1. Download and extract the ZIP file
+          2. Copy GROBI.app to your Applications folder
+          
+          ### First Run - Important!
+          
+          Since the app is not code-signed, macOS Gatekeeper will block it on first launch:
+          
+          **Method 1: System Settings**
+          1. Try to open GROBI.app (you'll get a warning)
+          2. Go to **System Settings** → **Privacy & Security**
+          3. Scroll down to find the message about GROBI
+          4. Click **"Open Anyway"**
+          5. Confirm by clicking **"Open"** in the next dialog
+          
+          **Method 2: Right-Click**
+          1. Right-click (or Control-click) on GROBI.app
+          2. Select **"Open"** from the context menu
+          3. Click **"Open"** in the confirmation dialog
+          
+          ⚠️ This is a **one-time process**. After the first launch, the app will open normally.
+          
+          ### System Requirements:
+          - macOS 10.15 (Catalina) or later
+          - Intel or Apple Silicon Mac
+          - ~30 MB disk space
+          - Internet connection for DataCite API
+          
+          ---
+          
+          ## ℹ️ About Security Warnings
+          
+          The executables are not code-signed because:
+          - **Windows**: Code signing certificates cost €300-500/year
+          - **macOS**: Requires Apple Developer Program membership ($99/year)
+          - GROBI is an open-source project built automatically via GitHub Actions
+          - All source code is publicly available for inspection
+          - Security warnings are expected and safe to bypass
+          
+          ---
+          
+          ## 📋 Changes
+          
           See [CHANGELOG.md](https://github.com/McNamara84/grobi/blob/main/CHANGELOG.md) for detailed changes.
           
-          ### Support:
+          ## 🆘 Support
+          
           - Report issues: [GitHub Issues](https://github.com/McNamara84/grobi/issues)
           - Documentation: [README.md](https://github.com/McNamara84/grobi/blob/main/README.md)
         draft: false
