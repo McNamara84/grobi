@@ -499,8 +499,11 @@ class MainWindow(QMainWindow):
         """
         logger.info(f"Received request to save credentials for {username} ({api_type})")
         
-        # Show SaveCredentialsDialog asynchronously
-        SaveCredentialsDialog.ask_save_credentials(username, password, api_type, self)
+        try:
+            # Show SaveCredentialsDialog asynchronously
+            SaveCredentialsDialog.ask_save_credentials(username, password, api_type, self)
+        except Exception as e:
+            logger.error(f"Error saving credentials: {e}")
     
     def _on_load_authors_clicked(self):
         """Handle load authors button click."""

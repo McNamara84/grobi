@@ -81,6 +81,9 @@ class SaveCredentialsDialog(QDialog):
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("z.B. 'GFZ Produktiv-Account' oder 'Test-Umgebung'")
         self.name_input.setMaxLength(100)
+        self.name_input.setToolTip(
+            "Geben Sie einen eindeutigen Namen ein, um diesen Account später wiederzuerkennen (max. 100 Zeichen)"
+        )
         self.name_input.textChanged.connect(self._check_save_ready)
         layout.addWidget(self.name_input)
         

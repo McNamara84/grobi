@@ -117,7 +117,10 @@ class CredentialsDialog(QDialog):
             account_layout = QHBoxLayout()
             
             self.account_selector = QComboBox()
-            self.account_selector.addItem("➕ Neue Zugangsdaten eingeben", None)
+            self.account_selector.setToolTip(
+                "Wählen Sie einen gespeicherten Account oder geben Sie neue Zugangsdaten ein"
+            )
+            self.account_selector.addItem("➥ Neue Zugangsdaten eingeben", None)
             
             # Add saved accounts
             for account in self.saved_accounts:
@@ -380,6 +383,9 @@ class CredentialsDialog(QDialog):
             # Store for later retrieval
             self._loaded_password = password
             self.selected_account_id = account_id
+            
+            # Mark as saved credentials (not new)
+            self._is_new_credentials = False
             
             # Make fields read-only
             self._enable_input_fields(False)
