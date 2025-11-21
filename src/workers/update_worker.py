@@ -18,13 +18,15 @@ class UpdateWorker(QObject):
     doi_updated = Signal(str, bool, str)  # doi, success, message
     finished = Signal(int, int, list)  # success_count, error_count, error_list
     error_occurred = Signal(str)  # error_message
+    request_save_credentials = Signal(str, str, str)  # username, password, api_type
     
     def __init__(
         self, 
         username: str, 
         password: str, 
         csv_path: str, 
-        use_test_api: bool = False
+        use_test_api: bool = False,
+        credentials_are_new: bool = False
     ):
         """
         Initialize the update worker.
@@ -34,13 +36,16 @@ class UpdateWorker(QObject):
             password: DataCite password
             csv_path: Path to CSV file with DOI/URL pairs
             use_test_api: If True, use test API instead of production
+            credentials_are_new: Whether these are newly entered credentials (not from saved account)
         """
         super().__init__()
         self.username = username
         self.password = password
         self.csv_path = csv_path
         self.use_test_api = use_test_api
+        self.credentials_are_new = credentials_are_new
         self._is_running = False
+        self._first_success = False
     
     def run(self):
         """
@@ -112,6 +117,12 @@ class UpdateWorker(QObject):
                         success_count += 1
                         logger.info(f"Successfully updated: {doi}")
                         self.doi_updated.emit(doi, True, message)
+                        
+                        # If credentials are new and this is first successful update, offer to save them
+                        if self.credentials_are_new and not self._first_success:
+                            self._first_success = True
+                            api_type = "test" if self.use_test_api else "production"
+                            self.request_save_credentials.emit(self.username, self.password, api_type)
                     else:
                         error_count += 1
                         error_entry = f"{doi}: {message}"

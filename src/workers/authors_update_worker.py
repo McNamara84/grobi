@@ -19,6 +19,7 @@ class AuthorsUpdateWorker(QObject):
     doi_updated = Signal(str, bool, str)  # doi, success, message
     finished = Signal(int, int, list)  # success_count, error_count, error_list
     error_occurred = Signal(str)  # error_message
+    request_save_credentials = Signal(str, str, str)  # username, password, api_type
     
     def __init__(
         self, 
@@ -26,7 +27,8 @@ class AuthorsUpdateWorker(QObject):
         password: str, 
         csv_path: str, 
         use_test_api: bool = False,
-        dry_run_only: bool = True
+        dry_run_only: bool = True,
+        credentials_are_new: bool = False
     ):
         """
         Initialize the authors update worker.
@@ -37,6 +39,7 @@ class AuthorsUpdateWorker(QObject):
             csv_path: Path to CSV file with creator data
             use_test_api: If True, use test API instead of production
             dry_run_only: If True, only validate without updating
+            credentials_are_new: Whether these are newly entered credentials (not from saved account)
         """
         super().__init__()
         self.username = username
@@ -44,7 +47,9 @@ class AuthorsUpdateWorker(QObject):
         self.csv_path = csv_path
         self.use_test_api = use_test_api
         self.dry_run_only = dry_run_only
+        self.credentials_are_new = credentials_are_new
         self._is_running = False
+        self._first_success = False
     
     def run(self):
         """
@@ -245,6 +250,12 @@ class AuthorsUpdateWorker(QObject):
                         success_count += 1
                         logger.info(f"Successfully updated creators: {doi}")
                         self.doi_updated.emit(doi, True, message)
+                        
+                        # If credentials are new and this is first successful update, offer to save them
+                        if self.credentials_are_new and not self._first_success:
+                            self._first_success = True
+                            api_type = "test" if self.use_test_api else "production"
+                            self.request_save_credentials.emit(self.username, self.password, api_type)
                     else:
                         error_count += 1
                         error_entry = f"{doi}: {message}"
