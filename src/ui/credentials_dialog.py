@@ -44,6 +44,7 @@ class CredentialsDialog(QDialog):
         self.saved_accounts = []
         self.selected_account_id = None
         self._loaded_password = None  # Stores password when loading from saved account
+        self._is_new_credentials = True  # Initialize flag, updated when account is loaded
         
         try:
             self.credential_manager = CredentialManager()
@@ -485,7 +486,6 @@ class CredentialsDialog(QDialog):
     
     def _refresh_account_list(self):
         """Refresh the account dropdown after changes."""
-        current_text = self.account_selector.currentText()
         self.account_selector.clear()
         
         # Reload accounts

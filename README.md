@@ -500,7 +500,7 @@ The application securely stores your DataCite credentials using Windows Credenti
 
 2. **Security**: 
    - Passwords are stored in Windows Credential Manager (encrypted by the OS)
-   - Account metadata is stored locally in `%LOCALAPPDATA%/GROBI/credentials.json`
+   - Account metadata is stored locally in `%APPDATA%/GROBI/credentials_metadata.json`
    - Only your Windows user account can access the stored passwords
 
 **Security Notes:**
@@ -511,7 +511,7 @@ The application securely stores your DataCite credentials using Windows Credenti
 - Deleting an account removes all associated data
 - You can manage stored passwords via Windows Credential Manager:
   - Open "Credential Manager" in Windows Settings
-  - Look for entries starting with "GROBI:"
+  - Look for entries starting with "GROBI_DataCite:"
 
 ### Notes:
 
@@ -638,7 +638,7 @@ Failed DOI Details:
 - **Background threading** for long-running bulk update operations
 - **Real-time progress tracking** with X/Y counter display
 - **Continue-on-error strategy** for bulk operations with comprehensive logging
-- **Multi-account management** with account metadata stored in `%LOCALAPPDATA%/GROBI/`
+- **Multi-account management** with account metadata stored in `%APPDATA%/GROBI/`
 
 ## License
 
