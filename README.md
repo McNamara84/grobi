@@ -32,11 +32,11 @@ A modern GUI tool for GFZ Data Services to manage DataCite DOIs.
 
 ## Download
 
-### Windows Executable (Recommended for End Users)
-
-Download the latest standalone executable - no Python installation required!
-
 **[📥 Download Latest Release](https://github.com/McNamara84/grobi/releases/latest)**
+
+### 🪟 Windows Executable
+
+Download the standalone executable - no Python installation required!
 
 **Quick Start:**
 1. Download `GROBI-vX.X.X-Windows.zip` from the latest release
@@ -47,14 +47,40 @@ Download the latest standalone executable - no Python installation required!
    - Click "Run anyway"
    - This is a one-time warning
 
-**About SmartScreen Warning:**
-GROBI is an open-source project and the executable is not code-signed (commercial certificates cost €300-500/year). Windows SmartScreen shows a warning for unsigned executables. This is expected and safe - the application is built automatically via GitHub Actions and the source code is publicly available for inspection.
-
-### Requirements for Standalone EXE
-
+**Requirements:**
 - Windows 10 or 11 (64-bit)
 - ~25 MB disk space
 - Internet connection for DataCite API
+
+### 🍎 macOS Application
+
+Download the native macOS application bundle!
+
+**Quick Start:**
+1. Download `GROBI-vX.X.X-macOS.dmg` from the latest release
+2. Open the DMG file
+3. Drag GROBI.app to your Applications folder
+4. **On first launch:**
+   - macOS Gatekeeper will block the app (not code-signed)
+   - Go to **System Settings** → **Privacy & Security**
+   - Click **"Open Anyway"** next to the GROBI warning
+   - Or: Right-click GROBI.app → **"Open"** → Confirm
+   - This is a one-time process
+
+**Requirements:**
+- macOS 10.15 (Catalina) or later
+- Intel or Apple Silicon Mac
+- ~30 MB disk space
+- Internet connection for DataCite API
+
+### ℹ️ About Security Warnings
+
+GROBI is an open-source project and the executables are not code-signed:
+- **Windows**: Code signing certificates cost €300-500/year
+- **macOS**: Requires Apple Developer Program membership ($99/year)
+- The application is built automatically via GitHub Actions
+- All source code is publicly available for inspection
+- Security warnings are expected and safe to bypass
 
 ## Installation from Source
 

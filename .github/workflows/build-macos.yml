@@ -1,0 +1,184 @@
+name: Build macOS App
+
+on:
+  # Trigger on version tags (e.g., v0.1.0, v1.0.0)
+  push:
+    tags:
+      - 'v*.*.*'
+  
+  # Allow manual trigger from Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: write  # Required to upload release assets
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/Library/Caches/pip
+        key: ${{ runner.os }}-pip-3.12-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-3.12-
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-build.txt
+    
+    - name: Verify build environment
+      run: |
+        echo "Python version: $(python --version)"
+        echo "Nuitka version: $(python -m nuitka --version)"
+        echo "macOS version: $(sw_vers -productVersion)"
+        echo "Architecture: $(uname -m)"
+    
+    - name: Build App with Nuitka
+      run: |
+        python scripts/build_macos.py
+    
+    - name: Verify App creation
+      run: |
+        if [ -d "dist/GROBI.app" ]; then
+          echo "[OK] GROBI.app created successfully"
+          du -sh dist/GROBI.app
+        else
+          echo "[ERROR] GROBI.app not found!"
+          exit 1
+        fi
+    
+    - name: Create DMG (if not already created by build script)
+      run: |
+        if [ ! -f dist/GROBI-*-macOS.dmg ]; then
+          echo "Creating DMG manually..."
+          VERSION="${{ github.ref_name }}"
+          hdiutil create -volname "GROBI ${VERSION}" -srcfolder dist/GROBI.app -ov -format UDZO "dist/GROBI-${VERSION}-macOS.dmg"
+        fi
+        
+        if [ -f dist/GROBI-*-macOS.dmg ]; then
+          echo "[OK] DMG created"
+          ls -lh dist/*.dmg
+        fi
+    
+    - name: Create distribution package
+      run: |
+        # Create a distribution folder with app and documentation
+        mkdir -p dist-release
+        cp -R dist/GROBI.app dist-release/
+        cp dist/BUILD_INFO.txt dist-release/
+        cp README.md dist-release/
+        cp LICENSE dist-release/
+    
+    - name: Create QUICK_START.txt
+      run: |
+        cat > dist-release/QUICK_START.txt << EOF
+        GROBI - macOS Application
+        =========================
+        
+        Version: ${{ github.ref_name }}
+        Build Date: $(date '+%Y-%m-%d %H:%M:%S')
+        
+        Quick Start:
+        1. Copy GROBI.app to your Applications folder
+        2. Double-click GROBI.app to start
+        3. On first run, macOS may show "unidentified developer" warning:
+           - Go to System Settings → Privacy & Security
+           - Click "Open Anyway" next to the GROBI warning
+           - Or: Right-click GROBI.app → Open → Open anyway
+        4. Enter your DataCite credentials when prompted
+        
+        Files:
+        - GROBI.app: Main application bundle (drag to Applications)
+        - BUILD_INFO.txt: Detailed build information
+        - README.md: Full documentation
+        - LICENSE: Software license (GPLv3)
+        
+        Notes:
+        - The app is not code-signed (requires Apple Developer Program)
+        - Gatekeeper will warn on first launch (this is expected)
+        - Application creates grobi.log in ~/Library/Logs/GROBI/
+        - CSV exports are saved in ~/Documents by default
+        
+        System Requirements:
+        - macOS 10.15 (Catalina) or later
+        - ~30 MB disk space
+        - Internet connection for DataCite API
+        
+        Support:
+        - GitHub: https://github.com/McNamara84/grobi
+        - Issues: https://github.com/McNamara84/grobi/issues
+        EOF
+    
+    - name: Create ZIP archive
+      run: |
+        VERSION="${{ github.ref_name }}"
+        # Validate version tag format
+        if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "Warning: Not a version tag, using: $VERSION"
+        fi
+        cd dist-release
+        zip -r "../GROBI-${VERSION}-macOS.zip" .
+        cd ..
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: GROBI-macOS-App
+        path: |
+          dist/GROBI.app
+          dist/BUILD_INFO.txt
+          dist/*.dmg
+          GROBI-*.zip
+        retention-days: 90
+    
+    - name: Add macOS files to GitHub Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/') && startsWith(github.ref_name, 'v')
+      with:
+        files: |
+          GROBI-${{ github.ref_name }}-macOS.zip
+          dist/GROBI-${{ github.ref_name }}-macOS.dmg
+        # Note: No body - Windows workflow creates the release with full description
+        # This step only adds macOS files to the existing release
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Build Summary
+      if: always()
+      run: |
+        echo ""
+        echo "========================================"
+        echo "Build Summary"
+        echo "========================================"
+        echo ""
+        
+        if [ -d "dist/GROBI.app" ]; then
+          echo "[OK] Status: SUCCESS"
+          echo "[OK] App bundle: dist/GROBI.app"
+          echo "[OK] Size: $(du -sh dist/GROBI.app | cut -f1)"
+          echo "[OK] Tag: ${{ github.ref_name }}"
+          
+          if [ -f dist/GROBI-*-macOS.dmg ]; then
+            echo "[OK] DMG: $(ls dist/*.dmg)"
+            echo "[OK] DMG size: $(ls -lh dist/*.dmg | awk '{print $5}')"
+          fi
+        else
+          echo "[ERROR] Status: FAILED"
+          echo "[ERROR] GROBI.app not created"
+        fi
