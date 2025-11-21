@@ -6,11 +6,11 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QPushButton,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QTextEdit, QProgressBar, QLabel, QMessageBox
 )
-from PySide6.QtCore import QThread, Signal, QObject, QUrl
-from PySide6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices
+from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt
+from PySide6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices, QPixmap
 
 from src.ui.credentials_dialog import CredentialsDialog
 from src.ui.save_credentials_dialog import SaveCredentialsDialog
@@ -250,13 +250,32 @@ class MainWindow(QMainWindow):
         layout.setSpacing(20)
         layout.setContentsMargins(30, 30, 30, 30)
         
+        # Header with logo and title
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(10)
+        
+        # Logo
+        logo_label = QLabel()
+        logo_path = Path(__file__).parent / "GROBI-Logo.ico"
+        if logo_path.exists():
+            pixmap = QPixmap(str(logo_path))
+            # Scale to 32x32 for compact display next to title
+            pixmap = pixmap.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            logo_label.setPixmap(pixmap)
+            logo_label.setFixedSize(32, 32)
+        header_layout.addWidget(logo_label)
+        
+        # Title and subtitle container
+        title_container = QVBoxLayout()
+        title_container.setSpacing(0)
+        
         # Title
         title = QLabel("GROBI")
         title_font = QFont()
         title_font.setPointSize(24)
         title_font.setBold(True)
         title.setFont(title_font)
-        layout.addWidget(title)
+        title_container.addWidget(title)
         
         # Subtitle
         self.subtitle = QLabel("GFZ Research Data Repository Operations & Batch Interface")
@@ -266,7 +285,12 @@ class MainWindow(QMainWindow):
         effective_theme = self.theme_manager.get_effective_theme()
         subtitle_color = "#999" if effective_theme == Theme.DARK else "#666"
         self.subtitle.setStyleSheet(f"color: {subtitle_color};")
-        layout.addWidget(self.subtitle)
+        title_container.addWidget(self.subtitle)
+        
+        header_layout.addLayout(title_container)
+        header_layout.addStretch()  # Push everything to the left
+        
+        layout.addLayout(header_layout)
         
         # Add spacing
         layout.addSpacing(20)
