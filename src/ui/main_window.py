@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QTextEdit, QProgressBar, QLabel, QMessageBox
+    QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox
 )
 from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt
 from PySide6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices, QPixmap
@@ -171,6 +171,9 @@ class MainWindow(QMainWindow):
         self.authors_update_thread = None
         self.authors_update_worker = None
         
+        # Track current username for CSV detection
+        self._current_username = None
+        
         # Initialize theme manager
         self.theme_manager = ThemeManager()
         self.theme_manager.theme_changed.connect(self._on_theme_changed)
@@ -295,29 +298,53 @@ class MainWindow(QMainWindow):
         # Add spacing
         layout.addSpacing(20)
         
-        # Load DOIs button
-        self.load_button = QPushButton("📥 DOIs und Landing Page URLs laden")
-        self.load_button.setMinimumHeight(50)
+        # GroupBox 1: Landing Page URLs
+        urls_group = QGroupBox("🔗 Landing Page URLs")
+        urls_layout = QVBoxLayout()
+        urls_layout.setSpacing(10)
+        
+        # Status label for URLs
+        self.urls_status_label = QLabel("⚪ Keine CSV-Datei gefunden")
+        urls_layout.addWidget(self.urls_status_label)
+        
+        # Buttons for URLs workflow
+        self.load_button = QPushButton("📥 DOIs und URLs exportieren")
+        self.load_button.setMinimumHeight(40)
         self.load_button.clicked.connect(self._on_load_dois_clicked)
-        layout.addWidget(self.load_button)
+        urls_layout.addWidget(self.load_button)
         
-        # Load Authors button
-        self.load_authors_button = QPushButton("👥 DOIs und Autoren laden")
-        self.load_authors_button.setMinimumHeight(50)
-        self.load_authors_button.clicked.connect(self._on_load_authors_clicked)
-        layout.addWidget(self.load_authors_button)
-        
-        # Update URLs button
         self.update_button = QPushButton("🔄 Landing Page URLs aktualisieren")
-        self.update_button.setMinimumHeight(50)
+        self.update_button.setMinimumHeight(40)
+        self.update_button.setEnabled(False)  # Initially disabled
         self.update_button.clicked.connect(self._on_update_urls_clicked)
-        layout.addWidget(self.update_button)
+        urls_layout.addWidget(self.update_button)
         
-        # Update Authors button
+        urls_group.setLayout(urls_layout)
+        layout.addWidget(urls_group)
+        
+        # GroupBox 2: Authors Metadata
+        authors_group = QGroupBox("👥 Autoren-Metadaten")
+        authors_layout = QVBoxLayout()
+        authors_layout.setSpacing(10)
+        
+        # Status label for authors
+        self.authors_status_label = QLabel("⚪ Keine CSV-Datei gefunden")
+        authors_layout.addWidget(self.authors_status_label)
+        
+        # Buttons for authors workflow
+        self.load_authors_button = QPushButton("📥 DOIs und Autoren exportieren")
+        self.load_authors_button.setMinimumHeight(40)
+        self.load_authors_button.clicked.connect(self._on_load_authors_clicked)
+        authors_layout.addWidget(self.load_authors_button)
+        
         self.update_authors_button = QPushButton("🖊️ Autoren aktualisieren")
-        self.update_authors_button.setMinimumHeight(50)
+        self.update_authors_button.setMinimumHeight(40)
+        self.update_authors_button.setEnabled(False)  # Initially disabled
         self.update_authors_button.clicked.connect(self._on_update_authors_clicked)
-        layout.addWidget(self.update_authors_button)
+        authors_layout.addWidget(self.update_authors_button)
+        
+        authors_group.setLayout(authors_layout)
+        layout.addWidget(authors_group)
         
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -341,8 +368,11 @@ class MainWindow(QMainWindow):
         # Add stretch to push everything to the top
         layout.addStretch()
         
+        # Check for existing CSV files
+        self._check_csv_files()
+        
         # Initial log message
-        self._log("Bereit. Klicke auf 'DOIs und Landing Page URLs laden' um zu beginnen.")
+        self._log("Bereit. Klicke auf 'DOIs und URLs exportieren' um zu beginnen.")
     
     def _apply_styles(self):
         """Apply styling to the window based on current theme."""
@@ -397,6 +427,59 @@ class MainWindow(QMainWindow):
                 background-color: #0078d4;
             }
         """)
+    
+    def _check_csv_files(self):
+        """Check if CSV files exist and update UI accordingly."""
+        output_dir = Path(os.getcwd())
+        
+        # Check for URLs CSV
+        urls_csv_found = False
+        urls_csv_name = None
+        
+        # Check for authors CSV
+        authors_csv_found = False
+        authors_csv_name = None
+        
+        # If we have a username, check for specific files
+        if self._current_username:
+            urls_csv_path = output_dir / f"{self._current_username}_urls.csv"
+            authors_csv_path = output_dir / f"{self._current_username}_authors.csv"
+            
+            if urls_csv_path.exists():
+                urls_csv_found = True
+                urls_csv_name = urls_csv_path.name
+            
+            if authors_csv_path.exists():
+                authors_csv_found = True
+                authors_csv_name = authors_csv_path.name
+        else:
+            # Check for any *_urls.csv and *_authors.csv files
+            urls_files = list(output_dir.glob("*_urls.csv"))
+            authors_files = list(output_dir.glob("*_authors.csv"))
+            
+            if urls_files:
+                urls_csv_found = True
+                urls_csv_name = urls_files[0].name
+            
+            if authors_files:
+                authors_csv_found = True
+                authors_csv_name = authors_files[0].name
+        
+        # Update URLs status
+        if urls_csv_found:
+            self.urls_status_label.setText(f"🟢 CSV bereit: {urls_csv_name}")
+            self.update_button.setEnabled(True)
+        else:
+            self.urls_status_label.setText("⚪ Keine CSV-Datei gefunden")
+            self.update_button.setEnabled(False)
+        
+        # Update authors status
+        if authors_csv_found:
+            self.authors_status_label.setText(f"🟢 CSV bereit: {authors_csv_name}")
+            self.update_authors_button.setEnabled(True)
+        else:
+            self.authors_status_label.setText("⚪ Keine CSV-Datei gefunden")
+            self.update_authors_button.setEnabled(False)
     
     def _log(self, message):
         """
@@ -572,6 +655,10 @@ class MainWindow(QMainWindow):
             
             self._log(f"[OK] CSV-Datei erfolgreich erstellt: {filepath}")
             
+            # Update username and check CSV files
+            self._current_username = username
+            self._check_csv_files()
+            
             QMessageBox.information(
                 self,
                 "Erfolg",
@@ -711,6 +798,10 @@ class MainWindow(QMainWindow):
             unique_dois = len(set(row[0] for row in creator_data))
             
             self._log(f"[OK] CSV-Datei erfolgreich erstellt: {filepath}")
+            
+            # Update username and check CSV files
+            self._current_username = username
+            self._check_csv_files()
             
             QMessageBox.information(
                 self,
@@ -853,6 +944,9 @@ class MainWindow(QMainWindow):
         else:
             self._log("Update abgeschlossen: Keine DOIs verarbeitet")
         self._log("=" * 60)
+        
+        # Check CSV files (in case user deleted/modified them during update)
+        self._check_csv_files()
         
         # Show summary dialog
         if total == 0:
@@ -1178,6 +1272,9 @@ class MainWindow(QMainWindow):
         else:
             self._log("Autoren-Update abgeschlossen")
         self._log("=" * 60)
+        
+        # Check CSV files (in case user deleted/modified them during update)
+        self._check_csv_files()
         
         # Show summary dialog (only if not dry run)
         if self.authors_update_worker and not self.authors_update_worker.dry_run_only:
