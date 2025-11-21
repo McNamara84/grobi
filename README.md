@@ -23,6 +23,7 @@ A modern GUI tool for GFZ Data Services to manage DataCite DOIs.
 - 🧪 Support for test and production API
 - 🎨 Modern user interface with PySide6 (Qt6)
 - 🌓 **Dark Mode Support**: Auto-detection of system theme with manual override (AUTO/LIGHT/DARK)
+- 🔐 **Credential Management**: Secure storage of multiple DataCite accounts with Windows Credential Manager
 - ⚡ Non-blocking API calls with progress indication
 - 📈 Real-time progress tracking for bulk operations
 - 🛡️ Comprehensive error handling and validation
@@ -95,7 +96,7 @@ pip install -r requirements-dev.txt
 
 The project includes a comprehensive test suite:
 
-- **183 Unit Tests** for all modules
+- **244 Unit Tests** for all modules (including credential management)
 - **77% Code Coverage** (Business Logic 90%+)
 - **Automated CI/CD** with GitHub Actions
 
@@ -459,6 +460,59 @@ DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifie
 10.5880/GFZ.1.1.2021.004,Example Institute,Organizational,,,,,,
 ```
 
+### Workflow 6: Credential Management
+
+**Managing Multiple DataCite Accounts:**
+
+The application securely stores your DataCite credentials using Windows Credential Manager, allowing you to save and manage multiple accounts (e.g., production and test environments).
+
+**Saving Credentials:**
+
+1. **First-time use**: When you successfully authenticate with new credentials, the application automatically offers to save them:
+   - A dialog appears after your first successful API call
+   - Enter a descriptive name for the account (e.g., "GFZ Production" or "Test Account")
+   - Click "Speichern" to store the credentials securely
+   - Click "Nicht speichern" to skip (you'll be asked again next time)
+
+2. **Automatic prompt**: The save dialog appears once per workflow after the first successful operation
+   - DOI fetch: After successful retrieval
+   - URL update: After first successful DOI update
+   - Authors update: After first successful metadata update
+
+**Using Saved Credentials:**
+
+1. **Account selection**: When opening a credentials dialog, you'll see a dropdown with your saved accounts:
+   - Format: `Account Name (username - API-Type)`
+   - Example: `GFZ Production (TIB.GFZ - Produktiv-API)`
+   - Select an account to automatically fill in the credentials
+
+2. **Last used account**: The application automatically selects your most recently used account
+
+3. **New credentials**: Select "➕ Neue Zugangsdaten eingeben" to enter different credentials
+
+**Managing Accounts:**
+
+1. **Delete account**: 
+   - Select the account you want to remove from the dropdown
+   - Click the 🗑️ delete button
+   - Confirm the deletion
+   - Both the account metadata and the password are securely removed
+
+2. **Security**: 
+   - Passwords are stored in Windows Credential Manager (encrypted by the OS)
+   - Account metadata is stored locally in `%LOCALAPPDATA%/GROBI/credentials.json`
+   - Only your Windows user account can access the stored passwords
+
+**Security Notes:**
+
+- Credentials are stored per Windows user account
+- Passwords are never stored in plain text
+- The application never logs or displays stored passwords
+- Deleting an account removes all associated data
+- You can manage stored passwords via Windows Credential Manager:
+  - Open "Credential Manager" in Windows Settings
+  - Look for entries starting with "GROBI:"
+
 ### Notes:
 
 - The application retrieves **all** DOIs registered with the specified username
@@ -473,6 +527,7 @@ DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifie
 - Author export: One row per creator (DOIs with multiple creators appear multiple times)
 - **Author updates: Automatic dry run validation prevents errors before making changes**
 - Creator order in CSV determines order in DataCite (first row = primary author)
+- **Credential management: Securely store and manage multiple DataCite accounts**
 
 ## Project Structure
 
@@ -482,7 +537,8 @@ grobi/
 │   ├── main.py                      # Entry point
 │   ├── ui/                          # GUI components
 │   │   ├── main_window.py          # Main window with all DOI operations
-│   │   ├── credentials_dialog.py   # Credentials dialog (dual mode)
+│   │   ├── credentials_dialog.py   # Credentials dialog with account management
+│   │   ├── save_credentials_dialog.py # Post-authentication save dialog
 │   │   └── theme_manager.py        # Theme management (AUTO/LIGHT/DARK)
 │   ├── api/                         # DataCite API client
 │   │   └── datacite_client.py      # API methods (fetch, update metadata/URLs)
@@ -491,8 +547,9 @@ grobi/
 │   │   └── authors_update_worker.py # Creator update worker with dry run
 │   └── utils/                       # Utility functions
 │       ├── csv_exporter.py         # CSV export functionality
-│       └── csv_parser.py           # CSV parsing and validation
-├── tests/                           # Unit tests (183 tests, 77% coverage)
+│       ├── csv_parser.py           # CSV parsing and validation
+│       └── credential_manager.py   # Secure credential storage (Windows Credential Manager)
+├── tests/                           # Unit tests (244 tests, 77% coverage)
 │   ├── test_csv_parser.py          # CSV parsing tests (26 tests)
 │   ├── test_datacite_client.py     # API fetch tests
 │   ├── test_datacite_client_creators.py  # API creator fetch tests
@@ -501,7 +558,11 @@ grobi/
 │   ├── test_csv_exporter.py        # CSV export tests
 │   ├── test_update_worker.py       # URL worker tests
 │   ├── test_authors_update_worker.py # Creator worker tests (14 tests)
-│   └── test_theme_manager.py       # Theme management tests
+│   ├── test_theme_manager.py       # Theme management tests
+│   ├── test_credential_manager.py  # Credential manager tests (28 tests)
+│   ├── test_credentials_dialog.py  # Credentials dialog tests (45 tests)
+│   ├── test_save_credentials_dialog.py # Save credentials dialog tests (17 tests)
+│   └── test_credential_save_integration.py # Integration tests (13 tests)
 ├── requirements.txt                 # Production dependencies
 ├── requirements-dev.txt             # Development dependencies
 └── requirements-build.txt           # Build dependencies (Nuitka)
@@ -567,6 +628,7 @@ Failed DOI Details:
 - **Qt6-based GUI** with modern Windows 11 design
 - **Asynchronous API calls** without blocking the user interface
 - **HTTP Basic Authentication** for DataCite API
+- **Secure credential storage** with Windows Credential Manager integration (keyring library)
 - **Automatic pagination** for large datasets
 - **UTF-8 encoding** for international characters
 - **Thread-safe implementation** with Qt Signals/Slots
@@ -576,6 +638,7 @@ Failed DOI Details:
 - **Background threading** for long-running bulk update operations
 - **Real-time progress tracking** with X/Y counter display
 - **Continue-on-error strategy** for bulk operations with comprehensive logging
+- **Multi-account management** with account metadata stored in `%LOCALAPPDATA%/GROBI/`
 
 ## License
 
@@ -589,6 +652,7 @@ Holger Ehrmann, GFZ Data Services, GFZ Helmholtz Centre for Geosciences
 
 - Python 3.10+ (Developed and tested with Python 3.13)
   - **Note:** Release executables are built with Python 3.12 for better MSVC compatibility and stable Nuitka support
-- PySide6 (Qt6)
-- DataCite REST API v2
+- PySide6 (Qt6) - Modern GUI framework
+- keyring 25.7.0 - Secure credential storage with Windows Credential Manager
+- DataCite REST API v2 - DOI metadata management
 
