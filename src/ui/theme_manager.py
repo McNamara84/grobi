@@ -143,6 +143,22 @@ class ThemeManager(QObject):
             QMainWindow {
                 background-color: #f5f5f5;
             }
+            QGroupBox {
+                background-color: white;
+                border: 2px solid #d0d0d0;
+                border-radius: 6px;
+                margin-top: 12px;
+                padding-top: 10px;
+                font-weight: bold;
+                font-size: 13px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 10px;
+                padding: 0 5px;
+                color: #0078d4;
+            }
             QTextEdit {
                 background-color: white;
                 color: #333;
@@ -190,6 +206,22 @@ class ThemeManager(QObject):
         return """
             QMainWindow {
                 background-color: #1e1e1e;
+            }
+            QGroupBox {
+                background-color: #252525;
+                border: 2px solid #3e3e3e;
+                border-radius: 6px;
+                margin-top: 12px;
+                padding-top: 10px;
+                font-weight: bold;
+                font-size: 13px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 10px;
+                padding: 0 5px;
+                color: #1177bb;
             }
             QTextEdit {
                 background-color: #2d2d2d;
