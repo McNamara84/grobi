@@ -142,9 +142,17 @@ class TestConnectionTest:
         assert settings_dialog.test_button is not None
         assert settings_dialog.test_button.text() == "Verbindung testen"
     
+    @patch('mysql.connector.connect')
     @patch('src.ui.settings_dialog.QMessageBox')
-    def test_connection_test_starts_worker(self, mock_msgbox, settings_dialog):
+    def test_connection_test_starts_worker(self, mock_msgbox, mock_connect, settings_dialog, qtbot):
         """Test that clicking test button starts worker thread."""
+        # Mock successful DB connection
+        mock_conn = Mock()
+        mock_cursor = Mock()
+        mock_cursor.fetchone.return_value = (1,)
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+        
         # Enable database functionality first (button is disabled by default)
         settings_dialog.db_enabled_checkbox.setChecked(True)
         
@@ -164,8 +172,20 @@ class TestConnectionTest:
         assert settings_dialog.connection_test_thread is not None
         assert settings_dialog.connection_test_worker is not None
         
-        # Verify worker has correct parameters (check the worker's attributes if available)
-        # Note: ConnectionTestWorker stores these internally for its run() method
+        # Wait for connection status to update (indicates thread finished)
+        qtbot.waitUntil(lambda: "✓" in settings_dialog.connection_status.text() or "✗" in settings_dialog.connection_status.text(), timeout=5000)
+        
+        # Verify connection was attempted with correct parameters
+        mock_connect.assert_called_once_with(
+            host="host",
+            database="db",
+            user="user",
+            password="pass",
+            connect_timeout=10
+        )
+        
+        # Verify success message
+        assert "✓ Verbindung erfolgreich" in settings_dialog.connection_status.text()
 
 
 class TestConnectionTestWorker:
