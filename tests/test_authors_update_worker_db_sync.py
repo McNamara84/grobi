@@ -107,7 +107,7 @@ class TestDatabaseFirstPattern:
         csv_file = tmp_path / "test.csv"
         csv_file.write_text(
             CSV_HEADER +
-            "10.5880/test.002,Smith, Jane,Personal,Jane,Smith,0000-0002-3456-7890,ORCID,https://orcid.org\n"
+            '10.5880/test.001,"Doe, John",Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n'
         )
         
         worker = AuthorsUpdateWorker("test_user", "test_pass", str(csv_file), True)
@@ -165,8 +165,7 @@ class TestDatabaseFirstPattern:
         
         csv_file = tmp_path / "test.csv"
         csv_file.write_text(
-            CSV_HEADER +
-            "10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n"
+            CSV_HEADER +'`n            '10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n'
         )
         
         worker = AuthorsUpdateWorker("test_user", "test_pass", str(csv_file), True)
@@ -219,8 +218,7 @@ class TestDatabaseFirstPattern:
         
         csv_file = tmp_path / "test.csv"
         csv_file.write_text(
-            CSV_HEADER +
-            "10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n"
+            CSV_HEADER +'`n            '10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n'
         )
         
         worker = AuthorsUpdateWorker("test_user", "test_pass", str(csv_file), True)
@@ -271,8 +269,7 @@ class TestDatabaseFirstPattern:
         
         csv_file = tmp_path / "test.csv"
         csv_file.write_text(
-            CSV_HEADER +
-            "10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n"
+            CSV_HEADER +'`n            '10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n'
         )
         
         worker = AuthorsUpdateWorker("test_user", "test_pass", str(csv_file), True)
@@ -322,8 +319,7 @@ class TestDatabaseFirstPattern:
         
         csv_file = tmp_path / "test.csv"
         csv_file.write_text(
-            CSV_HEADER +
-            "10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n"
+            CSV_HEADER +'`n            '10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n'
         )
         
         worker = AuthorsUpdateWorker("test_user", "test_pass", str(csv_file), True)
@@ -377,8 +373,7 @@ class TestDatabaseConnection:
         
         csv_file = tmp_path / "test.csv"
         csv_file.write_text(
-            CSV_HEADER +
-            "10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n"
+            CSV_HEADER +'`n            '10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n'
         )
         
         worker = AuthorsUpdateWorker("test_user", "test_pass", str(csv_file), True)
@@ -420,8 +415,7 @@ class TestDatabaseConnection:
         
         csv_file = tmp_path / "test.csv"
         csv_file.write_text(
-            CSV_HEADER +
-            "10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n"
+            CSV_HEADER +'`n            '10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n'
         )
         
         worker = AuthorsUpdateWorker("test_user", "test_pass", str(csv_file), True)
@@ -454,8 +448,7 @@ class TestDatabaseConnection:
         
         csv_file = tmp_path / "test.csv"
         csv_file.write_text(
-            CSV_HEADER +
-            "10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n"
+            CSV_HEADER +'`n            '10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n'
         )
         
         worker = AuthorsUpdateWorker("test_user", "test_pass", str(csv_file), True)
@@ -505,8 +498,7 @@ class TestErrorHandling:
         
         csv_file = tmp_path / "test.csv"
         csv_file.write_text(
-            CSV_HEADER +
-            "10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n"
+            CSV_HEADER +'`n            '10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n'
         )
         
         worker = AuthorsUpdateWorker("test_user", "test_pass", str(csv_file), True)
@@ -557,8 +549,7 @@ class TestErrorHandling:
         
         csv_file = tmp_path / "test.csv"
         csv_file.write_text(
-            CSV_HEADER +
-            "10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n"
+            CSV_HEADER +'`n            '10.5880/test.001,Doe,  John,Personal,John,Doe,0000-0001-2345-6789,ORCID,https://orcid.org\n'
             "10.5880/test.002,Smith,  Jane,Personal,Jane,Smith,0000-0002-3456-7890,ORCID,https://orcid.org\n"
         )
         
