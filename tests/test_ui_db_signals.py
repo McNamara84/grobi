@@ -125,29 +125,24 @@ class TestDatabaseSyncSignals:
             settings_mock.value.return_value = True  # DB enabled
             mock_settings.return_value = settings_mock
             
-            # Mock Path to use tmp_path
-            with patch('src.ui.main_window.Path') as mock_path:
-                log_file = tmp_path / "test_log.txt"
-                mock_path.return_value = log_file
+            # Mock os.getcwd to return tmp_path - this is where the log will be created
+            with patch('src.ui.main_window.os.getcwd', return_value=str(tmp_path)):
+                # Create log
+                error_list = ["10.5880/test.001: INKONSISTENZ - Datenbank erfolgreich, DataCite fehlgeschlagen"]
+                main_window._create_authors_update_log(
+                    success_count=5,
+                    error_count=1,
+                    error_list=error_list
+                )
                 
-                # Mock os.getcwd to return tmp_path
-                with patch('src.ui.main_window.os.getcwd', return_value=str(tmp_path)):
-                    # Create log
-                    error_list = ["10.5880/test.001: INKONSISTENZ - Datenbank erfolgreich, DataCite fehlgeschlagen"]
-                    main_window._create_authors_update_log(
-                        success_count=5,
-                        error_count=1,
-                        error_list=error_list
-                    )
-                    
-                    # Read log file
-                    log_files = list(tmp_path.glob("authors_update_log_*.txt"))
-                    assert len(log_files) == 1
-                    
-                    log_content = log_files[0].read_text(encoding='utf-8')
-                    
-                    # Verify DB sync info is included
-                    assert "Datenbank-Synchronisation: Aktiviert" in log_content
-                    assert "KRITISCHE INKONSISTENZEN: 1" in log_content
-                    assert "DATABASE-FIRST UPDATE PATTERN" in log_content
-                    assert "INKONSISTENZ" in log_content
+                # Read log file
+                log_files = list(tmp_path.glob("authors_update_log_*.txt"))
+                assert len(log_files) == 1
+                
+                log_content = log_files[0].read_text(encoding='utf-8')
+                
+                # Verify DB sync info is included
+                assert "Datenbank-Synchronisation: Aktiviert" in log_content
+                assert "KRITISCHE INKONSISTENZEN: 1" in log_content
+                assert "DATABASE-FIRST UPDATE PATTERN" in log_content
+                assert "INKONSISTENZ" in log_content
