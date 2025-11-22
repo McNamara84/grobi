@@ -37,24 +37,38 @@ class TestAuthorsUpdateWorker:
     @pytest.fixture
     def worker_dry_run(self, valid_csv_file):
         """Create an AuthorsUpdateWorker instance for dry run."""
-        return AuthorsUpdateWorker(
-            username="test_user",
-            password="test_pass",
-            csv_path=valid_csv_file,
-            use_test_api=True,
-            dry_run_only=True
-        )
+        # Mock QSettings to disable database sync for these tests
+        with patch('src.workers.authors_update_worker.QSettings') as mock_settings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False  # DB disabled
+            mock_settings.return_value = settings_instance
+            
+            worker = AuthorsUpdateWorker(
+                username="test_user",
+                password="test_pass",
+                csv_path=valid_csv_file,
+                use_test_api=True,
+                dry_run_only=True
+            )
+        return worker
     
     @pytest.fixture
     def worker_update(self, valid_csv_file):
         """Create an AuthorsUpdateWorker instance for actual updates."""
-        return AuthorsUpdateWorker(
-            username="test_user",
-            password="test_pass",
-            csv_path=valid_csv_file,
-            use_test_api=True,
-            dry_run_only=False
-        )
+        # Mock QSettings to disable database sync for these tests
+        with patch('src.workers.authors_update_worker.QSettings') as mock_settings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False  # DB disabled
+            mock_settings.return_value = settings_instance
+            
+            worker = AuthorsUpdateWorker(
+                username="test_user",
+                password="test_pass",
+                csv_path=valid_csv_file,
+                use_test_api=True,
+                dry_run_only=False
+            )
+        return worker
     
     @pytest.fixture
     def mock_metadata(self):
@@ -135,7 +149,13 @@ class TestAuthorsUpdateWorker:
         worker_dry_run.dry_run_complete.connect(lambda *args: dry_run_signals.append(args))
         worker_dry_run.finished.connect(lambda *args: finished_signals.append(args))
         
-        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client):
+        # Mock both DataCiteClient and QSettings for the entire run() execution
+        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client), \
+             patch('src.workers.authors_update_worker.QSettings') as mock_qsettings, \
+             patch('src.workers.authors_update_worker.load_db_credentials', return_value=None):
+            settings_instance = Mock()
+            settings_instance.value.return_value = False  # DB disabled during run
+            mock_qsettings.return_value = settings_instance
             worker_dry_run.run()
         
         # Check progress signals were emitted
@@ -176,7 +196,11 @@ class TestAuthorsUpdateWorker:
         worker_dry_run.dry_run_complete.connect(lambda *args: dry_run_signals.append(args))
         worker_dry_run.finished.connect(lambda *args: finished_signals.append(args))
         
-        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client):
+        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client), \
+             patch('src.workers.authors_update_worker.QSettings') as mock_qsettings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False  # DB disabled during run
+            mock_qsettings.return_value = settings_instance
             worker_dry_run.run()
         
         # Check dry run results
@@ -220,7 +244,11 @@ class TestAuthorsUpdateWorker:
         worker_update.doi_updated.connect(lambda *args: doi_updated_signals.append(args))
         worker_update.finished.connect(lambda *args: finished_signals.append(args))
         
-        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client):
+        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client), \
+             patch('src.workers.authors_update_worker.QSettings') as mock_qsettings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False  # DB disabled during run
+            mock_qsettings.return_value = settings_instance
             worker_update.run()
         
         # Check dry run completed
@@ -230,7 +258,8 @@ class TestAuthorsUpdateWorker:
         assert len(doi_updated_signals) == 2
         for doi, success, message in doi_updated_signals:
             assert success is True
-            assert "erfolgreich aktualisiert" in message
+            # New message format from Database-First implementation
+            assert ("✓ DataCite aktualisiert" in message or "erfolgreich aktualisiert" in message)
         
         # Check final results
         assert len(finished_signals) == 1
@@ -264,7 +293,11 @@ class TestAuthorsUpdateWorker:
         worker_update.doi_updated.connect(lambda *args: doi_updated_signals.append(args))
         worker_update.finished.connect(lambda *args: finished_signals.append(args))
         
-        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client):
+        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client), \
+             patch('src.workers.authors_update_worker.QSettings') as mock_qsettings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False  # DB disabled during run
+            mock_qsettings.return_value = settings_instance
             worker_update.run()
         
         # Check DOI updated signals
@@ -320,7 +353,11 @@ class TestAuthorsUpdateWorker:
         worker_dry_run.error_occurred.connect(lambda *args: error_signals.append(args))
         worker_dry_run.finished.connect(lambda *args: finished_signals.append(args))
         
-        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client):
+        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client), \
+             patch('src.workers.authors_update_worker.QSettings') as mock_qsettings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False  # DB disabled during run
+            mock_qsettings.return_value = settings_instance
             worker_dry_run.run()
         
         # Check error signal
@@ -345,7 +382,11 @@ class TestAuthorsUpdateWorker:
         worker_dry_run.error_occurred.connect(lambda *args: error_signals.append(args))
         worker_dry_run.finished.connect(lambda *args: finished_signals.append(args))
         
-        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client):
+        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client), \
+             patch('src.workers.authors_update_worker.QSettings') as mock_qsettings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False  # DB disabled during run
+            mock_qsettings.return_value = settings_instance
             worker_dry_run.run()
         
         # Check error signal
@@ -369,7 +410,11 @@ class TestAuthorsUpdateWorker:
         worker_update.error_occurred.connect(lambda *args: error_signals.append(args))
         worker_update.finished.connect(lambda *args: finished_signals.append(args))
         
-        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client):
+        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client), \
+             patch('src.workers.authors_update_worker.QSettings') as mock_qsettings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False  # DB disabled during run
+            mock_qsettings.return_value = settings_instance
             worker_update.run()
         
         # Check error signal (network error during update aborts process)
@@ -393,7 +438,11 @@ class TestAuthorsUpdateWorker:
         
         worker_dry_run.dry_run_complete.connect(lambda *args: dry_run_signals.append(args))
         
-        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client):
+        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client), \
+             patch('src.workers.authors_update_worker.QSettings') as mock_qsettings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False  # DB disabled during run
+            mock_qsettings.return_value = settings_instance
             worker_dry_run.run()
         
         # Check dry run results - first DOI should be marked invalid
@@ -425,7 +474,11 @@ class TestAuthorsUpdateWorker:
         
         worker_update.doi_updated.connect(lambda *args: doi_updated_signals.append(args))
         
-        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client):
+        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client), \
+             patch('src.workers.authors_update_worker.QSettings') as mock_qsettings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False  # DB disabled during run
+            mock_qsettings.return_value = settings_instance
             worker_update.run()
         
         # Only one DOI should be updated (the valid one)

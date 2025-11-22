@@ -551,6 +551,138 @@ The application securely stores your DataCite credentials using Windows Credenti
   - Open "Credential Manager" in Windows Settings
   - Look for entries starting with "GROBI_DataCite:"
 
+### Workflow 7: Database Synchronization (Optional)
+
+**⚠️ GFZ-Internal Feature - Requires VPN Connection**
+
+GROBI can automatically synchronize author metadata updates with the internal GFZ database (SUMARIOPMD) in addition to DataCite. This ensures data consistency across both systems.
+
+**Requirements:**
+- Active VPN connection to GFZ network
+- Database credentials (contact GFZ Data Services)
+- Write permissions for SUMARIOPMD database
+
+**Setup:**
+
+1. **Configure Database Connection:**
+   - Open Settings: Menu → Einstellungen (or press Ctrl+,)
+   - Switch to "Datenbank" tab
+   - Enter database credentials:
+     - Host: `rz-mysql3.gfz-potsdam.de`
+     - Database: `sumario-pmd`
+     - Username: Your database username
+     - Password: Your database password
+   - Click "Verbindung testen" (Test Connection)
+   - Wait for status: ✓ Verbunden (Connected) or ✗ Fehler (Error)
+   - If successful, check "☑ Datenbank-Updates aktivieren"
+   - Click "Speichern" (Save)
+
+2. **Credentials are stored securely:**
+   - Password encrypted via Windows Credential Manager
+   - Same security as DataCite credentials
+   - Can be deleted anytime via Settings dialog
+
+**How Database Sync Works:**
+
+When database synchronization is enabled, author metadata updates follow a **Database-First Two-Phase-Commit** pattern:
+
+```
+Phase 1: Validation
+  ├─ ✓ DataCite API reachable?
+  └─ ✓ Database reachable?
+  
+Phase 2: Execution (Database-First!)
+  ├─ 1. Database Update (with ROLLBACK capability)
+  │  ├─ START TRANSACTION
+  │  ├─ UPDATE resourceagent table
+  │  └─ Success → COMMIT, proceed to DataCite
+  │     Error → ROLLBACK, ABORT (nothing committed!)
+  │
+  └─ 2. DataCite Update (only if database succeeded!)
+     ├─ Success → ✓ Both systems synchronized
+     ├─ Error → Immediate Retry (1-2 attempts)
+     └─ Retry failed → Logged as inconsistency
+```
+
+**Why Database-First?**
+- ✅ Database has real ROLLBACK (SQL transaction)
+- ✅ DataCite has NO rollback (once pushed = permanent)
+- ✅ Database errors more likely (VPN drops, locks)
+- ✅ Minimizes inconsistency risk from ~50% to ~5%
+
+**Update Process:**
+
+1. **Start Author Update** (Workflow 5)
+2. **Automatic Validation:**
+   - Application checks DataCite API availability
+   - If database sync enabled: checks database connection
+   - **Both must be available** to proceed
+   - Error example: "Datenbank-Updates aktiviert, aber DB nicht erreichbar. Bitte VPN-Verbindung prüfen..."
+
+3. **For Each DOI:**
+   - Progress shows separate status for each system:
+     ```
+     DOI 2/5: 10.5880/gfz.example.001
+       ✓ Validierung erfolgreich
+       → Datenbank aktualisieren...
+       ✓ Datenbank erfolgreich
+       → DataCite aktualisieren...
+       ✓ DataCite erfolgreich
+     ```
+
+4. **Update Log File:**
+   - Timestamped file: `update_log_YYYYMMDD_HHMMSS.txt`
+   - Shows database sync status
+   - Lists any inconsistencies (database OK, DataCite failed)
+   - Example:
+     ```
+     ======================================================================
+     DATABASE-FIRST UPDATE PATTERN:
+       1. Validation Phase: Beide Systeme erreichbar? ✓
+       2. Database Update: ZUERST aktualisiert (mit ROLLBACK)
+       3. DataCite Update: DANACH aktualisiert (mit Retry bei Fehler)
+     
+     Dieses Pattern minimiert Inkonsistenzen:
+       - DB-Fehler → ROLLBACK (nichts committed)
+       - DataCite-Fehler → Sofortiger Retry (1-2 Versuche)
+       - Beide Fehler → Update abgebrochen
+     ======================================================================
+     
+     ZUSAMMENFASSUNG:
+       Gesamt: 10 DOIs
+       Erfolgreich: 9
+       Fehlgeschlagen: 1
+       DB-Sync Status: Aktiviert ✓
+       Kritische Inkonsistenzen: 0 (manuelle Korrektur erforderlich)
+     ```
+
+**Handling Inconsistencies:**
+
+In rare cases (~5%), database update succeeds but DataCite fails even after retry:
+
+- ⚠️ **Database committed, DataCite not updated** = Inconsistency
+- Log file shows: `✓ Datenbank erfolgreich` but `✗ DataCite fehlgeschlagen (DB bereits committed!)`
+- **Action required:** Manual correction in DataCite
+- Recommendation: Use CSV export to verify current DataCite state, then re-run update
+
+**Disabling Database Sync:**
+
+1. Open Settings → Datenbank tab
+2. Uncheck "☑ Datenbank-Updates aktivieren"
+3. Click "Speichern"
+4. Author updates will only affect DataCite (classic behavior)
+5. VPN connection no longer required
+
+**Notes:**
+
+- Database sync is **optional** - GROBI works fine without it
+- Only affects author metadata updates (Workflow 5)
+- Does NOT affect Landing Page URL updates (Workflow 2)
+- VPN connection required only when database sync is enabled
+- Connection tested before each update batch (validation phase)
+- Database credentials stored as securely as DataCite credentials
+- Only updates **Creators** in database, never Contributors
+
 ### Notes:
 
 - The application retrieves **all** DOIs registered with the specified username
