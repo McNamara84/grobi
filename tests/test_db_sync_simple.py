@@ -50,6 +50,7 @@ def mock_datacite_client():
             }
         }
     }
+    client.validate_creators_match.return_value = (True, "Valid")
     client.update_doi_creators.return_value = (True, "Success")
     return client
 
@@ -76,7 +77,7 @@ class TestDatabaseFirstCore:
         mock_db_client
     ):
         """Test successful update in both systems."""
-        worker = AuthorsUpdateWorker("user", "pass", valid_csv_file, True)
+        worker = AuthorsUpdateWorker("user", "pass", valid_csv_file, True, False)
         
         # Track signals
         db_signals = []
@@ -123,7 +124,7 @@ class TestDatabaseFirstCore:
             ["Error"]
         )
         
-        worker = AuthorsUpdateWorker("user", "pass", valid_csv_file, True)
+        worker = AuthorsUpdateWorker("user", "pass", valid_csv_file, True, False)
         
         db_signals = []
         doi_updates = []
@@ -163,7 +164,7 @@ class TestDatabaseFirstCore:
             (True, "Success")    # Retry
         ]
         
-        worker = AuthorsUpdateWorker("user", "pass", valid_csv_file, True)
+        worker = AuthorsUpdateWorker("user", "pass", valid_csv_file, True, False)
         
         dc_signals = []
         doi_updates = []
@@ -200,7 +201,7 @@ class TestDatabaseFirstCore:
         # Both DataCite calls fail
         mock_datacite_client.update_doi_creators.return_value = (False, "Error")
         
-        worker = AuthorsUpdateWorker("user", "pass", valid_csv_file, True)
+        worker = AuthorsUpdateWorker("user", "pass", valid_csv_file, True, False)
         
         dc_signals = []
         doi_updates = []
@@ -237,7 +238,7 @@ class TestDatabaseFirstCore:
         # DOI not in DB
         mock_db_client.get_resource_id_for_doi.return_value = None
         
-        worker = AuthorsUpdateWorker("user", "pass", valid_csv_file, True)
+        worker = AuthorsUpdateWorker("user", "pass", valid_csv_file, True, False)
         
         db_signals = []
         doi_updates = []
@@ -276,7 +277,7 @@ class TestValidationPhase:
         mock_datacite_client
     ):
         """Test validation aborts when DB enabled but unavailable."""
-        worker = AuthorsUpdateWorker("user", "pass", valid_csv_file, True)
+        worker = AuthorsUpdateWorker("user", "pass", valid_csv_file, True, False)
         
         error_signals = []
         worker.error_occurred.connect(lambda msg: error_signals.append(msg))
@@ -292,7 +293,7 @@ class TestValidationPhase:
         
         # Error occurred
         assert len(error_signals) == 1
-        assert "Datenbank nicht verfügbar" in error_signals[0]
+        assert "Datenbank" in error_signals[0] and "nicht erreichbar" in error_signals[0]
     
     def test_database_disabled_datacite_only(
         self,
@@ -304,7 +305,7 @@ class TestValidationPhase:
         """Test DataCite-only when DB disabled."""
         mock_qsettings.value.return_value = False  # DB disabled
         
-        worker = AuthorsUpdateWorker("user", "pass", valid_csv_file, True)
+        worker = AuthorsUpdateWorker("user", "pass", valid_csv_file, True, False)
         
         db_signals = []
         dc_signals = []
