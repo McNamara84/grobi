@@ -37,24 +37,38 @@ class TestAuthorsUpdateWorker:
     @pytest.fixture
     def worker_dry_run(self, valid_csv_file):
         """Create an AuthorsUpdateWorker instance for dry run."""
-        return AuthorsUpdateWorker(
-            username="test_user",
-            password="test_pass",
-            csv_path=valid_csv_file,
-            use_test_api=True,
-            dry_run_only=True
-        )
+        # Mock QSettings to disable database sync for these tests
+        with patch('PySide6.QtCore.QSettings') as mock_settings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False  # DB disabled
+            mock_settings.return_value = settings_instance
+            
+            worker = AuthorsUpdateWorker(
+                username="test_user",
+                password="test_pass",
+                csv_path=valid_csv_file,
+                use_test_api=True,
+                dry_run_only=True
+            )
+        return worker
     
     @pytest.fixture
     def worker_update(self, valid_csv_file):
         """Create an AuthorsUpdateWorker instance for actual updates."""
-        return AuthorsUpdateWorker(
-            username="test_user",
-            password="test_pass",
-            csv_path=valid_csv_file,
-            use_test_api=True,
-            dry_run_only=False
-        )
+        # Mock QSettings to disable database sync for these tests
+        with patch('PySide6.QtCore.QSettings') as mock_settings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False  # DB disabled
+            mock_settings.return_value = settings_instance
+            
+            worker = AuthorsUpdateWorker(
+                username="test_user",
+                password="test_pass",
+                csv_path=valid_csv_file,
+                use_test_api=True,
+                dry_run_only=False
+            )
+        return worker
     
     @pytest.fixture
     def mock_metadata(self):
@@ -230,7 +244,8 @@ class TestAuthorsUpdateWorker:
         assert len(doi_updated_signals) == 2
         for doi, success, message in doi_updated_signals:
             assert success is True
-            assert "erfolgreich aktualisiert" in message
+            # New message format from Database-First implementation
+            assert ("✓ DataCite aktualisiert" in message or "erfolgreich aktualisiert" in message)
         
         # Check final results
         assert len(finished_signals) == 1

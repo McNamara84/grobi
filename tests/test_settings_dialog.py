@@ -31,7 +31,7 @@ def mock_theme_manager():
     """Mock ThemeManager."""
     mock = Mock()
     mock.get_current_theme.return_value = Theme.AUTO
-    mock.credentials_dialog_stylesheet = ""  # Return empty string for stylesheet
+    mock.get_credentials_dialog_stylesheet.return_value = ""  # Return empty string for stylesheet
     yield mock
 
 

@@ -23,8 +23,8 @@ def mock_keyring():
 
 @pytest.fixture
 def mock_qsettings():
-    """Mock QSettings."""
-    with patch('src.utils.credential_manager.QSettings') as mock_class:
+    """Mock QSettings - needs to be patched where it's imported (PySide6.QtCore)."""
+    with patch('PySide6.QtCore.QSettings') as mock_class:
         settings_instance = MagicMock()
         mock_class.return_value = settings_instance
         yield settings_instance

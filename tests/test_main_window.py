@@ -355,6 +355,7 @@ class TestMenuBar:
         actions = menubar.actions()
         assert len(actions) >= 2, "Should have at least Ansicht and Hilfe menus"
     
+    @pytest.mark.skip(reason="Ansicht menu removed in Phase 1 - theme moved to Settings")
     def test_view_menu_exists(self, main_window):
         """Test that Ansicht (View) menu exists."""
         menubar = main_window.menuBar()
@@ -371,6 +372,7 @@ class TestMenuBar:
         menu_titles = [action.text() for action in actions]
         assert "Hilfe" in menu_titles
     
+    @pytest.mark.skip(reason="Theme actions removed from MainWindow in Phase 1 - moved to Settings")
     def test_theme_actions_exist(self, main_window):
         """Test that theme actions exist."""
         assert hasattr(main_window, 'auto_theme_action')
@@ -382,6 +384,7 @@ class TestMenuBar:
         assert main_window.light_theme_action.isCheckable()
         assert main_window.dark_theme_action.isCheckable()
     
+    @pytest.mark.skip(reason="Theme action group removed from MainWindow in Phase 1 - moved to Settings")
     def test_theme_action_group(self, main_window):
         """Test that theme actions are in exclusive group."""
         assert hasattr(main_window, 'theme_action_group')
@@ -410,6 +413,7 @@ class TestMenuBar:
         call_args = mock_open_url.call_args[0][0]
         assert "github.com" in call_args.toString().lower()
     
+    @pytest.mark.skip(reason="_set_theme method removed from MainWindow in Phase 1 - moved to Settings")
     def test_set_theme_method_exists(self, main_window):
         """Test that _set_theme method exists."""
         assert hasattr(main_window, '_set_theme')
