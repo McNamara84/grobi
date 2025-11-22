@@ -22,6 +22,10 @@ A modern GUI tool for GFZ Data Services to manage DataCite DOIs.
 ### Technical Features
 - 🧪 Support for test and production API
 - 🎨 Modern user interface with PySide6 (Qt6)
+- 🗺️ **Professional Menubar**: Organized menus for theme settings and help resources
+- 💬 **About Dialog**: Displays version, author info, and quick access to GitHub, Changelog, and License
+- 🏭 **Prominent Logo**: Application logo displayed in main window header
+- 📦 **Workflow Organization**: GroupBox-based UI with status indicators for CSV file availability
 - 🌓 **Dark Mode Support**: Auto-detection of system theme with manual override (AUTO/LIGHT/DARK)
 - 🔐 **Credential Management**: Secure storage of multiple DataCite accounts with Windows Credential Manager
 - ⚡ Non-blocking API calls with progress indication
@@ -122,7 +126,7 @@ pip install -r requirements-dev.txt
 
 The project includes a comprehensive test suite:
 
-- **244 Unit Tests** for all modules (including credential management)
+- **287 Unit Tests** for all modules (including UI components and credential management)
 - **77% Code Coverage** (Business Logic 90%+)
 - **Automated CI/CD** with GitHub Actions
 
@@ -285,29 +289,37 @@ FEHLER:
 
 **Change Application Theme:**
 
-The application supports three theme modes:
+The application supports three theme modes accessible via the **Ansicht** (View) menu:
 
 1. **🔄 Auto Mode** (Default):
    - Automatically detects Windows system theme
    - Switches between Light and Dark based on your system settings
-   - Button shows: `🔄 Auto (Light)` or `🔄 Auto (Dark)`
+   - Menu shows checkmark next to "Auto"
 
 2. **🌙 Dark Mode**:
    - Manually activate dark theme
    - Dark background (#1e1e1e) with light text (#d4d4d4)
    - Optimized for low-light environments
-   - Button shows: `☀️ Light Mode` (to switch back)
+   - Menu shows checkmark next to "Dunkel"
 
 3. **☀️ Light Mode**:
    - Manually activate light theme
    - Light background (#f5f5f5) with dark text (#333)
    - Classic appearance
-   - Button shows: `🌙 Dark Mode` (to switch)
+   - Menu shows checkmark next to "Hell"
 
 **How to Switch:**
-- Click the theme button in the main window
-- Cycles through: AUTO → LIGHT → DARK → AUTO
-- Theme preference is saved and restored on next launch
+1. Click **Ansicht** in the menu bar
+2. Select **Theme** from the dropdown
+3. Choose **Auto**, **Hell** (Light), or **Dunkel** (Dark)
+4. Theme preference is saved and restored on next launch
+
+**Additional Menu Options:**
+
+The **Hilfe** (Help) menu provides quick access to:
+- **Über GROBI...**: Opens About dialog with version info, logo, and links
+- **Changelog anzeigen**: Opens CHANGELOG.md or GitHub releases page
+- **GitHub-Repository öffnen**: Opens project repository in browser
 
 **System Theme Detection:**
 - Windows 10/11: Automatically detects system-wide dark mode setting
@@ -560,9 +572,11 @@ The application securely stores your DataCite credentials using Windows Credenti
 ```
 grobi/
 ├── src/
+│   ├── __version__.py               # Version and metadata
 │   ├── main.py                      # Entry point
 │   ├── ui/                          # GUI components
-│   │   ├── main_window.py          # Main window with all DOI operations
+│   │   ├── main_window.py          # Main window with menubar and workflow groups
+│   │   ├── about_dialog.py         # About dialog with version info and links
 │   │   ├── credentials_dialog.py   # Credentials dialog with account management
 │   │   ├── save_credentials_dialog.py # Post-authentication save dialog
 │   │   └── theme_manager.py        # Theme management (AUTO/LIGHT/DARK)
@@ -575,7 +589,7 @@ grobi/
 │       ├── csv_exporter.py         # CSV export functionality
 │       ├── csv_parser.py           # CSV parsing and validation
 │       └── credential_manager.py   # Secure credential storage (Windows Credential Manager)
-├── tests/                           # Unit tests (244 tests, 77% coverage)
+├── tests/                           # Unit tests (287 tests, 77% coverage)
 │   ├── test_csv_parser.py          # CSV parsing tests (26 tests)
 │   ├── test_datacite_client.py     # API fetch tests
 │   ├── test_datacite_client_creators.py  # API creator fetch tests
@@ -585,6 +599,8 @@ grobi/
 │   ├── test_update_worker.py       # URL worker tests
 │   ├── test_authors_update_worker.py # Creator worker tests (14 tests)
 │   ├── test_theme_manager.py       # Theme management tests
+│   ├── test_about_dialog.py        # About dialog tests (14 tests)
+│   ├── test_main_window.py         # Main window tests including UI components (30 tests)
 │   ├── test_credential_manager.py  # Credential manager tests (28 tests)
 │   ├── test_credentials_dialog.py  # Credentials dialog tests (45 tests)
 │   ├── test_save_credentials_dialog.py # Save credentials dialog tests (17 tests)

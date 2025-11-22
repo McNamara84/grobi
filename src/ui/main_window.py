@@ -6,14 +6,15 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QPushButton,
-    QTextEdit, QProgressBar, QLabel, QMessageBox
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+    QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox
 )
-from PySide6.QtCore import QThread, Signal, QObject
-from PySide6.QtGui import QFont, QIcon
+from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt
+from PySide6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices, QPixmap
 
 from src.ui.credentials_dialog import CredentialsDialog
 from src.ui.save_credentials_dialog import SaveCredentialsDialog
+from src.ui.about_dialog import AboutDialog
 from src.ui.theme_manager import ThemeManager, Theme
 from src.api.datacite_client import DataCiteClient, DataCiteAPIError, AuthenticationError, NetworkError
 from src.utils.csv_exporter import export_dois_to_csv, export_dois_with_creators_to_csv, CSVExportError
@@ -170,14 +171,77 @@ class MainWindow(QMainWindow):
         self.authors_update_thread = None
         self.authors_update_worker = None
         
+        # Track current username for CSV detection
+        self._current_username = None
+        
         # Initialize theme manager
         self.theme_manager = ThemeManager()
         self.theme_manager.theme_changed.connect(self._on_theme_changed)
         
+        self._setup_menubar()
         self._setup_ui()
         self._apply_styles()
         
         logger.info("Main window initialized")
+    
+    def _setup_menubar(self):
+        """Set up menu bar."""
+        menubar = self.menuBar()
+        
+        # Ansicht-Menü
+        view_menu = menubar.addMenu("Ansicht")
+        
+        # Theme-Untermenü
+        theme_menu = view_menu.addMenu("Theme")
+        
+        # Theme-Actions (Radio-Buttons)
+        self.theme_action_group = QActionGroup(self)
+        self.theme_action_group.setExclusive(True)
+        
+        self.auto_theme_action = QAction("Auto", self, checkable=True)
+        self.light_theme_action = QAction("Hell", self, checkable=True)
+        self.dark_theme_action = QAction("Dunkel", self, checkable=True)
+        
+        self.theme_action_group.addAction(self.auto_theme_action)
+        self.theme_action_group.addAction(self.light_theme_action)
+        self.theme_action_group.addAction(self.dark_theme_action)
+        
+        theme_menu.addAction(self.auto_theme_action)
+        theme_menu.addAction(self.light_theme_action)
+        theme_menu.addAction(self.dark_theme_action)
+        
+        # Aktuelles Theme markieren
+        current_theme = self.theme_manager.get_current_theme()
+        if current_theme == Theme.AUTO:
+            self.auto_theme_action.setChecked(True)
+        elif current_theme == Theme.LIGHT:
+            self.light_theme_action.setChecked(True)
+        else:
+            self.dark_theme_action.setChecked(True)
+        
+        # Signale verbinden
+        self.auto_theme_action.triggered.connect(lambda: self._set_theme(Theme.AUTO))
+        self.light_theme_action.triggered.connect(lambda: self._set_theme(Theme.LIGHT))
+        self.dark_theme_action.triggered.connect(lambda: self._set_theme(Theme.DARK))
+        
+        # Hilfe-Menü
+        help_menu = menubar.addMenu("Hilfe")
+        
+        about_action = QAction("Über GROBI...", self)
+        about_action.triggered.connect(self._show_about_dialog)
+        help_menu.addAction(about_action)
+        
+        changelog_action = QAction("Changelog anzeigen", self)
+        changelog_action.triggered.connect(self._show_changelog)
+        help_menu.addAction(changelog_action)
+        
+        help_menu.addSeparator()
+        
+        github_action = QAction("GitHub-Repository öffnen", self)
+        github_action.triggered.connect(self._open_github)
+        help_menu.addAction(github_action)
+        
+        logger.info("Menu bar initialized")
     
     def _setup_ui(self):
         """Set up the user interface."""
@@ -189,13 +253,32 @@ class MainWindow(QMainWindow):
         layout.setSpacing(20)
         layout.setContentsMargins(30, 30, 30, 30)
         
+        # Header with logo and title
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(10)
+        
+        # Logo
+        logo_label = QLabel()
+        logo_path = Path(__file__).parent / "GROBI-Logo.ico"
+        if logo_path.exists():
+            pixmap = QPixmap(str(logo_path))
+            # Scale to 32x32 for compact display next to title
+            pixmap = pixmap.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            logo_label.setPixmap(pixmap)
+            logo_label.setFixedSize(32, 32)
+        header_layout.addWidget(logo_label)
+        
+        # Title and subtitle container
+        title_container = QVBoxLayout()
+        title_container.setSpacing(0)
+        
         # Title
         title = QLabel("GROBI")
         title_font = QFont()
         title_font.setPointSize(24)
         title_font.setBold(True)
         title.setFont(title_font)
-        layout.addWidget(title)
+        title_container.addWidget(title)
         
         # Subtitle
         self.subtitle = QLabel("GFZ Research Data Repository Operations & Batch Interface")
@@ -205,40 +288,63 @@ class MainWindow(QMainWindow):
         effective_theme = self.theme_manager.get_effective_theme()
         subtitle_color = "#999" if effective_theme == Theme.DARK else "#666"
         self.subtitle.setStyleSheet(f"color: {subtitle_color};")
-        layout.addWidget(self.subtitle)
+        title_container.addWidget(self.subtitle)
+        
+        header_layout.addLayout(title_container)
+        header_layout.addStretch()  # Push everything to the left
+        
+        layout.addLayout(header_layout)
         
         # Add spacing
         layout.addSpacing(20)
         
-        # Load DOIs button
-        self.load_button = QPushButton("📥 DOIs und Landing Page URLs laden")
-        self.load_button.setMinimumHeight(50)
+        # GroupBox 1: Landing Page URLs
+        urls_group = QGroupBox("🔗 Landing Page URLs")
+        urls_layout = QVBoxLayout()
+        urls_layout.setSpacing(10)
+        
+        # Status label for URLs
+        self.urls_status_label = QLabel("⚪ Keine CSV-Datei gefunden")
+        urls_layout.addWidget(self.urls_status_label)
+        
+        # Buttons for URLs workflow
+        self.load_button = QPushButton("📥 DOIs und URLs exportieren")
+        self.load_button.setMinimumHeight(40)
         self.load_button.clicked.connect(self._on_load_dois_clicked)
-        layout.addWidget(self.load_button)
+        urls_layout.addWidget(self.load_button)
         
-        # Load Authors button
-        self.load_authors_button = QPushButton("👥 DOIs und Autoren laden")
-        self.load_authors_button.setMinimumHeight(50)
-        self.load_authors_button.clicked.connect(self._on_load_authors_clicked)
-        layout.addWidget(self.load_authors_button)
-        
-        # Update URLs button
         self.update_button = QPushButton("🔄 Landing Page URLs aktualisieren")
-        self.update_button.setMinimumHeight(50)
+        self.update_button.setMinimumHeight(40)
+        self.update_button.setEnabled(False)  # Initially disabled
         self.update_button.clicked.connect(self._on_update_urls_clicked)
-        layout.addWidget(self.update_button)
+        urls_layout.addWidget(self.update_button)
         
-        # Update Authors button
+        urls_group.setLayout(urls_layout)
+        layout.addWidget(urls_group)
+        
+        # GroupBox 2: Authors Metadata
+        authors_group = QGroupBox("👥 Autoren-Metadaten")
+        authors_layout = QVBoxLayout()
+        authors_layout.setSpacing(10)
+        
+        # Status label for authors
+        self.authors_status_label = QLabel("⚪ Keine CSV-Datei gefunden")
+        authors_layout.addWidget(self.authors_status_label)
+        
+        # Buttons for authors workflow
+        self.load_authors_button = QPushButton("📥 DOIs und Autoren exportieren")
+        self.load_authors_button.setMinimumHeight(40)
+        self.load_authors_button.clicked.connect(self._on_load_authors_clicked)
+        authors_layout.addWidget(self.load_authors_button)
+        
         self.update_authors_button = QPushButton("🖊️ Autoren aktualisieren")
-        self.update_authors_button.setMinimumHeight(50)
+        self.update_authors_button.setMinimumHeight(40)
+        self.update_authors_button.setEnabled(False)  # Initially disabled
         self.update_authors_button.clicked.connect(self._on_update_authors_clicked)
-        layout.addWidget(self.update_authors_button)
+        authors_layout.addWidget(self.update_authors_button)
         
-        # Theme toggle button
-        self.theme_button = QPushButton(self._get_theme_button_text())
-        self.theme_button.setMinimumHeight(40)
-        self.theme_button.clicked.connect(self._on_theme_toggle)
-        layout.addWidget(self.theme_button)
+        authors_group.setLayout(authors_layout)
+        layout.addWidget(authors_group)
         
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -262,8 +368,11 @@ class MainWindow(QMainWindow):
         # Add stretch to push everything to the top
         layout.addStretch()
         
+        # Check for existing CSV files
+        self._check_csv_files()
+        
         # Initial log message
-        self._log("Bereit. Klicke auf 'DOIs und Landing Page URLs laden' um zu beginnen.")
+        self._log("Bereit. Klicke auf 'DOIs und URLs exportieren' um zu beginnen.")
     
     def _apply_styles(self):
         """Apply styling to the window based on current theme."""
@@ -319,6 +428,59 @@ class MainWindow(QMainWindow):
             }
         """)
     
+    def _check_csv_files(self):
+        """Check if CSV files exist and update UI accordingly."""
+        output_dir = Path(os.getcwd())
+        
+        # Check for URLs CSV
+        urls_csv_found = False
+        urls_csv_name = None
+        
+        # Check for authors CSV
+        authors_csv_found = False
+        authors_csv_name = None
+        
+        # If we have a username, check for specific files
+        if self._current_username:
+            urls_csv_path = output_dir / f"{self._current_username}_urls.csv"
+            authors_csv_path = output_dir / f"{self._current_username}_authors.csv"
+            
+            if urls_csv_path.exists():
+                urls_csv_found = True
+                urls_csv_name = urls_csv_path.name
+            
+            if authors_csv_path.exists():
+                authors_csv_found = True
+                authors_csv_name = authors_csv_path.name
+        else:
+            # Check for any *_urls.csv and *_authors.csv files
+            urls_files = list(output_dir.glob("*_urls.csv"))
+            authors_files = list(output_dir.glob("*_authors.csv"))
+            
+            if urls_files:
+                urls_csv_found = True
+                urls_csv_name = urls_files[0].name
+            
+            if authors_files:
+                authors_csv_found = True
+                authors_csv_name = authors_files[0].name
+        
+        # Update URLs status
+        if urls_csv_found:
+            self.urls_status_label.setText(f"🟢 CSV bereit: {urls_csv_name}")
+            self.update_button.setEnabled(True)
+        else:
+            self.urls_status_label.setText("⚪ Keine CSV-Datei gefunden")
+            self.update_button.setEnabled(False)
+        
+        # Update authors status
+        if authors_csv_found:
+            self.authors_status_label.setText(f"🟢 CSV bereit: {authors_csv_name}")
+            self.update_authors_button.setEnabled(True)
+        else:
+            self.authors_status_label.setText("⚪ Keine CSV-Datei gefunden")
+            self.update_authors_button.setEnabled(False)
+    
     def _log(self, message):
         """
         Add a message to the log area.
@@ -329,25 +491,65 @@ class MainWindow(QMainWindow):
         self.log_text.append(message)
         logger.info(message)
     
-    def _get_theme_button_text(self) -> str:
-        """
-        Get appropriate button text based on current theme.
+    def _set_theme(self, theme: Theme):
+        """Set application theme.
         
-        Returns:
-            str: Button text
+        Args:
+            theme: Theme to set
         """
-        current_theme = self.theme_manager.get_current_theme()
-        if current_theme == Theme.AUTO:
-            effective = self.theme_manager.get_effective_theme()
-            return f"🔄 Auto ({'Light' if effective == Theme.LIGHT else 'Dark'})"
-        elif current_theme == Theme.LIGHT:
-            return "🌙 Dark Mode"
-        else:
-            return "☀️ Light Mode"
+        self.theme_manager.set_theme(theme)
+        logger.info(f"Theme set to: {theme.value}")
     
-    def _on_theme_toggle(self):
-        """Handle theme toggle button click."""
-        self.theme_manager.toggle_theme()
+    def _show_about_dialog(self):
+        """Show About dialog."""
+        try:
+            dialog = AboutDialog(self)
+            dialog.exec()
+            logger.info("About dialog shown")
+        except Exception as e:
+            logger.error(f"Error showing About dialog: {e}")
+            QMessageBox.warning(
+                self,
+                "Fehler",
+                f"Der About-Dialog konnte nicht geöffnet werden:\n\n{str(e)}"
+            )
+    
+    def _show_changelog(self):
+        """Open CHANGELOG.md in default application."""
+        try:
+            changelog_path = Path(__file__).parent.parent.parent / "CHANGELOG.md"
+            
+            if changelog_path.exists():
+                url = QUrl.fromLocalFile(str(changelog_path.resolve()))
+                QDesktopServices.openUrl(url)
+                logger.info(f"Opened CHANGELOG.md: {changelog_path}")
+            else:
+                # Fallback: Open GitHub Releases
+                from src.__version__ import __url__
+                releases_url = f"{__url__}/releases"
+                QDesktopServices.openUrl(QUrl(releases_url))
+                logger.info(f"CHANGELOG.md not found, opened releases: {releases_url}")
+        except Exception as e:
+            logger.error(f"Error opening changelog: {e}")
+            QMessageBox.warning(
+                self,
+                "Fehler",
+                f"Der Changelog konnte nicht geöffnet werden:\n\n{str(e)}"
+            )
+    
+    def _open_github(self):
+        """Open GitHub repository in browser."""
+        try:
+            from src.__version__ import __url__
+            QDesktopServices.openUrl(QUrl(__url__))
+            logger.info(f"Opened GitHub repository: {__url__}")
+        except Exception as e:
+            logger.error(f"Error opening GitHub: {e}")
+            QMessageBox.warning(
+                self,
+                "Fehler",
+                f"Das GitHub-Repository konnte nicht geöffnet werden:\n\n{str(e)}"
+            )
     
     def _on_theme_changed(self, theme: Theme):
         """
@@ -356,8 +558,13 @@ class MainWindow(QMainWindow):
         Args:
             theme: New theme
         """
-        # Update button text
-        self.theme_button.setText(self._get_theme_button_text())
+        # Update menu checkmarks
+        if theme == Theme.AUTO:
+            self.auto_theme_action.setChecked(True)
+        elif theme == Theme.LIGHT:
+            self.light_theme_action.setChecked(True)
+        else:
+            self.dark_theme_action.setChecked(True)
         
         # Log message
         if theme == Theme.AUTO:
@@ -447,6 +654,10 @@ class MainWindow(QMainWindow):
             filepath = export_dois_to_csv(dois, username, output_dir)
             
             self._log(f"[OK] CSV-Datei erfolgreich erstellt: {filepath}")
+            
+            # Update username and check CSV files
+            self._current_username = username
+            self._check_csv_files()
             
             QMessageBox.information(
                 self,
@@ -587,6 +798,10 @@ class MainWindow(QMainWindow):
             unique_dois = len(set(row[0] for row in creator_data))
             
             self._log(f"[OK] CSV-Datei erfolgreich erstellt: {filepath}")
+            
+            # Update username and check CSV files
+            self._current_username = username
+            self._check_csv_files()
             
             QMessageBox.information(
                 self,
@@ -729,6 +944,9 @@ class MainWindow(QMainWindow):
         else:
             self._log("Update abgeschlossen: Keine DOIs verarbeitet")
         self._log("=" * 60)
+        
+        # Check CSV files (in case user deleted/modified them during update)
+        self._check_csv_files()
         
         # Show summary dialog
         if total == 0:
@@ -1054,6 +1272,9 @@ class MainWindow(QMainWindow):
         else:
             self._log("Autoren-Update abgeschlossen")
         self._log("=" * 60)
+        
+        # Check CSV files (in case user deleted/modified them during update)
+        self._check_csv_files()
         
         # Show summary dialog (only if not dry run)
         if self.authors_update_worker and not self.authors_update_worker.dry_run_only:
