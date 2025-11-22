@@ -90,6 +90,7 @@ def sample_csv_data():
 class TestDatabaseFirstPattern:
     """Test Database-First update pattern."""
     
+    @pytest.mark.timeout(30)
     def test_successful_sync_both_systems(
         self,
         qtbot,
@@ -144,6 +145,7 @@ class TestDatabaseFirstPattern:
         mock_db_client.update_creators_transactional.assert_called_once()
         mock_datacite_client.update_doi_creators.assert_called_once()
     
+    @pytest.mark.timeout(30)
     def test_database_failure_with_rollback(
         self,
         qtbot,
@@ -197,6 +199,7 @@ class TestDatabaseFirstPattern:
         assert doi_updates[0][1] is False  # failure
         assert "Datenbank-Update fehlgeschlagen" in doi_updates[0][2]
     
+    @pytest.mark.timeout(30)
     def test_datacite_failure_after_database_success_with_retry(
         self,
         qtbot,
@@ -252,6 +255,7 @@ class TestDatabaseFirstPattern:
         assert doi_updates[0][1] is True  # success after retry
         assert "nach Retry" in doi_updates[0][2]
     
+    @pytest.mark.timeout(30)
     def test_datacite_failure_after_database_success_retry_fails(
         self,
         qtbot,
@@ -305,6 +309,7 @@ class TestDatabaseFirstPattern:
         assert "INKONSISTENZ" in doi_updates[0][2]
         assert "Manuelle Korrektur erforderlich" in doi_updates[0][2]
     
+    @pytest.mark.timeout(30)
     def test_doi_not_found_in_database(
         self,
         qtbot,
@@ -362,6 +367,7 @@ class TestDatabaseFirstPattern:
 class TestDatabaseConnection:
     """Test database connection and validation phase."""
     
+    @pytest.mark.timeout(30)
     def test_validation_phase_database_unavailable(
         self,
         qtbot,
@@ -405,6 +411,7 @@ class TestDatabaseConnection:
         assert "Datenbank" in error_occurred[0] and ("nicht erreichbar" in error_occurred[0] or "nicht verfügbar" in error_occurred[0])
         assert "VPN" in error_occurred[0] or "Credentials" in error_occurred[0]
     
+    @pytest.mark.timeout(30)
     def test_validation_phase_credentials_missing(
         self,
         qtbot,
@@ -439,6 +446,7 @@ class TestDatabaseConnection:
         assert "Datenbank" in error_occurred[0] and ("nicht erreichbar" in error_occurred[0] or "nicht verfügbar" in error_occurred[0])
         # The error message mentions VPN/Credentials as possible causes
     
+    @pytest.mark.timeout(30)
     def test_database_disabled_datacite_only(
         self,
         qtbot,
@@ -488,6 +496,7 @@ class TestDatabaseConnection:
 class TestErrorHandling:
     """Test error handling and edge cases."""
     
+    @pytest.mark.timeout(30)
     def test_database_exception_during_update(
         self,
         qtbot,
@@ -534,6 +543,7 @@ class TestErrorHandling:
         assert doi_updates[0][1] is False  # failure
         assert "Datenbank-Fehler" in doi_updates[0][2]
     
+    @pytest.mark.timeout(30)
     def test_multiple_dois_mixed_results(
         self,
         qtbot,
