@@ -186,6 +186,11 @@ class TestConnectionTest:
         
         # Verify success message
         assert "✓ Verbindung erfolgreich" in settings_dialog.connection_status.text()
+        
+        # Process events to ensure thread cleanup happens
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        qtbot.wait(100)  # Give deleteLater() time to execute
 
 
 class TestConnectionTestWorker:
