@@ -188,41 +188,13 @@ class MainWindow(QMainWindow):
         """Set up menu bar."""
         menubar = self.menuBar()
         
-        # Ansicht-Menü
-        view_menu = menubar.addMenu("Ansicht")
+        # Einstellungen-Menü
+        settings_menu = menubar.addMenu("Einstellungen")
         
-        # Theme-Untermenü
-        theme_menu = view_menu.addMenu("Theme")
-        
-        # Theme-Actions (Radio-Buttons)
-        self.theme_action_group = QActionGroup(self)
-        self.theme_action_group.setExclusive(True)
-        
-        self.auto_theme_action = QAction("Auto", self, checkable=True)
-        self.light_theme_action = QAction("Hell", self, checkable=True)
-        self.dark_theme_action = QAction("Dunkel", self, checkable=True)
-        
-        self.theme_action_group.addAction(self.auto_theme_action)
-        self.theme_action_group.addAction(self.light_theme_action)
-        self.theme_action_group.addAction(self.dark_theme_action)
-        
-        theme_menu.addAction(self.auto_theme_action)
-        theme_menu.addAction(self.light_theme_action)
-        theme_menu.addAction(self.dark_theme_action)
-        
-        # Aktuelles Theme markieren
-        current_theme = self.theme_manager.get_current_theme()
-        if current_theme == Theme.AUTO:
-            self.auto_theme_action.setChecked(True)
-        elif current_theme == Theme.LIGHT:
-            self.light_theme_action.setChecked(True)
-        else:
-            self.dark_theme_action.setChecked(True)
-        
-        # Signale verbinden
-        self.auto_theme_action.triggered.connect(lambda: self._set_theme(Theme.AUTO))
-        self.light_theme_action.triggered.connect(lambda: self._set_theme(Theme.LIGHT))
-        self.dark_theme_action.triggered.connect(lambda: self._set_theme(Theme.DARK))
+        settings_action = QAction("Einstellungen...", self)
+        settings_action.setShortcut("Ctrl+,")
+        settings_action.triggered.connect(self._open_settings_dialog)
+        settings_menu.addAction(settings_action)
         
         # Hilfe-Menü
         help_menu = menubar.addMenu("Hilfe")
@@ -491,14 +463,25 @@ class MainWindow(QMainWindow):
         self.log_text.append(message)
         logger.info(message)
     
-    def _set_theme(self, theme: Theme):
-        """Set application theme.
-        
-        Args:
-            theme: Theme to set
-        """
-        self.theme_manager.set_theme(theme)
-        logger.info(f"Theme set to: {theme.value}")
+    def _open_settings_dialog(self):
+        """Open settings dialog."""
+        try:
+            from src.ui.settings_dialog import SettingsDialog
+            
+            dialog = SettingsDialog(self.theme_manager, self)
+            
+            # Connect theme change signal
+            dialog.theme_changed.connect(self._on_settings_theme_changed)
+            
+            dialog.exec()
+            logger.info("Settings dialog closed")
+        except Exception as e:
+            logger.error(f"Error opening settings dialog: {e}")
+            QMessageBox.warning(
+                self,
+                "Fehler",
+                f"Der Einstellungen-Dialog konnte nicht geöffnet werden:\n\n{str(e)}"
+            )
     
     def _show_about_dialog(self):
         """Show About dialog."""
@@ -558,14 +541,6 @@ class MainWindow(QMainWindow):
         Args:
             theme: New theme
         """
-        # Update menu checkmarks
-        if theme == Theme.AUTO:
-            self.auto_theme_action.setChecked(True)
-        elif theme == Theme.LIGHT:
-            self.light_theme_action.setChecked(True)
-        else:
-            self.dark_theme_action.setChecked(True)
-        
         # Log message
         if theme == Theme.AUTO:
             effective = self.theme_manager.get_effective_theme()
@@ -574,6 +549,17 @@ class MainWindow(QMainWindow):
             self._log("🌙 Dark Mode aktiviert")
         else:
             self._log("☀️ Light Mode aktiviert")
+    
+    def _on_settings_theme_changed(self, theme: Theme):
+        """
+        Handle theme change from settings dialog.
+        
+        Args:
+            theme: New theme
+        """
+        # Theme is already set in ThemeManager by SettingsDialog
+        # Just log the change
+        self._on_theme_changed(theme)
         
         # Apply new styles
         self._apply_styles()

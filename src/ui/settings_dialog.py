@@ -19,6 +19,8 @@ from PySide6.QtCore import Qt, QSettings, Signal, QObject, QThread
 from src.ui.theme_manager import Theme, ThemeManager
 from src.utils.credential_manager import (
     save_db_credentials,
+    load_db_credentials,
+    db_credentials_exist,
     delete_db_credentials,
     CredentialStorageError
 )
@@ -159,15 +161,15 @@ class SettingsDialog(QDialog):
         self.theme_button_group = QButtonGroup()
         
         self.auto_theme_radio = QRadioButton("Automatisch (folgt Systemeinstellung)")
-        self.theme_button_group.addButton(self.auto_theme_radio, Theme.AUTO.value[0])
+        self.theme_button_group.addButton(self.auto_theme_radio, 0)  # ID: 0 = AUTO
         theme_layout.addWidget(self.auto_theme_radio)
         
         self.light_theme_radio = QRadioButton("Hell")
-        self.theme_button_group.addButton(self.light_theme_radio, Theme.LIGHT.value[0])
+        self.theme_button_group.addButton(self.light_theme_radio, 1)  # ID: 1 = LIGHT
         theme_layout.addWidget(self.light_theme_radio)
         
         self.dark_theme_radio = QRadioButton("Dunkel")
-        self.theme_button_group.addButton(self.dark_theme_radio, Theme.DARK.value[0])
+        self.theme_button_group.addButton(self.dark_theme_radio, 2)  # ID: 2 = DARK
         theme_layout.addWidget(self.dark_theme_radio)
         
         theme_group.setLayout(theme_layout)

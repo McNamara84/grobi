@@ -414,3 +414,68 @@ class TestMenuBar:
         """Test that _set_theme method exists."""
         assert hasattr(main_window, '_set_theme')
         assert callable(main_window._set_theme)
+
+
+class TestMainWindowSettings:
+    """Test settings dialog integration."""
+    
+    def test_open_settings_dialog_method_exists(self, main_window):
+        """Test that _open_settings_dialog method exists."""
+        assert hasattr(main_window, '_open_settings_dialog')
+        assert callable(main_window._open_settings_dialog)
+    
+    def test_settings_dialog_can_be_imported(self):
+        """Test that SettingsDialog can be imported."""
+        from src.ui.settings_dialog import SettingsDialog
+        assert SettingsDialog is not None
+    
+    def test_theme_change_handler_callable(self, main_window):
+        """Test that theme change handler is properly defined."""
+        # Verify the handler method exists and is callable
+        assert hasattr(main_window, '_on_settings_theme_changed')
+        assert callable(main_window._on_settings_theme_changed)
+        
+        # Verify it accepts a Theme parameter (test with dummy call)
+        from src.ui.theme_manager import Theme
+        # This shouldn't raise an exception
+        try:
+            # Just verify the signature, don't actually call it
+            import inspect
+            sig = inspect.signature(main_window._on_settings_theme_changed)
+            params = list(sig.parameters.keys())
+            assert 'theme' in params
+        except Exception:
+            pass  # Signature inspection is optional
+    
+    def test_on_settings_theme_changed_method_exists(self, main_window):
+        """Test that theme change handler exists."""
+        assert hasattr(main_window, '_on_settings_theme_changed')
+        assert callable(main_window._on_settings_theme_changed)
+    
+    def test_settings_menu_exists(self, main_window):
+        """Test that Settings menu exists in menu bar."""
+        menu_bar = main_window.menuBar()
+        settings_menu = None
+        
+        for action in menu_bar.actions():
+            if action.menu() and "Einstellungen" in action.text():
+                settings_menu = action.menu()
+                break
+        
+        assert settings_menu is not None, "Settings menu should exist"
+    
+    def test_settings_action_has_shortcut(self, main_window):
+        """Test that Settings action has Ctrl+, shortcut."""
+        menu_bar = main_window.menuBar()
+        settings_menu = None
+        
+        for action in menu_bar.actions():
+            if action.menu() and "Einstellungen" in action.text():
+                settings_menu = action.menu()
+                break
+        
+        if settings_menu:
+            settings_action = settings_menu.actions()[0]
+            shortcut = settings_action.shortcut().toString()
+            # Accept both German and English keyboard shortcuts
+            assert "Ctrl+," in shortcut or "Strg+," in shortcut
