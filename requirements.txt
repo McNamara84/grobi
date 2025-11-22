@@ -8,3 +8,6 @@ requests>=2.31.0
 
 # Secure Credential Storage
 keyring>=24.3.0
+
+# Database Connection (optional, for GFZ-internal database sync)
+mysql-connector-python>=8.0.33
