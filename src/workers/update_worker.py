@@ -195,7 +195,11 @@ class UpdateWorker(QObject):
             )
             # Log first 5 skipped DOIs for reference
             if skipped_details:
-                logger.info(f"Skipped DOIs (first 5 of {len(skipped_details)}):")
+                count = len(skipped_details)
+                if count <= 5:
+                    logger.info(f"Skipped DOIs ({count} total):")
+                else:
+                    logger.info(f"Skipped DOIs (first 5 of {count}):")
                 for doi, reason in skipped_details[:5]:
                     logger.info(f"  - {doi}: {reason}")
             self.finished.emit(success_count, error_count, skipped_count, error_list, skipped_details)

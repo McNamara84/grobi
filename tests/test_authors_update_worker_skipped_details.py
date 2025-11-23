@@ -308,6 +308,6 @@ class TestAuthorsUpdateWorkerSkippedDetails:
             qtbot.wait(200)
         
         # Check that skipped DOIs were logged
-        assert "Skipped DOIs (first 5 of 2):" in caplog.text or "Skipping 2 unchanged DOIs:" in caplog.text
+        assert "Skipped DOIs (2 total):" in caplog.text
         assert "10.5880/GFZ.1.1.2021.001" in caplog.text
         assert "10.5880/GFZ.1.1.2021.002" in caplog.text
