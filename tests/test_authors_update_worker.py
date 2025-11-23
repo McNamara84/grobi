@@ -311,12 +311,11 @@ class TestAuthorsUpdateWorker:
             worker_update.run()
         
         # Check DOI updated signals - with change detection only changed DOI is processed
-        # DOI 001 matches mock_metadata (unchanged), DOI 002 is different (changed → updated but fails)
+        # DOI 001 matches mock_metadata (unchanged) → skipped
+        # DOI 002 is different (changed) → updated successfully (mock returns success)
         assert len(doi_updated_signals) == 1
-        # The changed DOI (002) was attempted but should succeed based on mock (first call succeeds)
         assert doi_updated_signals[0][0] == "10.5880/GFZ.1.1.2021.002"
-        # Actually it succeeds because it's the changed one getting the successful update
-        assert doi_updated_signals[0][1] is True
+        assert doi_updated_signals[0][1] is True  # Update succeeds
         
         # Check final results
         assert len(finished_signals) == 1
