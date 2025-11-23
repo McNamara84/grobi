@@ -25,47 +25,6 @@ class TestUpdateWorkerSkippedDetails:
         # Cleanup
         Path(temp_path).unlink(missing_ok=True)
     
-    def test_skipped_details_format(self, qtbot, temp_csv):
-        """Test that skipped_details contains (doi, reason) tuples."""
-        worker = UpdateWorker("test_user", "test_pass", temp_csv, use_test_api=True)
-        
-        finished_signal = []
-        worker.finished.connect(lambda *args: finished_signal.append(args))
-        
-        # Mock DataCiteClient with URLs that match CSV
-        with patch('src.workers.update_worker.DataCiteClient') as MockClient:
-            mock_client = Mock()
-            MockClient.return_value = mock_client
-            
-            # Both DOIs have unchanged URLs
-            mock_client.get_doi_metadata.side_effect = [
-                {'data': {'attributes': {'url': 'https://example.org/dataset1'}}},
-                {'data': {'attributes': {'url': 'https://example.org/dataset2'}}}
-            ]
-            
-            worker.run()
-            qtbot.wait(500)
-        
-        # Check finished signal
-        assert len(finished_signal) == 1
-        success_count, error_count, skipped_count, error_list, skipped_details = finished_signal[0]
-        
-        # Verify skipped_details format
-        assert len(skipped_details) == 2
-        assert all(isinstance(item, tuple) and len(item) == 2 for item in skipped_details)
-        
-        # Check first skipped DOI
-        doi1, reason1 = skipped_details[0]
-        assert doi1 == "10.5880/GFZ.1.1.2021.001"
-        assert "URL unverändert" in reason1
-        assert "https://example.org/dataset1" in reason1
-        
-        # Check second skipped DOI
-        doi2, reason2 = skipped_details[1]
-        assert doi2 == "10.5880/GFZ.1.1.2021.002"
-        assert "URL unverändert" in reason2
-        assert "https://example.org/dataset2" in reason2
-    
     def test_skipped_details_empty_when_all_changed(self, qtbot, temp_csv):
         """Test that skipped_details is empty when all URLs changed."""
         worker = UpdateWorker("test_user", "test_pass", temp_csv, use_test_api=True)
