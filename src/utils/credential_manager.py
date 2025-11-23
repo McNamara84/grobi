@@ -72,6 +72,7 @@ class CredentialManager:
     """
     
     SERVICE_NAME = "GROBI_DataCite"
+    DB_SERVICE_NAME = "GROBI_SumarioPMD"
     METADATA_FILE = "credentials_metadata.json"
     
     def __init__(self):
@@ -367,3 +368,148 @@ class CredentialManager:
         except Exception as e:
             logger.error(f"Failed to save metadata: {e}")
             raise CredentialStorageError(f"Failed to save metadata: {str(e)}")
+
+
+# Database Credential Functions (separate from class for simplicity)
+
+def save_db_credentials(host: str, database: str, username: str, password: str) -> None:
+    """
+    Save database credentials to Windows Credential Manager.
+    
+    Args:
+        host: Database host (e.g., "rz-mysql3.gfz-potsdam.de")
+        database: Database name (e.g., "sumario-pmd")
+        username: Database username
+        password: Database password
+        
+    Raises:
+        CredentialStorageError: If storage fails
+        ValueError: If any parameter is empty
+    """
+    if keyring is None:
+        raise CredentialStorageError(
+            "keyring library not available. Please install with: pip install keyring"
+        )
+    
+    # Validate inputs
+    if not all([host, database, username, password]):
+        raise ValueError("All database credentials must be provided")
+    
+    # Store composite identifier as keyring username
+    # Format: host|database|username
+    identifier = f"{host}|{database}|{username}"
+    
+    try:
+        keyring.set_password(CredentialManager.DB_SERVICE_NAME, identifier, password)
+        logger.info(f"Database credentials saved: {username}@{host}/{database}")
+    except Exception as e:
+        logger.error(f"Failed to store database credentials: {e}")
+        raise CredentialStorageError(f"Failed to store database credentials: {str(e)}")
+
+
+def load_db_credentials() -> Optional[Dict[str, str]]:
+    """
+    Load database credentials from QSettings (metadata) and Keyring (password).
+    
+    Returns:
+        Dictionary with keys: host, database, username, password
+        or None if no credentials stored
+        
+    Raises:
+        CredentialStorageError: If retrieval fails
+    """
+    if keyring is None:
+        raise CredentialStorageError(
+            "keyring library not available. Please install with: pip install keyring"
+        )
+    
+    from PySide6.QtCore import QSettings
+    
+    settings = QSettings("GFZ", "GROBI")
+    
+    # Check if configured
+    if not settings.value("database/configured", False, type=bool):
+        return None
+    
+    try:
+        # Load metadata from QSettings
+        host = settings.value("database/host")
+        database = settings.value("database/name")
+        username = settings.value("database/username")
+        
+        if not all([host, database, username]):
+            logger.warning("Incomplete database metadata in QSettings")
+            return None
+        
+        # Construct identifier for keyring lookup
+        identifier = f"{host}|{database}|{username}"
+        
+        # Load password from keyring
+        password = keyring.get_password(CredentialManager.DB_SERVICE_NAME, identifier)
+        
+        if password is None:
+            logger.warning(f"Password not found in keyring for: {identifier}")
+            return None
+        
+        logger.info(f"Database credentials loaded: {username}@{host}/{database}")
+        
+        return {
+            'host': host,
+            'database': database,
+            'username': username,
+            'password': password
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to load database credentials: {e}")
+        raise CredentialStorageError(f"Failed to load database credentials: {str(e)}")
+
+
+def delete_db_credentials(host: str, database: str, username: str) -> bool:
+    """
+    Delete database credentials from Windows Credential Manager.
+    
+    Args:
+        host: Database host
+        database: Database name
+        username: Database username
+        
+    Returns:
+        True if deleted, False if not found
+        
+    Raises:
+        CredentialStorageError: If deletion fails
+    """
+    if keyring is None:
+        raise CredentialStorageError(
+            "keyring library not available. Please install with: pip install keyring"
+        )
+    
+    identifier = f"{host}|{database}|{username}"
+    
+    try:
+        keyring.delete_password(CredentialManager.DB_SERVICE_NAME, identifier)
+        logger.info(f"Database credentials deleted: {username}@{host}/{database}")
+        return True
+    except keyring.errors.PasswordDeleteError:
+        logger.warning(f"Database credentials not found: {identifier}")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to delete database credentials: {e}")
+        raise CredentialStorageError(f"Failed to delete database credentials: {str(e)}")
+
+
+def db_credentials_exist() -> bool:
+    """
+    Check if database credentials are stored.
+    
+    Returns:
+        True if credentials exist, False otherwise
+    """
+    # This is a simplified check - we'll use QSettings to track this
+    from PySide6.QtCore import QSettings
+    
+    settings = QSettings("GFZ", "GROBI")
+    db_configured = settings.value("database/configured", False, type=bool)
+    
+    return db_configured

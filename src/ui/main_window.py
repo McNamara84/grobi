@@ -188,41 +188,13 @@ class MainWindow(QMainWindow):
         """Set up menu bar."""
         menubar = self.menuBar()
         
-        # Ansicht-Menü
-        view_menu = menubar.addMenu("Ansicht")
+        # Einstellungen-Menü
+        settings_menu = menubar.addMenu("Einstellungen")
         
-        # Theme-Untermenü
-        theme_menu = view_menu.addMenu("Theme")
-        
-        # Theme-Actions (Radio-Buttons)
-        self.theme_action_group = QActionGroup(self)
-        self.theme_action_group.setExclusive(True)
-        
-        self.auto_theme_action = QAction("Auto", self, checkable=True)
-        self.light_theme_action = QAction("Hell", self, checkable=True)
-        self.dark_theme_action = QAction("Dunkel", self, checkable=True)
-        
-        self.theme_action_group.addAction(self.auto_theme_action)
-        self.theme_action_group.addAction(self.light_theme_action)
-        self.theme_action_group.addAction(self.dark_theme_action)
-        
-        theme_menu.addAction(self.auto_theme_action)
-        theme_menu.addAction(self.light_theme_action)
-        theme_menu.addAction(self.dark_theme_action)
-        
-        # Aktuelles Theme markieren
-        current_theme = self.theme_manager.get_current_theme()
-        if current_theme == Theme.AUTO:
-            self.auto_theme_action.setChecked(True)
-        elif current_theme == Theme.LIGHT:
-            self.light_theme_action.setChecked(True)
-        else:
-            self.dark_theme_action.setChecked(True)
-        
-        # Signale verbinden
-        self.auto_theme_action.triggered.connect(lambda: self._set_theme(Theme.AUTO))
-        self.light_theme_action.triggered.connect(lambda: self._set_theme(Theme.LIGHT))
-        self.dark_theme_action.triggered.connect(lambda: self._set_theme(Theme.DARK))
+        settings_action = QAction("Einstellungen...", self)
+        settings_action.setShortcut("Ctrl+,")
+        settings_action.triggered.connect(self._open_settings_dialog)
+        settings_menu.addAction(settings_action)
         
         # Hilfe-Menü
         help_menu = menubar.addMenu("Hilfe")
@@ -491,14 +463,25 @@ class MainWindow(QMainWindow):
         self.log_text.append(message)
         logger.info(message)
     
-    def _set_theme(self, theme: Theme):
-        """Set application theme.
-        
-        Args:
-            theme: Theme to set
-        """
-        self.theme_manager.set_theme(theme)
-        logger.info(f"Theme set to: {theme.value}")
+    def _open_settings_dialog(self):
+        """Open settings dialog."""
+        try:
+            from src.ui.settings_dialog import SettingsDialog
+            
+            dialog = SettingsDialog(self.theme_manager, self)
+            
+            # Connect theme change signal
+            dialog.theme_changed.connect(self._on_settings_theme_changed)
+            
+            dialog.exec()
+            logger.info("Settings dialog closed")
+        except Exception as e:
+            logger.error(f"Error opening settings dialog: {e}")
+            QMessageBox.warning(
+                self,
+                "Fehler",
+                f"Der Einstellungen-Dialog konnte nicht geöffnet werden:\n\n{str(e)}"
+            )
     
     def _show_about_dialog(self):
         """Show About dialog."""
@@ -558,14 +541,6 @@ class MainWindow(QMainWindow):
         Args:
             theme: New theme
         """
-        # Update menu checkmarks
-        if theme == Theme.AUTO:
-            self.auto_theme_action.setChecked(True)
-        elif theme == Theme.LIGHT:
-            self.light_theme_action.setChecked(True)
-        else:
-            self.dark_theme_action.setChecked(True)
-        
         # Log message
         if theme == Theme.AUTO:
             effective = self.theme_manager.get_effective_theme()
@@ -574,6 +549,17 @@ class MainWindow(QMainWindow):
             self._log("🌙 Dark Mode aktiviert")
         else:
             self._log("☀️ Light Mode aktiviert")
+    
+    def _on_settings_theme_changed(self, theme: Theme):
+        """
+        Handle theme change from settings dialog.
+        
+        Args:
+            theme: New theme
+        """
+        # Theme is already set in ThemeManager by SettingsDialog
+        # Just log the change
+        self._on_theme_changed(theme)
         
         # Apply new styles
         self._apply_styles()
@@ -1094,6 +1080,7 @@ class MainWindow(QMainWindow):
         # Connect signals
         self.authors_update_thread.started.connect(self.authors_update_worker.run)
         self.authors_update_worker.progress_update.connect(self._on_authors_update_progress)
+        self.authors_update_worker.validation_update.connect(self._on_validation_update)
         self.authors_update_worker.dry_run_complete.connect(self._on_dry_run_complete)
         self.authors_update_worker.finished.connect(self._on_authors_update_finished)
         self.authors_update_worker.error_occurred.connect(self._on_authors_update_error)
@@ -1124,6 +1111,33 @@ class MainWindow(QMainWindow):
         if total > 0:
             self.progress_bar.setMaximum(total)
             self.progress_bar.setValue(current)
+    
+    def _on_validation_update(self, message):
+        """
+        Handle validation phase progress signal.
+        
+        Args:
+            message: Validation status message
+        """
+        self._log(message)
+    
+    def _on_database_update(self, message):
+        """
+        Handle database update progress signal.
+        
+        Args:
+            message: Database update status message
+        """
+        self._log(message)
+    
+    def _on_datacite_update(self, message):
+        """
+        Handle DataCite update progress signal.
+        
+        Args:
+            message: DataCite update status message
+        """
+        self._log(message)
     
     def _on_dry_run_complete(self, valid_count, invalid_count, validation_results):
         """
@@ -1226,6 +1240,9 @@ class MainWindow(QMainWindow):
         # Connect signals (no dry_run_complete this time)
         self.authors_update_thread.started.connect(self.authors_update_worker.run)
         self.authors_update_worker.progress_update.connect(self._on_authors_update_progress)
+        self.authors_update_worker.validation_update.connect(self._on_validation_update)
+        self.authors_update_worker.database_update.connect(self._on_database_update)
+        self.authors_update_worker.datacite_update.connect(self._on_datacite_update)
         self.authors_update_worker.doi_updated.connect(self._on_author_doi_updated)
         self.authors_update_worker.finished.connect(self._on_authors_update_finished)
         self.authors_update_worker.error_occurred.connect(self._on_authors_update_error)
@@ -1249,10 +1266,12 @@ class MainWindow(QMainWindow):
         Args:
             doi: DOI that was updated
             success: Whether update was successful
-            message: Result message
+            message: Result message (may include system status)
         """
-        # Only log errors to avoid cluttering the log
-        if not success:
+        # Log all updates with appropriate prefix
+        if success:
+            self._log(f"[OK] {doi}: {message}")
+        else:
             self._log(f"[FEHLER] {doi}: {message}")
     
     def _on_authors_update_finished(self, success_count, error_count, error_list):
@@ -1347,6 +1366,11 @@ class MainWindow(QMainWindow):
             error_list: List of error messages
         """
         try:
+            # Check if database sync is enabled
+            from PySide6.QtCore import QSettings
+            settings = QSettings("GFZ", "GROBI")
+            db_enabled = settings.value("database/enabled", False, type=bool)
+            
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             log_filename = f"authors_update_log_{timestamp}.txt"
             log_path = Path(os.getcwd()) / log_filename
@@ -1356,11 +1380,21 @@ class MainWindow(QMainWindow):
                 f.write("GROBI - Autoren-Metadaten Update Log\n")
                 f.write("=" * 70 + "\n")
                 f.write(f"Datum: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Datenbank-Synchronisation: {'Aktiviert' if db_enabled else 'Deaktiviert'}\n")
                 f.write("\n")
                 f.write("ZUSAMMENFASSUNG:\n")
                 f.write(f"  Gesamt: {success_count + error_count} DOIs\n")
                 f.write(f"  Erfolgreich: {success_count}\n")
                 f.write(f"  Fehlgeschlagen: {error_count}\n")
+                
+                if db_enabled:
+                    # Count inconsistency warnings
+                    inconsistencies = [e for e in error_list if "INKONSISTENZ" in e]
+                    if inconsistencies:
+                        f.write(f"\n")
+                        f.write(f"  ⚠️ KRITISCHE INKONSISTENZEN: {len(inconsistencies)}\n")
+                        f.write(f"     (Datenbank erfolgreich, DataCite fehlgeschlagen)\n")
+                
                 f.write("\n")
                 
                 if error_list:
@@ -1371,6 +1405,18 @@ class MainWindow(QMainWindow):
                         f.write(f"  - {error}\n")
                 else:
                     f.write("Keine Fehler aufgetreten.\n")
+                
+                if db_enabled:
+                    f.write("\n")
+                    f.write("=" * 70 + "\n")
+                    f.write("DATABASE-FIRST UPDATE PATTERN:\n")
+                    f.write("=" * 70 + "\n")
+                    f.write("1. Datenbank wird ZUERST aktualisiert (mit ROLLBACK bei Fehlern)\n")
+                    f.write("2. DataCite wird DANACH aktualisiert (nur wenn DB erfolgreich)\n")
+                    f.write("3. Bei DataCite-Fehlern erfolgt automatischer Retry\n")
+                    f.write("\n")
+                    f.write("HINWEIS: Falls INKONSISTENZEN auftraten, müssen diese manuell\n")
+                    f.write("         korrigiert werden (Datenbank committed, DataCite failed).\n")
                 
                 f.write("\n")
                 f.write("=" * 70 + "\n")
