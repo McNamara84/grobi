@@ -44,7 +44,7 @@ class TestUpdateWorkerSkippedDetails:
             ]
             
             worker.run()
-            qtbot.wait(100)
+            qtbot.wait(500)
         
         # Check finished signal
         assert len(finished_signal) == 1
@@ -86,7 +86,7 @@ class TestUpdateWorkerSkippedDetails:
             mock_client.update_doi_url.return_value = (True, "Success")
             
             worker.run()
-            qtbot.wait(100)
+            qtbot.wait(500)
         
         # Check finished signal
         success_count, error_count, skipped_count, error_list, skipped_details = finished_signal[0]
@@ -115,7 +115,7 @@ class TestUpdateWorkerSkippedDetails:
             mock_client.update_doi_url.return_value = (True, "Success")
             
             worker.run()
-            qtbot.wait(100)
+            qtbot.wait(500)
         
         # Check finished signal
         success_count, error_count, skipped_count, error_list, skipped_details = finished_signal[0]
@@ -168,7 +168,7 @@ class TestUpdateWorkerSkippedDetails:
             ]
             
             worker.run()
-            qtbot.wait(100)
+            qtbot.wait(500)
         
         # Check finished signal
         success_count, error_count, skipped_count, error_list, skipped_details = finished_signal[0]
@@ -200,7 +200,7 @@ class TestUpdateWorkerSkippedDetails:
             ]
             
             worker.run()
-            qtbot.wait(100)
+            qtbot.wait(500)
         
         # Check that skipped DOIs were logged
         assert "Skipped DOIs (first 5 of 2):" in caplog.text

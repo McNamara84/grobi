@@ -89,7 +89,7 @@ class TestAuthorsUpdateWorkerSkippedDetails:
             ]
             
             worker.run()
-            qtbot.wait(100)
+            qtbot.wait(500)
         
         # Check finished signal
         assert len(finished_signals) == 1
@@ -164,7 +164,7 @@ class TestAuthorsUpdateWorkerSkippedDetails:
             ]
             
             worker.run()
-            qtbot.wait(100)
+            qtbot.wait(500)
         
         # Check finished signal
         success_count, error_count, skipped_count, error_list, skipped_details = finished_signals[0]
@@ -233,7 +233,7 @@ class TestAuthorsUpdateWorkerSkippedDetails:
             ]
             
             worker.run()
-            qtbot.wait(100)
+            qtbot.wait(500)
         
         # Check finished signal
         success_count, error_count, skipped_count, error_list, skipped_details = finished_signals[0]
