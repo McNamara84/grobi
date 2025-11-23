@@ -673,8 +673,10 @@ class AuthorsUpdateWorker(QObject):
             # Log first 5 skipped DOIs for reference
             if skipped_details:
                 count = len(skipped_details)
-                if count <= 5:
+                if count < 5:
                     logger.info(f"Skipped DOIs ({count} total):")
+                elif count == 5:
+                    logger.info(f"Skipped DOIs (all {count}):")
                 else:
                     logger.info(f"Skipped DOIs (first 5 of {count}):")
                 for doi, reason in skipped_details[:5]:

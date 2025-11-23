@@ -82,12 +82,7 @@ class UpdateWorker(QObject):
             total_dois = len(doi_url_pairs)
             logger.info(f"Found {total_dois} DOI/URL pairs to update")
             
-            # Phase 1: Build cache of current URLs for change detection
-            # Convert list of tuples to dict for O(1) lookup
-            current_urls = {doi: url for doi, url in doi_url_pairs}
-            logger.info(f"Built URL cache with {len(current_urls)} entries for change detection")
-            
-            # Step 2: Initialize DataCite client
+            # Step 1: Initialize DataCite client
             self.progress_update.emit(0, total_dois, "DataCite API wird initialisiert...")
             
             try:
@@ -103,7 +98,7 @@ class UpdateWorker(QObject):
                 self.finished.emit(0, 0, 0, [], [])
                 return
             
-            # Step 3: Update each DOI
+            # Step 2: Update each DOI
             for index, (doi, url) in enumerate(doi_url_pairs, start=1):
                 if not self._is_running:
                     logger.info("Update process cancelled by user")
@@ -116,11 +111,9 @@ class UpdateWorker(QObject):
                     f"Prüfe DOI {index}/{total_dois}: {doi}"
                 )
                 
-                # Phase 1: Change Detection - Check if URL actually changed
-                # Note: current_urls is the CSV data we want to apply
-                # We need to fetch current DataCite URL for comparison
-                # For now, we'll fetch it during the update attempt
-                # TODO: Optimize by fetching all URLs first in a separate step
+                # Change Detection: Fetch current metadata to check if URL actually changed
+                # Note: We could optimize by fetching all URLs first, but individual fetches
+                # allow us to fail fast and continue with other DOIs if one fetch fails
                 
                 # Perform update
                 try:
@@ -189,15 +182,17 @@ class UpdateWorker(QObject):
                     logger.error(f"Unexpected error updating {doi}: {e}")
                     self.doi_updated.emit(doi, False, str(e))
             
-            # Step 4: Emit final results
+            # Step 3: Emit final results
             logger.info(
                 f"Update complete: {success_count} successful, {skipped_count} skipped (no changes), {error_count} failed"
             )
             # Log first 5 skipped DOIs for reference
             if skipped_details:
                 count = len(skipped_details)
-                if count <= 5:
+                if count < 5:
                     logger.info(f"Skipped DOIs ({count} total):")
+                elif count == 5:
+                    logger.info(f"Skipped DOIs (all {count}):")
                 else:
                     logger.info(f"Skipped DOIs (first 5 of {count}):")
                 for doi, reason in skipped_details[:5]:
