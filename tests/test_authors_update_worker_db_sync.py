@@ -19,7 +19,7 @@ Pattern:
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from PySide6.QtCore import QSettings, Signal
 
 from src.workers.authors_update_worker import AuthorsUpdateWorker

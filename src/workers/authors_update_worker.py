@@ -168,7 +168,6 @@ class AuthorsUpdateWorker(QObject):
             try:
                 # DataCite is already initialized, assume it's working
                 # We'll catch errors during actual operations
-                datacite_available = True
                 self.validation_update.emit("  ✓ DataCite API erreichbar")
             except Exception as e:
                 error_msg = f"DataCite API nicht erreichbar: {str(e)}"

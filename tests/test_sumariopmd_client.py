@@ -3,14 +3,12 @@ Unit tests for SumarioPMDClient.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from mysql.connector import Error as MySQLError
 
 from src.db.sumariopmd_client import (
     SumarioPMDClient,
-    DatabaseError,
-    ConnectionError,
-    TransactionError
+    ConnectionError
 )
 
 
