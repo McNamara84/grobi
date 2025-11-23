@@ -62,8 +62,7 @@ class ConnectionTestWorker(QObject):
                 user=self.username,
                 password=self.password,
                 connect_timeout=10,
-                auth_plugin='mysql_native_password',
-                use_pure=True
+                auth_plugin='mysql_native_password'
             )
             
             # Test query
