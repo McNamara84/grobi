@@ -168,7 +168,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **CRITICAL**: Only Creators updated, never Contributors!
 - **Error Handling**:
   - `SumarioPMDError`: Base exception class
-  - `ConnectionError`: Database unreachable
+  - `DBConnectionError` (aliased from `sumariopmd_client.ConnectionError`): Database unreachable
   - `ResourceNotFoundError`: DOI not in database
   - `TransactionError`: ROLLBACK triggered
   - Retry logic: 1-2 immediate retries for DataCite failures

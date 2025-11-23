@@ -274,9 +274,10 @@ class SettingsDialog(QDialog):
         db_enabled = self.settings.value("database/enabled", False, type=bool)
         self.db_enabled_checkbox.setChecked(db_enabled)
         
-        # Load DB credentials from QSettings (metadata)
-        db_host = self.settings.value("database/host", "rz-mysql3.gfz-potsdam.de")
-        db_name = self.settings.value("database/name", "sumario-pmd")
+        # Load DB credentials from QSettings (metadata) if they exist
+        # Security: No default values - user must enter all credentials explicitly
+        db_host = self.settings.value("database/host", "")
+        db_name = self.settings.value("database/name", "")
         db_user = self.settings.value("database/username", "")
         
         self.host_input.setText(db_host)
@@ -376,9 +377,9 @@ class SettingsDialog(QDialog):
                 host = self.host_input.text().strip()
                 database = self.database_input.text().strip()
                 username = self.username_input.text().strip()
-                password = self.password_input.text()
+                password = self.password_input.text().strip()
                 
-                # Validate
+                # Validate stripped values to prevent whitespace-only entries
                 if not all([host, database, username, password]):
                     QMessageBox.warning(
                         self,

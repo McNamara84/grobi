@@ -8,7 +8,7 @@ CRITICAL: Only updates Creators (role='Creator'), never Contributors or other ro
 """
 
 import logging
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict, Tuple, Any
 from contextlib import contextmanager
 
 from mysql.connector import Error as MySQLError
@@ -166,7 +166,7 @@ class SumarioPMDClient:
             logger.error(f"Database error fetching resource_id for {doi}: {e}")
             raise DatabaseError(f"Failed to fetch resource_id: {e}") from e
     
-    def fetch_creators_for_resource(self, resource_id: int) -> List[Dict[str, any]]:
+    def fetch_creators_for_resource(self, resource_id: int) -> List[Dict[str, Any]]:
         """
         Fetch all Creators for a resource.
         
