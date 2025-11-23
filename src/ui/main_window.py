@@ -913,20 +913,21 @@ class MainWindow(QMainWindow):
         if not success:
             self._log(f"[FEHLER] {doi}: {message}")
     
-    def _on_update_finished(self, success_count, error_count, error_list):
+    def _on_update_finished(self, success_count, skipped_count, error_count, error_list):
         """
         Handle update completion.
         
         Args:
             success_count: Number of successful updates
+            skipped_count: Number of skipped DOIs (no changes)
             error_count: Number of failed updates
             error_list: List of error messages
         """
-        total = success_count + error_count
+        total = success_count + skipped_count + error_count
         
         self._log("=" * 60)
         if total > 0:
-            self._log(f"Update abgeschlossen: {success_count}/{total} erfolgreich")
+            self._log(f"Update abgeschlossen: {success_count} erfolgreich, {skipped_count} übersprungen (keine Änderungen), {error_count} fehlgeschlagen")
         else:
             self._log("Update abgeschlossen: Keine DOIs verarbeitet")
         self._log("=" * 60)
@@ -941,11 +942,20 @@ class MainWindow(QMainWindow):
                 "Keine DOIs verarbeitet",
                 "Die CSV-Datei enthielt keine gültigen DOIs zum Verarbeiten."
             )
-        elif error_count == 0:
+        elif error_count == 0 and skipped_count == 0:
             QMessageBox.information(
                 self,
                 "Update erfolgreich",
                 f"Alle {success_count} DOIs wurden erfolgreich aktualisiert!"
+            )
+        elif error_count == 0:
+            # Some skipped, none failed
+            QMessageBox.information(
+                self,
+                "Update abgeschlossen",
+                f"✅ Erfolgreich aktualisiert: {success_count}\n"
+                f"⏭️ Übersprungen (keine Änderungen): {skipped_count}\n\n"
+                f"Effizienz: {skipped_count} unnötige API-Calls vermieden!"
             )
         else:
             error_details = "\n".join(error_list[:10])  # Show first 10 errors
@@ -955,14 +965,15 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Update abgeschlossen mit Fehlern",
-                f"Erfolgreich: {success_count}\n"
-                f"Fehlgeschlagen: {error_count}\n\n"
+                f"✅ Erfolgreich: {success_count}\n"
+                f"⏭️ Übersprungen (keine Änderungen): {skipped_count}\n"
+                f"❌ Fehlgeschlagen: {error_count}\n\n"
                 f"Erste Fehler:\n{error_details}\n\n"
                 f"Siehe Log-Datei für Details."
             )
         
         # Create log file
-        self._create_update_log(success_count, error_count, error_list)
+        self._create_update_log(success_count, skipped_count, error_count, error_list)
     
     def _on_update_error(self, error_message):
         """
@@ -994,12 +1005,13 @@ class MainWindow(QMainWindow):
         
         self._log("Bereit für nächsten Vorgang.")
     
-    def _create_update_log(self, success_count, error_count, error_list):
+    def _create_update_log(self, success_count, skipped_count, error_count, error_list):
         """
         Create a log file with update results.
         
         Args:
             success_count: Number of successful updates
+            skipped_count: Number of skipped DOIs (no changes)
             error_count: Number of failed updates
             error_list: List of error messages
         """
@@ -1008,6 +1020,9 @@ class MainWindow(QMainWindow):
             log_filename = f"update_log_{timestamp}.txt"
             log_path = Path(os.getcwd()) / log_filename
             
+            total = success_count + skipped_count + error_count
+            efficiency_gain = (skipped_count / total * 100) if total > 0 else 0
+            
             with open(log_path, 'w', encoding='utf-8') as f:
                 f.write("=" * 70 + "\n")
                 f.write("GROBI - Landing Page URL Update Log\n")
@@ -1015,9 +1030,14 @@ class MainWindow(QMainWindow):
                 f.write(f"Datum: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write("\n")
                 f.write("ZUSAMMENFASSUNG:\n")
-                f.write(f"  Gesamt: {success_count + error_count} DOIs\n")
-                f.write(f"  Erfolgreich: {success_count}\n")
+                f.write(f"  Gesamt: {total} DOIs\n")
+                f.write(f"  Erfolgreich aktualisiert: {success_count}\n")
+                f.write(f"  Übersprungen (keine Änderungen): {skipped_count}\n")
                 f.write(f"  Fehlgeschlagen: {error_count}\n")
+                f.write("\n")
+                f.write("EFFIZIENZ:\n")
+                f.write(f"  API-Calls vermieden: {skipped_count}/{total} ({efficiency_gain:.1f}%)\n")
+                f.write(f"  Nur DOIs mit tatsächlichen Änderungen wurden aktualisiert\n")
                 f.write("\n")
                 
                 if error_list:
@@ -1274,20 +1294,21 @@ class MainWindow(QMainWindow):
         else:
             self._log(f"[FEHLER] {doi}: {message}")
     
-    def _on_authors_update_finished(self, success_count, error_count, error_list):
+    def _on_authors_update_finished(self, success_count, skipped_count, error_count, error_list):
         """
         Handle authors update completion.
         
         Args:
             success_count: Number of successful updates
+            skipped_count: Number of skipped DOIs (no changes)
             error_count: Number of failed updates
             error_list: List of error messages
         """
-        total = success_count + error_count
+        total = success_count + skipped_count + error_count
         
         self._log("=" * 60)
         if total > 0:
-            self._log(f"Autoren-Update abgeschlossen: {success_count}/{total} erfolgreich")
+            self._log(f"Autoren-Update abgeschlossen: {success_count} erfolgreich, {skipped_count} übersprungen (keine Änderungen), {error_count} fehlgeschlagen")
         else:
             self._log("Autoren-Update abgeschlossen")
         self._log("=" * 60)
@@ -1303,11 +1324,20 @@ class MainWindow(QMainWindow):
                     "Keine Updates",
                     "Es wurden keine DOIs aktualisiert (möglicherweise waren alle ungültig)."
                 )
-            elif error_count == 0:
+            elif error_count == 0 and skipped_count == 0:
                 QMessageBox.information(
                     self,
                     "Update erfolgreich",
                     f"Alle {success_count} DOIs wurden erfolgreich aktualisiert!"
+                )
+            elif error_count == 0:
+                # Some skipped, none failed
+                QMessageBox.information(
+                    self,
+                    "Update abgeschlossen",
+                    f"✅ Erfolgreich aktualisiert: {success_count}\n"
+                    f"⏭️ Übersprungen (keine Änderungen): {skipped_count}\n\n"
+                    f"Effizienz: {skipped_count} unnötige API-Calls vermieden!"
                 )
             else:
                 error_details = "\n".join(error_list[:10])  # Show first 10 errors
@@ -1317,14 +1347,15 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(
                     self,
                     "Update abgeschlossen mit Fehlern",
-                    f"Erfolgreich: {success_count}\n"
-                    f"Fehlgeschlagen: {error_count}\n\n"
+                    f"✅ Erfolgreich: {success_count}\n"
+                    f"⏭️ Übersprungen (keine Änderungen): {skipped_count}\n"
+                    f"❌ Fehlgeschlagen: {error_count}\n\n"
                     f"Erste Fehler:\n{error_details}"
                 )
             
             # Create log file for actual updates
             if total > 0:
-                self._create_authors_update_log(success_count, error_count, error_list)
+                self._create_authors_update_log(success_count, skipped_count, error_count, error_list)
     
     def _on_authors_update_error(self, error_message):
         """
@@ -1356,12 +1387,13 @@ class MainWindow(QMainWindow):
         
         self._log("Bereit für nächsten Vorgang.")
     
-    def _create_authors_update_log(self, success_count, error_count, error_list):
+    def _create_authors_update_log(self, success_count, skipped_count, error_count, error_list):
         """
         Create a log file with authors update results.
         
         Args:
             success_count: Number of successful updates
+            skipped_count: Number of skipped DOIs (no changes)
             error_count: Number of failed updates
             error_list: List of error messages
         """
@@ -1375,6 +1407,9 @@ class MainWindow(QMainWindow):
             log_filename = f"authors_update_log_{timestamp}.txt"
             log_path = Path(os.getcwd()) / log_filename
             
+            total = success_count + skipped_count + error_count
+            efficiency_gain = (skipped_count / total * 100) if total > 0 else 0
+            
             with open(log_path, 'w', encoding='utf-8') as f:
                 f.write("=" * 70 + "\n")
                 f.write("GROBI - Autoren-Metadaten Update Log\n")
@@ -1383,9 +1418,14 @@ class MainWindow(QMainWindow):
                 f.write(f"Datenbank-Synchronisation: {'Aktiviert' if db_enabled else 'Deaktiviert'}\n")
                 f.write("\n")
                 f.write("ZUSAMMENFASSUNG:\n")
-                f.write(f"  Gesamt: {success_count + error_count} DOIs\n")
-                f.write(f"  Erfolgreich: {success_count}\n")
+                f.write(f"  Gesamt: {total} DOIs\n")
+                f.write(f"  Erfolgreich aktualisiert: {success_count}\n")
+                f.write(f"  Übersprungen (keine Änderungen): {skipped_count}\n")
                 f.write(f"  Fehlgeschlagen: {error_count}\n")
+                f.write("\n")
+                f.write("EFFIZIENZ:\n")
+                f.write(f"  API-Calls vermieden: {skipped_count}/{total} ({efficiency_gain:.1f}%)\n")
+                f.write(f"  Nur DOIs mit tatsächlichen Änderungen wurden aktualisiert\n")
                 
                 if db_enabled:
                     # Count inconsistency warnings

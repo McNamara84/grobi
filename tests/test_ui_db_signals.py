@@ -131,6 +131,7 @@ class TestDatabaseSyncSignals:
                 error_list = ["10.5880/test.001: INKONSISTENZ - Datenbank erfolgreich, DataCite fehlgeschlagen"]
                 main_window._create_authors_update_log(
                     success_count=5,
+                    skipped_count=2,  # Phase 3: Added skipped_count parameter
                     error_count=1,
                     error_list=error_list
                 )
