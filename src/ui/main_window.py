@@ -973,7 +973,7 @@ class MainWindow(QMainWindow):
             )
         
         # Create log file
-        self._create_update_log(success_count, skipped_count, error_count, error_list)
+        self._create_update_log(success_count, skipped_count, error_count, error_list, skipped_details)
     
     def _on_update_error(self, error_message):
         """
@@ -1005,7 +1005,7 @@ class MainWindow(QMainWindow):
         
         self._log("Bereit für nächsten Vorgang.")
     
-    def _create_update_log(self, success_count, skipped_count, error_count, error_list):
+    def _create_update_log(self, success_count, skipped_count, error_count, error_list, skipped_details):
         """
         Create a log file with update results.
         
@@ -1014,6 +1014,7 @@ class MainWindow(QMainWindow):
             skipped_count: Number of skipped DOIs (no changes)
             error_count: Number of failed updates
             error_list: List of error messages
+            skipped_details: List of (doi, reason) tuples for skipped DOIs
         """
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1039,6 +1040,16 @@ class MainWindow(QMainWindow):
                 f.write(f"  API-Calls vermieden: {skipped_count}/{total} ({efficiency_gain:.1f}%)\n")
                 f.write(f"  Nur DOIs mit tatsächlichen Änderungen wurden aktualisiert\n")
                 f.write("\n")
+                
+                # Detailed list of skipped DOIs
+                if skipped_details:
+                    f.write("=" * 70 + "\n")
+                    f.write("ÜBERSPRUNGENE DOIs (keine Änderungen):\n")
+                    f.write("=" * 70 + "\n")
+                    for doi, reason in skipped_details:
+                        f.write(f"  - {doi}\n")
+                        f.write(f"    Grund: {reason}\n")
+                    f.write("\n")
                 
                 if error_list:
                     f.write("=" * 70 + "\n")
@@ -1355,7 +1366,7 @@ class MainWindow(QMainWindow):
             
             # Create log file for actual updates
             if total > 0:
-                self._create_authors_update_log(success_count, skipped_count, error_count, error_list)
+                self._create_authors_update_log(success_count, skipped_count, error_count, error_list, skipped_details)
     
     def _on_authors_update_error(self, error_message):
         """
@@ -1387,7 +1398,7 @@ class MainWindow(QMainWindow):
         
         self._log("Bereit für nächsten Vorgang.")
     
-    def _create_authors_update_log(self, success_count, skipped_count, error_count, error_list):
+    def _create_authors_update_log(self, success_count, skipped_count, error_count, error_list, skipped_details):
         """
         Create a log file with authors update results.
         
@@ -1396,6 +1407,7 @@ class MainWindow(QMainWindow):
             skipped_count: Number of skipped DOIs (no changes)
             error_count: Number of failed updates
             error_list: List of error messages
+            skipped_details: List of (doi, reason) tuples for skipped DOIs
         """
         try:
             # Check if database sync is enabled
@@ -1436,6 +1448,16 @@ class MainWindow(QMainWindow):
                         f.write(f"     (Datenbank erfolgreich, DataCite fehlgeschlagen)\n")
                 
                 f.write("\n")
+                
+                # Detailed list of skipped DOIs
+                if skipped_details:
+                    f.write("=" * 70 + "\n")
+                    f.write("ÜBERSPRUNGENE DOIs (keine Änderungen):\n")
+                    f.write("=" * 70 + "\n")
+                    for doi, reason in skipped_details:
+                        f.write(f"  - {doi}\n")
+                        f.write(f"    Grund: {reason}\n")
+                    f.write("\n")
                 
                 if error_list:
                     f.write("=" * 70 + "\n")

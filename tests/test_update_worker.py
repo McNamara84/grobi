@@ -74,7 +74,7 @@ class TestUpdateWorker:
         assert len(finished_signal) == 1
         
         # Check final results - now with skipped_count
-        success_count, error_count, skipped_count, error_list = finished_signal[0]
+        success_count, error_count, skipped_count, error_list, skipped_details = finished_signal[0]
         assert success_count == 2
         assert error_count == 0
         assert skipped_count == 0  # No skips - URLs are different
@@ -101,7 +101,7 @@ class TestUpdateWorker:
             worker.run()
         
         # Check final results - now with skipped_count
-        success_count, error_count, skipped_count, error_list = finished_signal[0]
+        success_count, error_count, skipped_count, error_list, skipped_details = finished_signal[0]
         assert success_count == 1
         assert error_count == 1
         assert skipped_count == 0
@@ -132,7 +132,7 @@ class TestUpdateWorker:
         
         # Check finished was called with zeros (now with skipped_count)
         assert len(finished_signal) == 1
-        assert finished_signal[0] == (0, 0, 0, [])
+        assert finished_signal[0] == (0, 0, 0, [], [])
     
     def test_worker_run_network_error(self, worker):
         """Test worker run with network error during update."""
@@ -211,7 +211,7 @@ class TestUpdateWorker:
         assert all(not success for _, success, _ in doi_updated_signals)
         
         # Check final results show all errors (now with skipped_count)
-        success_count, error_count, skipped_count, error_list = finished_signal[0]
+        success_count, error_count, skipped_count, error_list, skipped_details = finished_signal[0]
         assert success_count == 0
         assert error_count == 2
         assert skipped_count == 0
@@ -246,7 +246,7 @@ class TestUpdateWorker:
             assert "übersprungen" in message.lower() or "keine änderung" in message.lower()
         
         # Check final results
-        success_count, error_count, skipped_count, error_list = finished_signal[0]
+        success_count, error_count, skipped_count, error_list, skipped_details = finished_signal[0]
         assert success_count == 2  # Both counted as success (no change needed)
         assert skipped_count == 2   # Both were skipped
         assert error_count == 0
@@ -272,7 +272,7 @@ class TestUpdateWorker:
             worker.run()
         
         # Check final results
-        success_count, error_count, skipped_count, error_list = finished_signal[0]
+        success_count, error_count, skipped_count, error_list, skipped_details = finished_signal[0]
         assert success_count == 2  # Both updated
         assert skipped_count == 0  # None skipped
         assert error_count == 0
@@ -315,7 +315,7 @@ class TestUpdateWorker:
                 worker.run()
             
             # Check final results
-            success_count, error_count, skipped_count, error_list = finished_signal[0]
+            success_count, error_count, skipped_count, error_list, skipped_details = finished_signal[0]
             assert success_count == 3  # All counted as success
             assert skipped_count == 2  # 2 were skipped (DOI 1 and 3)
             assert error_count == 0
@@ -342,10 +342,12 @@ class TestUpdateWorker:
             worker.run()
         
         # Check final results
-        success_count, error_count, skipped_count, error_list = finished_signal[0]
+        success_count, error_count, skipped_count, error_list, skipped_details = finished_signal[0]
         assert success_count == 2  # Both updated (fallback: couldn't check, so update anyway)
         assert skipped_count == 0  # None skipped
         assert error_count == 0
         
         # Verify update_doi_url WAS called (fallback behavior)
         assert mock_client.update_doi_url.call_count == 2
+
+

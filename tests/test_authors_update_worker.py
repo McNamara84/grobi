@@ -177,7 +177,7 @@ class TestAuthorsUpdateWorker:
         
         # Check finished signal (dry run only, no actual updates)
         assert len(finished_signals) == 1
-        success_count, skipped_count, error_count, error_list = finished_signals[0]
+        success_count, skipped_count, error_count, error_list, skipped_details = finished_signals[0]
         assert success_count == 2  # Valid count
         # With change detection: one DOI matches mock_metadata (unchanged), one is different (changed)
         assert skipped_count == 1  # One DOI has no changes
@@ -271,7 +271,7 @@ class TestAuthorsUpdateWorker:
         
         # Check final results
         assert len(finished_signals) == 1
-        success_count, skipped_count, error_count, error_list = finished_signals[0]
+        success_count, skipped_count, error_count, error_list, skipped_details = finished_signals[0]
         # With change detection, one DOI unchanged → 1 success, 1 skipped
         assert success_count == 1  # Only DOI with changes updated
         assert skipped_count == 1  # One DOI had no changes
@@ -320,7 +320,7 @@ class TestAuthorsUpdateWorker:
         
         # Check final results
         assert len(finished_signals) == 1
-        success_count, skipped_count, error_count, error_list = finished_signals[0]
+        success_count, skipped_count, error_count, error_list, skipped_details = finished_signals[0]
         # With change detection: DOI 001 unchanged (skipped), DOI 002 changed (updated successfully)
         assert success_count == 1  # One successful (DOI 002)
         assert skipped_count == 1  # One DOI had no changes (DOI 001)
@@ -351,7 +351,7 @@ class TestAuthorsUpdateWorker:
         
         # Check finished signal
         assert len(finished_signals) == 1
-        success_count, skipped_count, error_count, error_list = finished_signals[0]
+        success_count, skipped_count, error_count, error_list, skipped_details = finished_signals[0]
         assert success_count == 0
         assert skipped_count == 0
         assert error_count == 0
@@ -381,7 +381,7 @@ class TestAuthorsUpdateWorker:
         
         # Check finished signal
         assert len(finished_signals) == 1
-        success_count, skipped_count, error_count, error_list = finished_signals[0]
+        success_count, skipped_count, error_count, error_list, skipped_details = finished_signals[0]
         assert success_count == 0
         assert skipped_count == 0
         assert error_count == 0
@@ -793,7 +793,7 @@ class TestAuthorsUpdateWorker:
         
         # Check finished signal includes skipped_count
         assert len(finished_signals) == 1
-        success_count, skipped_count, error_count, errors = finished_signals[0]
+        success_count, skipped_count, error_count, errors, skipped_details = finished_signals[0]
         
         # All DOIs unchanged, so all should be skipped
         assert skipped_count == 2  # CSV has 2 DOIs
@@ -870,7 +870,7 @@ class TestAuthorsUpdateWorker:
         
         # Check counts
         assert len(finished_signals) == 1
-        success_count, skipped_count, error_count, errors = finished_signals[0]
+        success_count, skipped_count, error_count, errors, skipped_details = finished_signals[0]
         
         assert success_count == 1  # Only DOI 2 updated
         assert skipped_count == 1  # DOI 1 skipped
@@ -879,3 +879,4 @@ class TestAuthorsUpdateWorker:
         # Only one doi_updated signal for the changed DOI
         assert len(doi_updated_signals) == 1
         assert doi_updated_signals[0][0] == "10.5880/GFZ.1.1.2021.002"
+

@@ -25,7 +25,7 @@ class AuthorsUpdateWorker(QObject):
     progress_update = Signal(int, int, str)  # current, total, message
     dry_run_complete = Signal(int, int, list)  # valid_count, invalid_count, validation_results
     doi_updated = Signal(str, bool, str)  # doi, success, message
-    finished = Signal(int, int, int, list)  # success_count, skipped_count, error_count, error_list
+    finished = Signal(int, int, int, list, list)  # success_count, skipped_count, error_count, error_list, skipped_details
     error_occurred = Signal(str)  # error_message
     request_save_credentials = Signal(str, str, str)  # username, password, api_type
     
@@ -248,7 +248,7 @@ class AuthorsUpdateWorker(QObject):
                 error_msg = f"Fehler beim Lesen der CSV-Datei: {str(e)}"
                 logger.error(error_msg)
                 self.error_occurred.emit(error_msg)
-                self.finished.emit(0, 0, 0, [])
+                self.finished.emit(0, 0, 0, [], [])
                 return
             
             total_dois = len(creators_by_doi)
@@ -273,7 +273,7 @@ class AuthorsUpdateWorker(QObject):
                 error_msg = f"Fehler beim Initialisieren des DataCite Clients: {str(e)}"
                 logger.error(error_msg)
                 self.error_occurred.emit(error_msg)
-                self.finished.emit(0, 0, 0, [])
+                self.finished.emit(0, 0, 0, [], [])
                 return
             
             # Step 2b: VALIDATION PHASE - Test system availability
@@ -290,7 +290,7 @@ class AuthorsUpdateWorker(QObject):
                 logger.error(error_msg)
                 self.validation_update.emit("  ✗ DataCite API nicht erreichbar")
                 self.error_occurred.emit(error_msg)
-                self.finished.emit(0, 0, 0, [])
+                self.finished.emit(0, 0, 0, [], [])
                 return
             
             # Test Database availability (if enabled)
@@ -310,7 +310,7 @@ class AuthorsUpdateWorker(QObject):
                 logger.error("Database enabled but unavailable - aborting")
                 self.validation_update.emit("  ✗ Datenbank nicht erreichbar (aber aktiviert!)")
                 self.error_occurred.emit(error_msg)
-                self.finished.emit(0, 0, 0, [])
+                self.finished.emit(0, 0, 0, [], [])
                 return
             
             if db_available:
@@ -329,6 +329,7 @@ class AuthorsUpdateWorker(QObject):
             invalid_count = 0
             validation_results = []
             metadata_cache = {}  # Cache metadata for later updates
+            skipped_details = []  # List of (doi, reason) tuples for skipped DOIs
             
             for index, (doi, creators) in enumerate(creators_by_doi.items(), start=1):
                 if not self._is_running:
@@ -376,6 +377,7 @@ class AuthorsUpdateWorker(QObject):
                                 'changed': False,  # NEW FIELD
                                 'message': f"Validiert: {change_description}"
                             }
+                            skipped_details.append((doi, change_description))
                             logger.info(f"DOI {doi}: No changes detected, will skip update")
                         else:
                             # Changes detected → Mark for update
@@ -405,14 +407,14 @@ class AuthorsUpdateWorker(QObject):
                     error_msg = f"Authentifizierungsfehler: {str(e)}"
                     logger.error(error_msg)
                     self.error_occurred.emit(error_msg)
-                    self.finished.emit(0, 0, 0, [])
+                    self.finished.emit(0, 0, 0, [], [])
                     return
                 
                 except NetworkError as e:
                     error_msg = f"Netzwerkfehler: {str(e)}"
                     logger.error(error_msg)
                     self.error_occurred.emit(error_msg)
-                    self.finished.emit(0, 0, 0, [])
+                    self.finished.emit(0, 0, 0, [], [])
                     return
                 
                 except DataCiteAPIError as e:
@@ -446,7 +448,7 @@ class AuthorsUpdateWorker(QObject):
                 logger.info("Dry run only - finishing without updates")
                 # Calculate skipped count for dry run
                 skipped_dois = [result['doi'] for result in validation_results if result['valid'] and not result.get('changed', True)]
-                self.finished.emit(valid_count, len(skipped_dois), invalid_count, [])
+                self.finished.emit(valid_count, len(skipped_dois), invalid_count, [], skipped_details)
                 return
             
             # Step 4: Perform actual updates (only if not dry_run_only)
@@ -653,7 +655,7 @@ class AuthorsUpdateWorker(QObject):
                     error_msg = f"Netzwerkfehler: {str(e)}"
                     logger.error(error_msg)
                     self.error_occurred.emit(error_msg)
-                    self.finished.emit(success_count, skipped_count, error_count, error_list)  # Already correct!
+                    self.finished.emit(success_count, skipped_count, error_count, error_list, skipped_details)
                     return
                 
                 except Exception as e:
@@ -668,7 +670,12 @@ class AuthorsUpdateWorker(QObject):
             logger.info(
                 f"Creator update complete: {success_count} successful, {skipped_count} skipped (no changes), {error_count} failed"
             )
-            self.finished.emit(success_count, skipped_count, error_count, error_list)  # Already correct!
+            # Log first 5 skipped DOIs for reference
+            if skipped_details:
+                logger.info(f"Skipped DOIs (first 5 of {len(skipped_details)}):")
+                for doi, reason in skipped_details[:5]:
+                    logger.info(f"  - {doi}: {reason}")
+            self.finished.emit(success_count, skipped_count, error_count, error_list, skipped_details)
         
         finally:
             self._is_running = False

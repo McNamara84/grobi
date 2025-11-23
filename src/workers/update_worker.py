@@ -16,7 +16,7 @@ class UpdateWorker(QObject):
     # Signals
     progress_update = Signal(int, int, str)  # current, total, message
     doi_updated = Signal(str, bool, str)  # doi, success, message
-    finished = Signal(int, int, int, list)  # success_count, error_count, skipped_count, error_list
+    finished = Signal(int, int, int, list, list)  # success_count, error_count, skipped_count, error_list, skipped_details
     error_occurred = Signal(str)  # error_message
     request_save_credentials = Signal(str, str, str)  # username, password, api_type
     
@@ -63,6 +63,7 @@ class UpdateWorker(QObject):
         error_count = 0
         skipped_count = 0
         error_list = []
+        skipped_details = []  # List of (doi, reason) tuples
         
         try:
             # Step 1: Parse CSV file
@@ -75,7 +76,7 @@ class UpdateWorker(QObject):
                 error_msg = f"Fehler beim Lesen der CSV-Datei: {str(e)}"
                 logger.error(error_msg)
                 self.error_occurred.emit(error_msg)
-                self.finished.emit(0, 0, 0, [])
+                self.finished.emit(0, 0, 0, [], [])
                 return
             
             total_dois = len(doi_url_pairs)
@@ -99,7 +100,7 @@ class UpdateWorker(QObject):
                 error_msg = f"Fehler beim Initialisieren des DataCite Clients: {str(e)}"
                 logger.error(error_msg)
                 self.error_occurred.emit(error_msg)
-                self.finished.emit(0, 0, 0, [])
+                self.finished.emit(0, 0, 0, [], [])
                 return
             
             # Step 3: Update each DOI
@@ -133,6 +134,8 @@ class UpdateWorker(QObject):
                             # No change detected - skip update
                             success_count += 1  # Count as successful (no change needed)
                             skipped_count += 1
+                            skipped_reason = f"URL unverändert: {url}"
+                            skipped_details.append((doi, skipped_reason))
                             logger.info(f"DOI {doi}: URL unchanged ('{url}'), skipping update")
                             self.doi_updated.emit(doi, True, "Keine Änderung (übersprungen)")
                             
@@ -175,7 +178,7 @@ class UpdateWorker(QObject):
                     logger.error(error_msg)
                     self.error_occurred.emit(error_msg)
                     # Emit finished signal before breaking to ensure UI cleanup
-                    self.finished.emit(success_count, error_count, skipped_count, error_list)
+                    self.finished.emit(success_count, error_count, skipped_count, error_list, skipped_details)
                     return
                 
                 except Exception as e:
@@ -190,7 +193,12 @@ class UpdateWorker(QObject):
             logger.info(
                 f"Update complete: {success_count} successful, {skipped_count} skipped (no changes), {error_count} failed"
             )
-            self.finished.emit(success_count, error_count, skipped_count, error_list)
+            # Log first 5 skipped DOIs for reference
+            if skipped_details:
+                logger.info(f"Skipped DOIs (first 5 of {len(skipped_details)}):")
+                for doi, reason in skipped_details[:5]:
+                    logger.info(f"  - {doi}: {reason}")
+            self.finished.emit(success_count, error_count, skipped_count, error_list, skipped_details)
         
         finally:
             self._is_running = False

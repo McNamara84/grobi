@@ -129,11 +129,13 @@ class TestDatabaseSyncSignals:
             with patch('src.ui.main_window.os.getcwd', return_value=str(tmp_path)):
                 # Create log
                 error_list = ["10.5880/test.001: INKONSISTENZ - Datenbank erfolgreich, DataCite fehlgeschlagen"]
+                skipped_details = [("10.5880/test.002", "Keine Änderungen in Creator-Metadaten"), ("10.5880/test.003", "Keine Änderungen in Creator-Metadaten")]  # Phase 4
                 main_window._create_authors_update_log(
                     success_count=5,
                     skipped_count=2,  # Phase 3: Added skipped_count parameter
                     error_count=1,
-                    error_list=error_list
+                    error_list=error_list,
+                    skipped_details=skipped_details  # Phase 4: Added skipped_details parameter
                 )
                 
                 # Read log file
