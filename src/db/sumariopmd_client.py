@@ -77,8 +77,7 @@ class SumarioPMDClient:
                 password=password,
                 connect_timeout=10,
                 charset='utf8mb4',
-                collation='utf8mb4_unicode_ci',
-                auth_plugin='mysql_native_password'
+                collation='utf8mb4_unicode_ci'
             )
             logger.info(f"Connection pool created for {self.host}/{self.database}")
         except MySQLError as e:
