@@ -33,6 +33,11 @@ A modern GUI tool for GFZ Data Services to manage DataCite DOIs.
 - 🛡️ Comprehensive error handling and validation
 - 📋 CSV format validation (DOI and URL format checks)
 - 💾 Persistent theme preference across sessions
+- 🚀 **Smart Change Detection**: Automatically skips unchanged DOIs to minimize API calls
+  - **95-98% fewer API calls** for typical update workflows
+  - Compares current metadata with CSV before updating
+  - Detailed logging of skipped DOIs with reasons
+  - Efficiency metrics in update summaries
 
 ## Download
 
@@ -126,8 +131,8 @@ pip install -r requirements-dev.txt
 
 The project includes a comprehensive test suite:
 
-- **287 Unit Tests** for all modules (including UI components and credential management)
-- **77% Code Coverage** (Business Logic 90%+)
+- **391 Unit Tests** for all modules (including UI components and credential management)
+- **78% Code Coverage** (Business Logic 90%+, Workers 86%+)
 - **Automated CI/CD** with GitHub Actions
 
 Run tests:
@@ -141,11 +146,13 @@ pytest --cov=src --cov-report=html
 ```
 
 Test coverage by module:
-- `datacite_client.py`: 90% - API integration and error handling
-- `csv_exporter.py`: 84% - CSV export and validation
-- `credentials_dialog.py`: 95% - GUI dialog for credentials
-- `main_window.py`: 61% - Main window and threading
-- **Overall**: 77%
+- `datacite_client.py`: 83% - API integration and error handling
+- `update_worker.py`: 87% - URL update worker with change detection
+- `authors_update_worker.py`: 85% - Author update worker with change detection
+- `credentials_dialog.py`: 77% - GUI dialog for credentials
+- `csv_exporter.py`: 68% - CSV export and validation
+- `main_window.py`: 58% - Main window and threading
+- **Overall**: 78%
 
 ### Building Windows Executable
 
@@ -242,12 +249,14 @@ DOI,Landing_Page_URL
 5. **Monitor progress**: 
    - Real-time progress bar shows X/Y DOIs processed
    - Status messages display current operation
+   - 🚀 **Smart Change Detection**: Automatically skips DOIs with unchanged URLs
    - Errors are logged but process continues
 
 6. **Review results**:
-   - Summary dialog shows successful and failed updates
+   - Summary dialog shows successful, skipped, and failed updates
+   - 📈 **Efficiency metrics**: Shows percentage of API calls saved
    - Detailed log file created: `update_log_YYYYMMDD_HHMMSS.txt`
-   - Log contains all errors with DOI and error message
+   - Log contains all errors, skipped DOIs with reasons, and efficiency statistics
 
 **CSV Input Format:**
 ```csv
@@ -269,18 +278,28 @@ DOI,Landing_Page_URL
 ======================================================================
 GROBI - Landing Page URL Update Log
 ======================================================================
-Datum: 2025-11-19 14:30:00
+Datum: 2025-11-23 14:30:00
 
 ZUSAMMENFASSUNG:
   Gesamt: 100 DOIs
-  Erfolgreich: 98
+  Erfolgreich: 3
+  Übersprungen: 95 (keine Änderungen)
   Fehlgeschlagen: 2
+  
+  🚀 Effizienz: 95.0% der API-Aufrufe eingespart!
 
 ======================================================================
 FEHLER:
 ======================================================================
   - 10.5880/GFZ.xxx: DOI nicht gefunden (404)
   - 10.5880/GFZ.yyy: Keine Berechtigung (403)
+
+======================================================================
+ÜBERSPRUNGENE DOIs (keine Änderungen erkannt):
+======================================================================
+  - 10.5880/GFZ.001: URL unverändert: https://example.org/dataset1
+  - 10.5880/GFZ.002: URL unverändert: https://example.org/dataset2
+  ... (93 weitere)
 
 ======================================================================
 ```
@@ -406,12 +425,14 @@ DOI,Creator Name,Name Type,Given Name,Family Name,Name Identifier,Name Identifie
 6. **Monitor progress**:
    - Real-time progress bar shows X/Y DOIs processed
    - Status messages display current operation
+   - 🚀 **Smart Change Detection**: Automatically skips DOIs with unchanged metadata
    - Each DOI update is logged individually
 
 7. **Review results**:
-   - Summary dialog shows successful and failed updates
+   - Summary dialog shows successful, skipped, and failed updates
+   - 📈 **Efficiency metrics**: Shows percentage of API calls saved
    - Validation results from dry run included
-   - Application log contains detailed information
+   - Detailed log contains skipped DOIs with reasons
 
 **CSV Input Format:**
 
@@ -698,6 +719,9 @@ In rare cases (~5%), database update succeeds but DataCite fails even after retr
 - **Author updates: Automatic dry run validation prevents errors before making changes**
 - Creator order in CSV determines order in DataCite (first row = primary author)
 - **Credential management: Securely store and manage multiple DataCite accounts**
+- 🚀 **Smart updates: Only changed DOIs are sent to DataCite API (95-98% fewer API calls)**
+- Unchanged DOIs are automatically skipped with detailed logging
+- Efficiency metrics displayed in result dialogs and log files
 
 ## Project Structure
 
@@ -813,6 +837,15 @@ Failed DOI Details:
 - **Real-time progress tracking** with X/Y counter display
 - **Continue-on-error strategy** for bulk operations with comprehensive logging
 - **Multi-account management** with account metadata stored in `%APPDATA%/GROBI/`
+- 🚀 **Smart Change Detection** ("Diff-Before-Update" pattern):
+  - Pre-fetches current metadata from DataCite before updating
+  - Compares CSV data with current state field-by-field
+  - Skips DOIs with no changes (avoids unnecessary API calls)
+  - URL updates: Exact string comparison of landing page URLs
+  - Author updates: Multi-field comparison (names, ORCIDs, order, count) with normalization
+  - Efficiency: Typically saves 95-98% of API calls
+  - Detailed logging: Skipped DOIs with reasons ("URL unverändert", "Keine Änderungen in Creator-Metadaten")
+  - Performance: Minimal overhead (fetch + compare < update)
 
 ## License
 

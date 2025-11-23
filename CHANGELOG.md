@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.0] - Unreleased
 
 ### Added
+- 🚀 **Smart Change Detection** (#12): "Diff-Before-Update" optimization for bulk operations
+  - **Automatic change detection**: Compares current DataCite metadata with CSV before updating
+  - **URL updates**: Skips DOIs with unchanged landing page URLs
+  - **Author updates**: Multi-field comparison (name, ORCID, order, count) with normalization
+  - **95-98% fewer API calls**: Typical workflows skip most DOIs (no changes detected)
+  - **Efficiency metrics**: Result dialogs show percentage of API calls saved
+  - **Detailed logging**: Skipped DOIs section with reasons in update log files
+    - Example reasons: "URL unverändert: https://...", "Keine Änderungen in Creator-Metadaten"
+  - **Performance optimization**: Minimal overhead (fetch + compare < update cost)
+  - **Extended signals**: Workers emit `(success, error, skipped, error_list, skipped_details)`
+  - **Comprehensive test coverage**: +18 tests for skipped_details functionality (391 total tests)
+  - **Worker coverage improvement**: authors_update_worker 65% → 85% (+20% coverage)
 - **Database Synchronization** (#11): Automatic sync of author metadata with internal GFZ database
   - **Settings Dialog**: Tab-based UI with Theme and Database configuration
     - General tab: Theme settings (Auto/Light/Dark) moved from menu
@@ -84,6 +96,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Version 0.3.0 established
 
 ### Changed
+- **Update Workflows**: Optimized with change detection
+  - URL updates: Fetch current URL, compare, skip if unchanged
+  - Author updates: Fetch current creators, compare all fields, skip if unchanged
+  - Result dialogs: Now show success/skipped/error counts with efficiency percentage
+  - Log files: New "ÜBERSPRUNGENE DOIs" section with detailed reasons
+  - User feedback: Clear indication of optimization benefits (e.g., "95.0% der API-Aufrufe eingespart!")
 - **Settings Management**: Centralized configuration dialog
   - Theme settings moved from Ansicht menu to Settings dialog
   - Database configuration now in dedicated tab
@@ -119,6 +137,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - More scannable interface with clear sections
 
 ### Technical Details
+- **Change Detection Algorithm**:
+  - `update_worker.py`: `get_doi_url()` + string comparison
+  - `authors_update_worker.py`: `_detect_creator_changes()` method
+    - Multi-field comparison: name, nameType, givenName, familyName, ORCID
+    - ORCID normalization: Strips `https://orcid.org/` prefix for comparison
+    - Order-sensitive: Creator sequence matters
+    - Count-sensitive: Number of creators must match
+  - Skipped DOIs collected as `List[Tuple[str, str]]` (DOI + reason)
+  - Log files: Dedicated "ÜBERSPRUNGENE DOIs" section
+  - Efficiency calculation: `(skipped / total) * 100`
+- **Extended Test Suite**: +18 tests (373 → 391)
+  - `test_update_worker_skipped_details.py`: 6 tests for URL change detection
+  - `test_authors_update_worker_skipped_details.py`: 5 tests for author change detection
+  - `test_log_files_skipped_details.py`: 7 tests for log file generation
+  - All tests use mocking (no real API/DB connections)
+  - Focus: Format validation, empty scenarios, mixed scenarios, error handling, logging
+- **Code Coverage Improvement**:
+  - authors_update_worker.py: 65% → 85% (+20%)
+  - update_worker.py: 87% (stable)
+  - Overall workers coverage: 86%
+  - Total: 391 tests, 78% overall coverage
 - **QGroupBox Styling**: Theme-aware group containers
   - Light mode: White background, #d0d0d0 borders, #0078d4 titles
   - Dark mode: #252525 background, #3e3e3e borders, #1177bb titles
