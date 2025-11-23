@@ -93,7 +93,7 @@ class TestAuthorsUpdateWorkerSkippedDetails:
         
         # Check finished signal
         assert len(finished_signals) == 1
-        success_count, skipped_count, error_count, error_list, skipped_details = finished_signals[0]
+        success_count, error_count, skipped_count, error_list, skipped_details = finished_signals[0]
         
         # Both DOIs have no changes - should be skipped
         assert skipped_count == 2
@@ -167,7 +167,7 @@ class TestAuthorsUpdateWorkerSkippedDetails:
             qtbot.wait(100)
         
         # Check finished signal
-        success_count, skipped_count, error_count, error_list, skipped_details = finished_signals[0]
+        success_count, error_count, skipped_count, error_list, skipped_details = finished_signals[0]
         
         # All creators changed - no skips
         assert skipped_count == 0
@@ -236,7 +236,7 @@ class TestAuthorsUpdateWorkerSkippedDetails:
             qtbot.wait(100)
         
         # Check finished signal
-        success_count, skipped_count, error_count, error_list, skipped_details = finished_signals[0]
+        success_count, error_count, skipped_count, error_list, skipped_details = finished_signals[0]
         
         # One skipped, one to be updated
         assert skipped_count == 1
@@ -314,7 +314,7 @@ class TestAuthorsUpdateWorkerSkippedDetails:
         
         # Check finished signal
         assert len(finished_signals) == 1
-        success_count, skipped_count, error_count, error_list, skipped_details = finished_signals[0]
+        success_count, error_count, skipped_count, error_list, skipped_details = finished_signals[0]
         
         # One skipped (unchanged), one updated
         assert skipped_count == 1

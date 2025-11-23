@@ -1305,15 +1305,16 @@ class MainWindow(QMainWindow):
         else:
             self._log(f"[FEHLER] {doi}: {message}")
     
-    def _on_authors_update_finished(self, success_count, skipped_count, error_count, error_list):
+    def _on_authors_update_finished(self, success_count, error_count, skipped_count, error_list, skipped_details):
         """
         Handle authors update completion.
         
         Args:
             success_count: Number of successful updates
-            skipped_count: Number of skipped DOIs (no changes)
             error_count: Number of failed updates
+            skipped_count: Number of skipped DOIs (no changes)
             error_list: List of error messages
+            skipped_details: List of (doi, reason) tuples for skipped DOIs
         """
         total = success_count + skipped_count + error_count
         
