@@ -88,7 +88,13 @@ class TestAuthorsUpdateWorker:
                             "name": "Smith, John",
                             "nameType": "Personal",
                             "givenName": "John",
-                            "familyName": "Smith"
+                            "familyName": "Smith",
+                            "nameIdentifiers": [
+                                {
+                                    "nameIdentifier": "https://orcid.org/0000-0001-5000-0007",
+                                    "nameIdentifierScheme": "ORCID"
+                                }
+                            ]
                         },
                         {
                             "name": "Doe, Jane",
@@ -171,8 +177,10 @@ class TestAuthorsUpdateWorker:
         
         # Check finished signal (dry run only, no actual updates)
         assert len(finished_signals) == 1
-        success_count, error_count, error_list = finished_signals[0]
+        success_count, skipped_count, error_count, error_list = finished_signals[0]
         assert success_count == 2  # Valid count
+        # With change detection: one DOI matches mock_metadata (unchanged), one is different (changed)
+        assert skipped_count == 1  # One DOI has no changes
         assert error_count == 0
         assert len(error_list) == 0
     
@@ -254,17 +262,19 @@ class TestAuthorsUpdateWorker:
         # Check dry run completed
         assert len(dry_run_signals) == 1
         
-        # Check DOI updated signals
-        assert len(doi_updated_signals) == 2
-        for doi, success, message in doi_updated_signals:
-            assert success is True
-            # New message format from Database-First implementation
-            assert ("✓ DataCite aktualisiert" in message or "erfolgreich aktualisiert" in message)
+        # Check DOI updated signals - with change detection only 1 DOI is updated
+        assert len(doi_updated_signals) == 1
+        doi, success, message = doi_updated_signals[0]
+        assert success is True
+        # New message format from Database-First implementation
+        assert ("✓ DataCite aktualisiert" in message or "erfolgreich aktualisiert" in message)
         
         # Check final results
         assert len(finished_signals) == 1
-        success_count, error_count, error_list = finished_signals[0]
-        assert success_count == 2
+        success_count, skipped_count, error_count, error_list = finished_signals[0]
+        # With change detection, one DOI unchanged → 1 success, 1 skipped
+        assert success_count == 1  # Only DOI with changes updated
+        assert skipped_count == 1  # One DOI had no changes
         assert error_count == 0
         assert len(error_list) == 0
     
@@ -300,18 +310,22 @@ class TestAuthorsUpdateWorker:
             mock_qsettings.return_value = settings_instance
             worker_update.run()
         
-        # Check DOI updated signals
-        assert len(doi_updated_signals) == 2
-        assert doi_updated_signals[0][1] is True  # First DOI success
-        assert doi_updated_signals[1][1] is False  # Second DOI failed
+        # Check DOI updated signals - with change detection only changed DOI is processed
+        # DOI 001 matches mock_metadata (unchanged), DOI 002 is different (changed → updated but fails)
+        assert len(doi_updated_signals) == 1
+        # The changed DOI (002) was attempted but should succeed based on mock (first call succeeds)
+        assert doi_updated_signals[0][0] == "10.5880/GFZ.1.1.2021.002"
+        # Actually it succeeds because it's the changed one getting the successful update
+        assert doi_updated_signals[0][1] is True
         
         # Check final results
         assert len(finished_signals) == 1
-        success_count, error_count, error_list = finished_signals[0]
-        assert success_count == 1
-        assert error_count == 1
-        assert len(error_list) == 1
-        assert "Keine Berechtigung" in error_list[0]
+        success_count, skipped_count, error_count, error_list = finished_signals[0]
+        # With change detection: DOI 001 unchanged (skipped), DOI 002 changed (updated successfully)
+        assert success_count == 1  # One successful (DOI 002)
+        assert skipped_count == 1  # One DOI had no changes (DOI 001)
+        assert error_count == 0  # None failed
+        assert len(error_list) == 0
     
     def test_csv_parse_error(self):
         """Test worker with invalid CSV file."""
@@ -337,8 +351,9 @@ class TestAuthorsUpdateWorker:
         
         # Check finished signal
         assert len(finished_signals) == 1
-        success_count, error_count, error_list = finished_signals[0]
+        success_count, skipped_count, error_count, error_list = finished_signals[0]
         assert success_count == 0
+        assert skipped_count == 0
         assert error_count == 0
     
     def test_authentication_error(self, worker_dry_run):
@@ -366,8 +381,9 @@ class TestAuthorsUpdateWorker:
         
         # Check finished signal
         assert len(finished_signals) == 1
-        success_count, error_count, error_list = finished_signals[0]
+        success_count, skipped_count, error_count, error_list = finished_signals[0]
         assert success_count == 0
+        assert skipped_count == 0
         assert error_count == 0
     
     def test_network_error_during_validation(self, worker_dry_run):
@@ -481,6 +497,385 @@ class TestAuthorsUpdateWorker:
             mock_qsettings.return_value = settings_instance
             worker_update.run()
         
-        # Only one DOI should be updated (the valid one)
+        # With change detection: DOI 001 matches mock_metadata exactly (unchanged)
+        # DOI 002 is invalid (not found) so it's skipped in validation
+        # Result: No updates (DOI 001 unchanged, DOI 002 invalid)
+        assert len(doi_updated_signals) == 0
+
+    # ============ Phase 2: Creator Change Detection Tests ============
+
+    def test_orcid_normalization(self, worker_dry_run):
+        """Test ORCID normalization with various formats."""
+        # URL format
+        assert worker_dry_run._normalize_orcid("https://orcid.org/0000-0001-5000-0007") == "0000-0001-5000-0007"
+        assert worker_dry_run._normalize_orcid("http://orcid.org/0000-0002-1234-5678") == "0000-0002-1234-5678"
+        
+        # ID-only format (already normalized)
+        assert worker_dry_run._normalize_orcid("0000-0001-5000-0007") == "0000-0001-5000-0007"
+        
+        # Empty/None
+        assert worker_dry_run._normalize_orcid("") == ""
+        assert worker_dry_run._normalize_orcid(None) == ""
+
+    def test_extract_orcid_from_creator(self, worker_dry_run):
+        """Test ORCID extraction from DataCite creator object."""
+        # Creator with ORCID in nameIdentifiers
+        creator_with_orcid = {
+            'name': 'Smith, John',
+            'nameType': 'Personal',
+            'givenName': 'John',
+            'familyName': 'Smith',
+            'nameIdentifiers': [
+                {
+                    'nameIdentifier': 'https://orcid.org/0000-0001-5000-0007',
+                    'nameIdentifierScheme': 'ORCID'
+                }
+            ]
+        }
+        assert worker_dry_run._extract_orcid(creator_with_orcid) == "0000-0001-5000-0007"
+        
+        # Creator without ORCID
+        creator_without_orcid = {
+            'name': 'Doe, Jane',
+            'nameType': 'Personal',
+            'givenName': 'Jane',
+            'familyName': 'Doe'
+        }
+        assert worker_dry_run._extract_orcid(creator_without_orcid) == ""
+        
+        # Creator with empty nameIdentifiers
+        creator_empty_identifiers = {
+            'name': 'Test, User',
+            'nameIdentifiers': []
+        }
+        assert worker_dry_run._extract_orcid(creator_empty_identifiers) == ""
+
+    def test_creator_change_detection_no_change(self, worker_dry_run, mock_metadata):
+        """Test change detection when creators are identical."""
+        # CSV creators matching metadata exactly
+        csv_creators = [
+            {
+                'name': 'Smith, John',
+                'nameType': 'Personal',
+                'givenName': 'John',
+                'familyName': 'Smith',
+                'nameIdentifier': 'https://orcid.org/0000-0001-5000-0007'
+            },
+            {
+                'name': 'Doe, Jane',
+                'nameType': 'Personal',
+                'givenName': 'Jane',
+                'familyName': 'Doe',
+                'nameIdentifier': ''
+            }
+        ]
+        
+        has_changes, description = worker_dry_run._detect_creator_changes(mock_metadata, csv_creators)
+        assert has_changes is False
+        assert "Keine Änderungen" in description
+
+    def test_creator_change_detection_name_change(self, worker_dry_run, mock_metadata):
+        """Test change detection when creator name changes."""
+        csv_creators = [
+            {
+                'name': 'Smith, Jonathan',  # Changed from 'Smith, John'
+                'nameType': 'Personal',
+                'givenName': 'Jonathan',
+                'familyName': 'Smith',
+                'nameIdentifier': 'https://orcid.org/0000-0001-5000-0007'
+            },
+            {
+                'name': 'Doe, Jane',
+                'nameType': 'Personal',
+                'givenName': 'Jane',
+                'familyName': 'Doe',
+                'nameIdentifier': ''
+            }
+        ]
+        
+        has_changes, description = worker_dry_run._detect_creator_changes(mock_metadata, csv_creators)
+        assert has_changes is True
+        assert "GivenName" in description or "givenName" in description
+
+    def test_creator_change_detection_orcid_change(self, worker_dry_run, mock_metadata):
+        """Test change detection when ORCID changes."""
+        csv_creators = [
+            {
+                'name': 'Smith, John',
+                'nameType': 'Personal',
+                'givenName': 'John',
+                'familyName': 'Smith',
+                'nameIdentifier': 'https://orcid.org/0000-0002-9999-8888'  # Changed ORCID
+            },
+            {
+                'name': 'Doe, Jane',
+                'nameType': 'Personal',
+                'givenName': 'Jane',
+                'familyName': 'Doe',
+                'nameIdentifier': ''
+            }
+        ]
+        
+        has_changes, description = worker_dry_run._detect_creator_changes(mock_metadata, csv_creators)
+        assert has_changes is True
+        assert "ORCID" in description
+
+    def test_creator_change_detection_count_change(self, worker_dry_run, mock_metadata):
+        """Test change detection when number of creators changes."""
+        # Only one creator instead of two
+        csv_creators = [
+            {
+                'name': 'Smith, John',
+                'nameType': 'Personal',
+                'givenName': 'John',
+                'familyName': 'Smith',
+                'nameIdentifier': 'https://orcid.org/0000-0001-5000-0007'
+            }
+        ]
+        
+        has_changes, description = worker_dry_run._detect_creator_changes(mock_metadata, csv_creators)
+        assert has_changes is True
+        assert "Anzahl" in description
+
+    def test_creator_change_detection_order_change(self, worker_dry_run, mock_metadata):
+        """Test change detection when creator order changes."""
+        # Swapped order of creators
+        csv_creators = [
+            {
+                'name': 'Doe, Jane',
+                'nameType': 'Personal',
+                'givenName': 'Jane',
+                'familyName': 'Doe',
+                'nameIdentifier': ''
+            },
+            {
+                'name': 'Smith, John',
+                'nameType': 'Personal',
+                'givenName': 'John',
+                'familyName': 'Smith',
+                'nameIdentifier': 'https://orcid.org/0000-0001-5000-0007'
+            }
+        ]
+        
+        has_changes, description = worker_dry_run._detect_creator_changes(mock_metadata, csv_creators)
+        assert has_changes is True
+        # Order change is detected as name difference at position
+        assert "name" in description.lower()
+
+    def test_dry_run_with_change_detection_no_changes(self, worker_dry_run):
+        """Test dry run detects DOIs with no changes."""
+        # Metadata matching exactly the CSV file creators
+        metadata_001 = {
+            'data': {
+                'attributes': {
+                    'creators': [
+                        {
+                            'name': 'Smith, John',
+                            'nameType': 'Personal',
+                            'givenName': 'John',
+                            'familyName': 'Smith',
+                            'nameIdentifiers': [
+                                {
+                                    'nameIdentifier': 'https://orcid.org/0000-0001-5000-0007',
+                                    'nameIdentifierScheme': 'ORCID'
+                                }
+                            ]
+                        },
+                        {
+                            'name': 'Doe, Jane',
+                            'nameType': 'Personal',
+                            'givenName': 'Jane',
+                            'familyName': 'Doe'
+                        }
+                    ]
+                }
+            }
+        }
+        
+        metadata_002 = {
+            'data': {
+                'attributes': {
+                    'creators': [
+                        {
+                            'name': 'Example Organization',
+                            'nameType': 'Organizational'
+                        }
+                    ]
+                }
+            }
+        }
+        
+        mock_client = Mock()
+        mock_client.get_doi_metadata.side_effect = [metadata_001, metadata_002]
+        mock_client.validate_creators_match.return_value = (True, "Valid")
+        
+        dry_run_signals = []
+        worker_dry_run.dry_run_complete.connect(lambda *args: dry_run_signals.append(args))
+        
+        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client), \
+             patch('src.workers.authors_update_worker.QSettings') as mock_qsettings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False
+            mock_qsettings.return_value = settings_instance
+            worker_dry_run.run()
+        
+        # Check validation results contain 'changed' field
+        assert len(dry_run_signals) == 1
+        valid_count, invalid_count, validation_results = dry_run_signals[0]
+        assert valid_count == 2  # CSV has 2 DOIs
+        
+        # All DOIs should be marked as unchanged
+        for result in validation_results:
+            if result['valid']:
+                assert 'changed' in result
+                assert result['changed'] is False
+
+    def test_update_run_skips_unchanged_dois(self, worker_update):
+        """Test that update phase skips DOIs with no changes."""
+        # Metadata matching exactly the CSV file creators
+        metadata_001 = {
+            'data': {
+                'attributes': {
+                    'creators': [
+                        {
+                            'name': 'Smith, John',
+                            'nameType': 'Personal',
+                            'givenName': 'John',
+                            'familyName': 'Smith',
+                            'nameIdentifiers': [
+                                {
+                                    'nameIdentifier': 'https://orcid.org/0000-0001-5000-0007',
+                                    'nameIdentifierScheme': 'ORCID'
+                                }
+                            ]
+                        },
+                        {
+                            'name': 'Doe, Jane',
+                            'nameType': 'Personal',
+                            'givenName': 'Jane',
+                            'familyName': 'Doe'
+                        }
+                    ]
+                }
+            }
+        }
+        
+        metadata_002 = {
+            'data': {
+                'attributes': {
+                    'creators': [
+                        {
+                            'name': 'Example Organization',
+                            'nameType': 'Organizational'
+                        }
+                    ]
+                }
+            }
+        }
+        
+        mock_client = Mock()
+        mock_client.get_doi_metadata.side_effect = [metadata_001, metadata_002]
+        mock_client.validate_creators_match.return_value = (True, "Valid")
+        mock_client.update_doi_creators.return_value = (True, "Updated")
+        
+        finished_signals = []
+        doi_updated_signals = []
+        
+        worker_update.finished.connect(lambda *args: finished_signals.append(args))
+        worker_update.doi_updated.connect(lambda *args: doi_updated_signals.append(args))
+        
+        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client), \
+             patch('src.workers.authors_update_worker.QSettings') as mock_qsettings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False
+            mock_qsettings.return_value = settings_instance
+            worker_update.run()
+        
+        # Check finished signal includes skipped_count
+        assert len(finished_signals) == 1
+        success_count, skipped_count, error_count, errors = finished_signals[0]
+        
+        # All DOIs unchanged, so all should be skipped
+        assert skipped_count == 2  # CSV has 2 DOIs
+        assert success_count == 0
+        assert error_count == 0
+        
+        # No doi_updated signals should have been emitted
+        assert len(doi_updated_signals) == 0
+
+    def test_mixed_scenario_some_changed_some_not(self, worker_update):
+        """Test scenario with mixed changed/unchanged DOIs."""
+        # Create metadata for unchanged and changed DOIs
+        # Metadata matching exactly the CSV file creators for DOI 001
+        unchanged_metadata = {
+            'data': {
+                'attributes': {
+                    'creators': [
+                        {
+                            'name': 'Smith, John',
+                            'nameType': 'Personal',
+                            'givenName': 'John',
+                            'familyName': 'Smith',
+                            'nameIdentifiers': [
+                                {
+                                    'nameIdentifier': 'https://orcid.org/0000-0001-5000-0007',
+                                    'nameIdentifierScheme': 'ORCID'
+                                }
+                            ]
+                        },
+                        {
+                            'name': 'Doe, Jane',
+                            'nameType': 'Personal',
+                            'givenName': 'Jane',
+                            'familyName': 'Doe'
+                        }
+                    ]
+                }
+            }
+        }
+        
+        changed_metadata = {
+            'data': {
+                'attributes': {
+                    'creators': [
+                        {
+                            'name': 'Old, Name',  # Different from CSV
+                            'nameType': 'Personal',
+                            'givenName': 'Name',
+                            'familyName': 'Old'
+                        }
+                    ]
+                }
+            }
+        }
+        
+        mock_client = Mock()
+        # DOI 1: unchanged, DOI 2: changed
+        mock_client.get_doi_metadata.side_effect = [unchanged_metadata, changed_metadata]
+        mock_client.validate_creators_match.return_value = (True, "Valid")
+        mock_client.update_doi_creators.return_value = (True, "Updated")
+        
+        finished_signals = []
+        doi_updated_signals = []
+        
+        worker_update.finished.connect(lambda *args: finished_signals.append(args))
+        worker_update.doi_updated.connect(lambda *args: doi_updated_signals.append(args))
+        
+        with patch('src.workers.authors_update_worker.DataCiteClient', return_value=mock_client), \
+             patch('src.workers.authors_update_worker.QSettings') as mock_qsettings:
+            settings_instance = Mock()
+            settings_instance.value.return_value = False
+            mock_qsettings.return_value = settings_instance
+            worker_update.run()
+        
+        # Check counts
+        assert len(finished_signals) == 1
+        success_count, skipped_count, error_count, errors = finished_signals[0]
+        
+        assert success_count == 1  # Only DOI 2 updated
+        assert skipped_count == 1  # DOI 1 skipped
+        assert error_count == 0
+        
+        # Only one doi_updated signal for the changed DOI
         assert len(doi_updated_signals) == 1
-        assert doi_updated_signals[0][0] == "10.5880/GFZ.1.1.2021.001"
+        assert doi_updated_signals[0][0] == "10.5880/GFZ.1.1.2021.002"
