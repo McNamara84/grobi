@@ -77,7 +77,10 @@ class SumarioPMDClient:
                 password=password,
                 connect_timeout=10,
                 charset='utf8mb4',
-                collation='utf8mb4_unicode_ci'
+                collation='utf8mb4_unicode_ci',
+                # Use caching_sha2_password which works in frozen apps
+                # Avoids "mysql_native_password plugin cannot be loaded" error
+                auth_plugin='caching_sha2_password'
             )
             logger.info(f"Connection pool created for {self.host}/{self.database}")
         except MySQLError as e:
