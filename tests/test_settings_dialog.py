@@ -177,7 +177,8 @@ class TestConnectionTest:
             database="db",
             user="user",
             password="pass",
-            connect_timeout=10
+            connect_timeout=10,
+            auth_plugin='mysql_native_password'
         )
         
         # Verify success message
