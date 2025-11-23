@@ -67,22 +67,39 @@ class SumarioPMDClient:
             self.host = f"{self.host}.gfz-potsdam.de"
         
         try:
-            self.pool = MySQLConnectionPool(
-                pool_name="sumariopmd_pool",
-                pool_size=pool_size,
-                pool_reset_session=True,
-                host=self.host,
-                database=self.database,
-                user=self.username,
-                password=password,
-                connect_timeout=10,
-                charset='utf8mb4',
-                collation='utf8mb4_unicode_ci',
-                # Use caching_sha2_password which works in frozen apps
-                # Avoids "mysql_native_password plugin cannot be loaded" error
-                auth_plugin='caching_sha2_password'
-            )
-            logger.info(f"Connection pool created for {self.host}/{self.database}")
+            # Try with SHA256 first (works in frozen apps, MySQL 5.7+)
+            try:
+                self.pool = MySQLConnectionPool(
+                    pool_name="sumariopmd_pool",
+                    pool_size=pool_size,
+                    pool_reset_session=True,
+                    host=self.host,
+                    database=self.database,
+                    user=self.username,
+                    password=password,
+                    connect_timeout=10,
+                    charset='utf8mb4',
+                    collation='utf8mb4_unicode_ci',
+                    auth_plugin='sha256_password'  # Pure Python implementation
+                )
+                logger.info(f"Connection pool created with SHA256 for {self.host}/{self.database}")
+            except MySQLError as sha_error:
+                # Fallback: Try with default (no explicit auth_plugin)
+                # This works if server uses caching_sha2_password
+                logger.warning(f"SHA256 auth failed, trying default: {sha_error}")
+                self.pool = MySQLConnectionPool(
+                    pool_name="sumariopmd_pool",
+                    pool_size=pool_size,
+                    pool_reset_session=True,
+                    host=self.host,
+                    database=self.database,
+                    user=self.username,
+                    password=password,
+                    connect_timeout=10,
+                    charset='utf8mb4',
+                    collation='utf8mb4_unicode_ci'
+                )
+                logger.info(f"Connection pool created with default auth for {self.host}/{self.database}")
         except MySQLError as e:
             logger.error(f"Failed to create connection pool: {e}")
             raise ConnectionError(f"Failed to connect to database: {e}") from e
