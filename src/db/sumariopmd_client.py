@@ -98,10 +98,13 @@ class SumarioPMDClient:
                 charset='utf8mb4',
                 cursorclass=DictCursor  # Return results as dictionaries
             )
-            yield connection
         except pymysql.Error as e:
+            # Only catch connection errors here, not query errors during transactions
             logger.error(f"Failed to connect to database: {e}")
             raise ConnectionError(f"Database connection failed: {e}") from e
+        
+        try:
+            yield connection
         finally:
             if connection:
                 connection.close()
