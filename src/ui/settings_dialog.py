@@ -50,31 +50,28 @@ class ConnectionTestWorker(QObject):
         self.password = password
     
     def run(self):
-        """Test database connection."""
+        """Test database connection using PyMySQL."""
         try:
-            import mysql.connector
-            from mysql.connector import Error
+            import pymysql
             
-            # Attempt connection
-            conn = mysql.connector.connect(
+            # Attempt connection with PyMySQL
+            conn = pymysql.connect(
                 host=self.host,
                 database=self.database,
                 user=self.username,
                 password=self.password,
-                connect_timeout=10,
-                auth_plugin='mysql_native_password'
+                connect_timeout=10
             )
             
             # Test query
-            cursor = conn.cursor()
-            cursor.execute("SELECT 1")
-            cursor.fetchone()
-            cursor.close()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
             conn.close()
             
             self.finished.emit(True, "✓ Verbindung erfolgreich")
             
-        except Error as e:
+        except pymysql.Error as e:
             logger.error(f"DB connection test failed: {e}")
             self.finished.emit(False, f"✗ Fehler: {str(e)}")
         except Exception as e:

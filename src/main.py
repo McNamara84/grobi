@@ -7,6 +7,11 @@ from PySide6.QtCore import Qt
 
 from src.ui.main_window import MainWindow
 
+# CRITICAL: Force PyMySQL inclusion in Nuitka build
+# Without this explicit import AND USAGE, Nuitka won't include pymysql in the frozen executable
+import pymysql  # noqa: F401 - Required for Nuitka packaging
+_ = pymysql.__version__  # Force Nuitka to keep pymysql module
+
 
 def setup_logging():
     """Configure logging for the application."""

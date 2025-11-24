@@ -10,4 +10,5 @@ requests>=2.31.0
 keyring>=24.3.0
 
 # Database Connection (optional, for GFZ-internal database sync)
-mysql-connector-python>=8.0.33
+# Using PyMySQL instead of mysql-connector-python for better Nuitka compatibility
+PyMySQL>=1.1.0
