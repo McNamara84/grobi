@@ -70,13 +70,7 @@ class SumarioPMDClient:
         if not self.host.endswith('.gfz-potsdam.de') and not self.host.startswith('localhost'):
             self.host = f"{self.host}.gfz-potsdam.de"
         
-        # Test connection on init
-        try:
-            with self.get_connection() as conn:
-                logger.info(f"Successfully connected to {self.host}/{self.database} using PyMySQL")
-        except pymysql.Error as e:
-            logger.error(f"Failed to connect to database: {e}")
-            raise ConnectionError(f"Failed to connect to database: {e}") from e
+        logger.info(f"SumarioPMDClient initialized for {self.host}/{self.database} using PyMySQL")
     
     @contextmanager
     def get_connection(self):

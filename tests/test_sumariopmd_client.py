@@ -73,6 +73,7 @@ class TestClientInitialization:
         # Connection errors happen when get_connection() is called
         mock_pymysql_connect.side_effect = pymysql.Error("Connection failed")
         
+        # Client creation should succeed (no connection test in __init__)
         client = SumarioPMDClient(
             host="invalid-host",
             database="db",
@@ -80,6 +81,7 @@ class TestClientInitialization:
             password="pass"
         )
         
+        # But get_connection() should raise ConnectionError
         with pytest.raises(ConnectionError, match="Database connection failed"):
             with client.get_connection():
                 pass
@@ -103,9 +105,11 @@ class TestConnectionManagement:
     
     def test_get_connection_failure(self, mock_pymysql_connect):
         """Test connection failure raises ConnectionError."""
-        mock_pymysql_connect.side_effect = pymysql.Error("Connection refused")
-        
+        # Client creation succeeds (connection not tested in __init__)
         client = SumarioPMDClient("host", "db", "user", "pass")
+        
+        # Set side_effect AFTER client creation
+        mock_pymysql_connect.side_effect = pymysql.Error("Connection refused")
         
         with pytest.raises(ConnectionError, match="Database connection failed"):
             with client.get_connection():
@@ -115,7 +119,8 @@ class TestConnectionManagement:
         """Test successful connection test."""
         mock_connection = Mock()
         mock_cursor = Mock()
-        mock_cursor.fetchone.return_value = ("8.0.33",)
+        # DictCursor returns dict, not tuple!
+        mock_cursor.fetchone.return_value = {"VERSION()": "8.0.33"}
         mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
         mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
         mock_pymysql_connect.return_value = mock_connection
@@ -129,9 +134,12 @@ class TestConnectionManagement:
     
     def test_test_connection_failure(self, mock_pymysql_connect):
         """Test failed connection test."""
+        # Client creation succeeds (connection not tested in __init__)
+        client = SumarioPMDClient("host", "db", "user", "pass")
+        
+        # Set side_effect AFTER client creation
         mock_pymysql_connect.side_effect = pymysql.Error("Connection timeout")
         
-        client = SumarioPMDClient("host", "db", "user", "pass")
         success, message = client.test_connection()
         
         assert success is False
@@ -146,7 +154,8 @@ class TestResourceLookup:
         """Test successful resource_id lookup."""
         mock_connection = Mock()
         mock_cursor = Mock()
-        mock_cursor.fetchone.return_value = (1429,)
+        # DictCursor returns dict, not tuple!
+        mock_cursor.fetchone.return_value = {"id": 1429}
         mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
         mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
         mock_pymysql_connect.return_value = mock_connection
@@ -266,7 +275,8 @@ class TestUpdateCreators:
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.rowcount = 2  # 2 rows deleted
-        mock_cursor.fetchall.return_value = [(1,), (2,)]  # Existing orders
+        # DictCursor returns list of dicts, not tuples!
+        mock_cursor.fetchall.return_value = [{"order": 1}, {"order": 2}]
         mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
         mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
         mock_pymysql_connect.return_value = mock_connection
@@ -294,7 +304,8 @@ class TestUpdateCreators:
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.rowcount = 1
-        mock_cursor.fetchall.return_value = [(1,)]
+        # DictCursor returns list of dicts!
+        mock_cursor.fetchall.return_value = [{"order": 1}]
         mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
         mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
         mock_pymysql_connect.return_value = mock_connection
@@ -326,14 +337,16 @@ class TestUpdateCreators:
     
     def test_update_creators_rollback_on_error(self, mock_pymysql_connect):
         """Test that transaction is rolled back on error."""
+        # Client creation succeeds
+        client = SumarioPMDClient("host", "db", "user", "pass")
+        
+        # Now setup the failing connection for update operation
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.execute.side_effect = pymysql.Error("Insert failed")
         mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
         mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
         mock_pymysql_connect.return_value = mock_connection
-        
-        client = SumarioPMDClient("host", "db", "user", "pass")
         
         creators = [
             {'firstname': 'John', 'lastname': 'Doe', 'orcid': '0000-0001-2345-6789'}
@@ -355,7 +368,8 @@ class TestUpdateCreators:
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.rowcount = 1
-        mock_cursor.fetchall.return_value = [(1,)]
+        # DictCursor returns list of dicts!
+        mock_cursor.fetchall.return_value = [{"order": 1}]
         mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
         mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
         mock_pymysql_connect.return_value = mock_connection

@@ -138,7 +138,7 @@ class TestConnectionTest:
         assert settings_dialog.test_button is not None
         assert settings_dialog.test_button.text() == "Verbindung testen"
     
-    @patch('mysql.connector.connect')
+    @patch('pymysql.connect')
     @patch('src.ui.settings_dialog.QMessageBox')
     def test_connection_test_starts_worker(self, mock_msgbox, mock_connect, settings_dialog, qtbot):
         """Test that clicking test button starts worker thread."""
@@ -146,7 +146,8 @@ class TestConnectionTest:
         mock_conn = Mock()
         mock_cursor = Mock()
         mock_cursor.fetchone.return_value = (1,)
-        mock_conn.cursor.return_value = mock_cursor
+        mock_conn.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = Mock(return_value=False)
         mock_connect.return_value = mock_conn
         
         # Enable database functionality first (button is disabled by default)
@@ -171,14 +172,13 @@ class TestConnectionTest:
         # Wait for connection status to update (indicates thread finished)
         qtbot.waitUntil(lambda: "✓" in settings_dialog.connection_status.text() or "✗" in settings_dialog.connection_status.text(), timeout=5000)
         
-        # Verify connection was attempted with correct parameters
+        # Verify connection was attempted with correct parameters (PyMySQL - no auth_plugin)
         mock_connect.assert_called_once_with(
             host="host",
             database="db",
             user="user",
             password="pass",
-            connect_timeout=10,
-            auth_plugin='mysql_native_password'
+            connect_timeout=10
         )
         
         # Verify success message
@@ -193,10 +193,13 @@ class TestConnectionTest:
 class TestConnectionTestWorker:
     """Tests for ConnectionTestWorker."""
     
-    @patch('mysql.connector.connect')
+    @patch('pymysql.connect')
     def test_successful_connection(self, mock_connect):
         """Test successful database connection."""
         mock_connection = Mock()
+        mock_cursor = Mock()
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
         mock_connect.return_value = mock_connection
         
         worker = ConnectionTestWorker("host", "database", "user", "password")
@@ -215,7 +218,7 @@ class TestConnectionTestWorker:
         assert "erfolgreich" in message.lower()
         mock_connection.close.assert_called_once()
     
-    @patch('mysql.connector.connect')
+    @patch('pymysql.connect')
     def test_failed_connection(self, mock_connect):
         """Test failed database connection."""
         mock_connect.side_effect = Exception("Connection failed")
