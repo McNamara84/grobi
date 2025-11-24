@@ -4,7 +4,7 @@ Unit tests for SumarioPMDClient.
 
 import pytest
 from unittest.mock import Mock, patch
-from mysql.connector import Error as MySQLError
+import pymysql
 
 from src.db.sumariopmd_client import (
     SumarioPMDClient,
@@ -13,9 +13,9 @@ from src.db.sumariopmd_client import (
 
 
 @pytest.fixture
-def mock_pool():
-    """Mock MySQL connection pool."""
-    with patch('src.db.sumariopmd_client.MySQLConnectionPool') as mock:
+def mock_pymysql_connect():
+    """Mock PyMySQL connect function."""
+    with patch('src.db.sumariopmd_client.pymysql.connect') as mock:
         yield mock
 
 
@@ -32,8 +32,8 @@ def mock_connection():
 class TestClientInitialization:
     """Tests for SumarioPMDClient initialization."""
     
-    def test_client_creation_success(self, mock_pool):
-        """Test successful client creation with connection pool."""
+    def test_client_creation_success(self, mock_pymysql_connect):
+        """Test successful client creation."""
         client = SumarioPMDClient(
             host="rz-mysql3.gfz-potsdam.de",
             database="sumario-pmd",
@@ -44,9 +44,8 @@ class TestClientInitialization:
         assert client.host == "rz-mysql3.gfz-potsdam.de"
         assert client.database == "sumario-pmd"
         assert client.username == "test_user"
-        mock_pool.assert_called_once()
     
-    def test_host_suffix_added_automatically(self, mock_pool):
+    def test_host_suffix_added_automatically(self, mock_pymysql_connect):
         """Test that .gfz-potsdam.de suffix is added if missing."""
         client = SumarioPMDClient(
             host="rz-mysql3",
@@ -57,7 +56,7 @@ class TestClientInitialization:
         
         assert client.host == "rz-mysql3.gfz-potsdam.de"
     
-    def test_localhost_not_modified(self, mock_pool):
+    def test_localhost_not_modified(self, mock_pymysql_connect):
         """Test that localhost hostname is not modified."""
         client = SumarioPMDClient(
             host="localhost",
@@ -68,29 +67,31 @@ class TestClientInitialization:
         
         assert client.host == "localhost"
     
-    def test_pool_creation_failure_raises_error(self, mock_pool):
-        """Test that connection pool creation failure raises ConnectionError."""
-        mock_pool.side_effect = MySQLError("Connection failed")
+    def test_connection_failure_raises_error(self, mock_pymysql_connect):
+        """Test that connection failure raises ConnectionError when actually connecting."""
+        # PyMySQL connects on-demand, so client creation always succeeds
+        # Connection errors happen when get_connection() is called
+        mock_pymysql_connect.side_effect = pymysql.Error("Connection failed")
         
-        with pytest.raises(ConnectionError, match="Failed to connect to database"):
-            SumarioPMDClient(
-                host="invalid-host",
-                database="db",
-                username="user",
-                password="pass"
-            )
+        client = SumarioPMDClient(
+            host="invalid-host",
+            database="db",
+            username="user",
+            password="pass"
+        )
+        
+        with pytest.raises(ConnectionError, match="Database connection failed"):
+            with client.get_connection():
+                pass
 
 
 class TestConnectionManagement:
     """Tests for database connection management."""
     
-    def test_get_connection_success(self, mock_pool):
-        """Test successful connection retrieval from pool."""
+    def test_get_connection_success(self, mock_pymysql_connect):
+        """Test successful connection retrieval."""
         mock_connection = Mock()
-        mock_connection.is_connected.return_value = True
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         
@@ -100,11 +101,9 @@ class TestConnectionManagement:
         # Connection should be closed after context exit
         mock_connection.close.assert_called_once()
     
-    def test_get_connection_failure(self, mock_pool):
+    def test_get_connection_failure(self, mock_pymysql_connect):
         """Test connection failure raises ConnectionError."""
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.side_effect = MySQLError("Pool exhausted")
-        mock_pool.return_value = mock_pool_instance
+        mock_pymysql_connect.side_effect = pymysql.Error("Connection refused")
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         
@@ -112,17 +111,14 @@ class TestConnectionManagement:
             with client.get_connection():
                 pass
     
-    def test_test_connection_success(self, mock_pool):
+    def test_test_connection_success(self, mock_pymysql_connect):
         """Test successful connection test."""
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.fetchone.return_value = ("8.0.33",)
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connection.is_connected.return_value = True
-        
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         success, message = client.test_connection()
@@ -131,11 +127,9 @@ class TestConnectionManagement:
         assert "8.0.33" in message
         assert "✓" in message
     
-    def test_test_connection_failure(self, mock_pool):
+    def test_test_connection_failure(self, mock_pymysql_connect):
         """Test failed connection test."""
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.side_effect = MySQLError("Connection timeout")
-        mock_pool.return_value = mock_pool_instance
+        mock_pymysql_connect.side_effect = pymysql.Error("Connection timeout")
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         success, message = client.test_connection()
@@ -148,17 +142,14 @@ class TestConnectionManagement:
 class TestResourceLookup:
     """Tests for DOI to resource_id lookup."""
     
-    def test_get_resource_id_found(self, mock_pool):
+    def test_get_resource_id_found(self, mock_pymysql_connect):
         """Test successful resource_id lookup."""
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.fetchone.return_value = (1429,)
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connection.is_connected.return_value = True
-        
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         resource_id = client.get_resource_id_for_doi("10.5880/test.doi")
@@ -167,34 +158,28 @@ class TestResourceLookup:
         mock_cursor.execute.assert_called_once()
         assert "SELECT id" in mock_cursor.execute.call_args[0][0]
     
-    def test_get_resource_id_not_found(self, mock_pool):
+    def test_get_resource_id_not_found(self, mock_pymysql_connect):
         """Test resource_id lookup returns None when not found."""
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.fetchone.return_value = None
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connection.is_connected.return_value = True
-        
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         resource_id = client.get_resource_id_for_doi("10.5880/nonexistent")
         
         assert resource_id is None
     
-    def test_get_resource_id_database_error(self, mock_pool):
+    def test_get_resource_id_database_error(self, mock_pymysql_connect):
         """Test database error raises ConnectionError (from context manager)."""
         mock_connection = Mock()
         mock_cursor = Mock()
-        mock_cursor.execute.side_effect = MySQLError("Query failed")
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connection.is_connected.return_value = True
-        
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_cursor.execute.side_effect = pymysql.Error("Query failed")
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         
@@ -205,7 +190,7 @@ class TestResourceLookup:
 class TestFetchCreators:
     """Tests for fetching creators."""
     
-    def test_fetch_creators_success(self, mock_pool):
+    def test_fetch_creators_success(self, mock_pymysql_connect):
         """Test successful creator fetch."""
         mock_connection = Mock()
         mock_cursor = Mock()
@@ -229,12 +214,9 @@ class TestFetchCreators:
                 'nametype': 'Personal'
             }
         ]
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connection.is_connected.return_value = True
-        
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         creators = client.fetch_creators_for_resource(1429)
@@ -247,34 +229,28 @@ class TestFetchCreators:
         call_args = mock_cursor.execute.call_args[0][0]
         assert "role = 'Creator'" in call_args or 'r.role = \'Creator\'' in call_args
     
-    def test_fetch_creators_empty_result(self, mock_pool):
+    def test_fetch_creators_empty_result(self, mock_pymysql_connect):
         """Test fetching creators returns empty list when none found."""
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.fetchall.return_value = []
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connection.is_connected.return_value = True
-        
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         creators = client.fetch_creators_for_resource(9999)
         
         assert creators == []
     
-    def test_fetch_creators_database_error(self, mock_pool):
+    def test_fetch_creators_database_error(self, mock_pymysql_connect):
         """Test database error raises ConnectionError (from context manager)."""
         mock_connection = Mock()
         mock_cursor = Mock()
-        mock_cursor.execute.side_effect = MySQLError("Query failed")
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connection.is_connected.return_value = True
-        
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_cursor.execute.side_effect = pymysql.Error("Query failed")
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         
@@ -285,18 +261,15 @@ class TestFetchCreators:
 class TestUpdateCreators:
     """Tests for transactional creator updates."""
     
-    def test_update_creators_success(self, mock_pool):
+    def test_update_creators_success(self, mock_pymysql_connect):
         """Test successful creator update with transaction."""
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.rowcount = 2  # 2 rows deleted
         mock_cursor.fetchall.return_value = [(1,), (2,)]  # Existing orders
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connection.is_connected.return_value = True
-        
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         
@@ -311,23 +284,20 @@ class TestUpdateCreators:
         assert "Successfully updated" in message
         assert len(errors) == 0
         
-        # Verify transaction was used
-        mock_connection.start_transaction.assert_called_once()
+        # Verify transaction was used (PyMySQL uses begin() instead of start_transaction())
+        mock_connection.begin.assert_called_once()
         mock_connection.commit.assert_called_once()
         mock_connection.rollback.assert_not_called()
     
-    def test_update_creators_orcid_url_normalization(self, mock_pool):
+    def test_update_creators_orcid_url_normalization(self, mock_pymysql_connect):
         """Test that ORCID URLs are normalized to IDs."""
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.rowcount = 1
         mock_cursor.fetchall.return_value = [(1,)]
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connection.is_connected.return_value = True
-        
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         
@@ -354,17 +324,14 @@ class TestUpdateCreators:
         assert orcid_value == '0000-0001-2345-6789'
         assert 'https://' not in orcid_value
     
-    def test_update_creators_rollback_on_error(self, mock_pool):
+    def test_update_creators_rollback_on_error(self, mock_pymysql_connect):
         """Test that transaction is rolled back on error."""
         mock_connection = Mock()
         mock_cursor = Mock()
-        mock_cursor.execute.side_effect = MySQLError("Insert failed")
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connection.is_connected.return_value = True
-        
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_cursor.execute.side_effect = pymysql.Error("Insert failed")
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         
@@ -378,23 +345,20 @@ class TestUpdateCreators:
         assert "failed" in message.lower()
         assert len(errors) > 0
         
-        # Verify rollback was called
-        mock_connection.start_transaction.assert_called_once()
+        # Verify rollback was called (PyMySQL uses begin() instead of start_transaction())
+        mock_connection.begin.assert_called_once()
         mock_connection.rollback.assert_called_once()
         mock_connection.commit.assert_not_called()
     
-    def test_update_creators_only_affects_creators_role(self, mock_pool):
+    def test_update_creators_only_affects_creators_role(self, mock_pymysql_connect):
         """Test that only role='Creator' entries are deleted/updated."""
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.rowcount = 1
         mock_cursor.fetchall.return_value = [(1,)]
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connection.is_connected.return_value = True
-        
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         
@@ -413,18 +377,15 @@ class TestUpdateCreators:
         delete_query = delete_calls[0][0][0]
         assert "role = 'Creator'" in delete_query
     
-    def test_update_creators_missing_lastname(self, mock_pool):
+    def test_update_creators_missing_lastname(self, mock_pymysql_connect):
         """Test that creators without lastname are skipped."""
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.rowcount = 0
         mock_cursor.fetchall.return_value = []
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connection.is_connected.return_value = True
-        
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         
@@ -443,18 +404,15 @@ class TestUpdateCreators:
 class TestEdgeCases:
     """Tests for edge cases and special scenarios."""
     
-    def test_creators_without_orcid(self, mock_pool):
+    def test_creators_without_orcid(self, mock_pymysql_connect):
         """Test handling creators without ORCID."""
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.rowcount = 0
         mock_cursor.fetchall.return_value = []
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connection.is_connected.return_value = True
-        
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         
@@ -473,18 +431,15 @@ class TestEdgeCases:
         orcid_value = insert_values[5]  # ORCID parameter
         assert orcid_value is None
     
-    def test_creators_without_firstname(self, mock_pool):
+    def test_creators_without_firstname(self, mock_pymysql_connect):
         """Test handling creators without firstname (lastname only)."""
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.rowcount = 0
         mock_cursor.fetchall.return_value = []
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connection.is_connected.return_value = True
-        
-        mock_pool_instance = Mock()
-        mock_pool_instance.get_connection.return_value = mock_connection
-        mock_pool.return_value = mock_pool_instance
+        mock_connection.cursor.return_value.__enter__ = Mock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = Mock(return_value=False)
+        mock_pymysql_connect.return_value = mock_connection
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         
