@@ -16,7 +16,7 @@ class UpdateWorker(QObject):
     # Signals
     progress_update = Signal(int, int, str)  # current, total, message
     doi_updated = Signal(str, bool, str)  # doi, success, message
-    finished = Signal(int, int, list)  # success_count, error_count, error_list
+    finished = Signal(int, int, int, list, list)  # success_count, error_count, skipped_count, error_list, skipped_details
     error_occurred = Signal(str)  # error_message
     request_save_credentials = Signal(str, str, str)  # username, password, api_type
     
@@ -61,7 +61,9 @@ class UpdateWorker(QObject):
         self._is_running = True
         success_count = 0
         error_count = 0
+        skipped_count = 0
         error_list = []
+        skipped_details = []  # List of (doi, reason) tuples
         
         try:
             # Step 1: Parse CSV file
@@ -74,13 +76,13 @@ class UpdateWorker(QObject):
                 error_msg = f"Fehler beim Lesen der CSV-Datei: {str(e)}"
                 logger.error(error_msg)
                 self.error_occurred.emit(error_msg)
-                self.finished.emit(0, 0, [])
+                self.finished.emit(0, 0, 0, [], [])
                 return
             
             total_dois = len(doi_url_pairs)
             logger.info(f"Found {total_dois} DOI/URL pairs to update")
             
-            # Step 2: Initialize DataCite client
+            # Step 1: Initialize DataCite client
             self.progress_update.emit(0, total_dois, "DataCite API wird initialisiert...")
             
             try:
@@ -93,10 +95,10 @@ class UpdateWorker(QObject):
                 error_msg = f"Fehler beim Initialisieren des DataCite Clients: {str(e)}"
                 logger.error(error_msg)
                 self.error_occurred.emit(error_msg)
-                self.finished.emit(0, 0, [])
+                self.finished.emit(0, 0, 0, [], [])
                 return
             
-            # Step 3: Update each DOI
+            # Step 2: Update each DOI
             for index, (doi, url) in enumerate(doi_url_pairs, start=1):
                 if not self._is_running:
                     logger.info("Update process cancelled by user")
@@ -106,11 +108,44 @@ class UpdateWorker(QObject):
                 self.progress_update.emit(
                     index, 
                     total_dois, 
-                    f"Aktualisiere DOI {index}/{total_dois}: {doi}"
+                    f"Prüfe DOI {index}/{total_dois}: {doi}"
                 )
+                
+                # Change Detection: Fetch current metadata to check if URL actually changed
+                # Note: We could optimize by fetching all URLs first, but individual fetches
+                # allow us to fail fast and continue with other DOIs if one fetch fails
                 
                 # Perform update
                 try:
+                    # First, fetch current metadata to check if URL changed
+                    current_metadata = client.get_doi_metadata(doi)
+                    if current_metadata:
+                        datacite_current_url = current_metadata.get('data', {}).get('attributes', {}).get('url', '')
+                        
+                        # Compare current DataCite URL with CSV URL
+                        if datacite_current_url == url:
+                            # No change detected - skip update
+                            success_count += 1  # Count as successful (no change needed)
+                            skipped_count += 1
+                            skipped_reason = f"URL unverändert: {url}"
+                            skipped_details.append((doi, skipped_reason))
+                            logger.info(f"DOI {doi}: URL unchanged ('{url}'), skipping update")
+                            self.doi_updated.emit(doi, True, "Keine Änderung (übersprungen)")
+                            
+                            # If credentials are new and this is first successful operation, offer to save
+                            if self.credentials_are_new and not self._first_success:
+                                self._first_success = True
+                                api_type = "test" if self.use_test_api else "production"
+                                self.request_save_credentials.emit(self.username, self.password, api_type)
+                            
+                            continue  # Skip to next DOI
+                        else:
+                            # URL changed - log and proceed with update
+                            logger.info(f"DOI {doi}: URL changed from '{datacite_current_url}' to '{url}'")
+                    else:
+                        # Could not fetch metadata - proceed with update anyway (might be new DOI)
+                        logger.warning(f"DOI {doi}: Could not fetch current metadata, proceeding with update")
+                    
                     success, message = client.update_doi_url(doi, url)
                     
                     if success:
@@ -136,7 +171,7 @@ class UpdateWorker(QObject):
                     logger.error(error_msg)
                     self.error_occurred.emit(error_msg)
                     # Emit finished signal before breaking to ensure UI cleanup
-                    self.finished.emit(success_count, error_count, error_list)
+                    self.finished.emit(success_count, error_count, skipped_count, error_list, skipped_details)
                     return
                 
                 except Exception as e:
@@ -147,11 +182,22 @@ class UpdateWorker(QObject):
                     logger.error(f"Unexpected error updating {doi}: {e}")
                     self.doi_updated.emit(doi, False, str(e))
             
-            # Step 4: Emit final results
+            # Step 3: Emit final results
             logger.info(
-                f"Update complete: {success_count} successful, {error_count} failed"
+                f"Update complete: {success_count} successful, {skipped_count} skipped (no changes), {error_count} failed"
             )
-            self.finished.emit(success_count, error_count, error_list)
+            # Log first 5 skipped DOIs for reference
+            if skipped_details:
+                count = len(skipped_details)
+                if count < 5:
+                    logger.info(f"Skipped DOIs ({count} total):")
+                elif count == 5:
+                    logger.info(f"Skipped DOIs (all {count}):")
+                else:
+                    logger.info(f"Skipped DOIs (first 5 of {count}):")
+                for doi, reason in skipped_details[:5]:
+                    logger.info(f"  - {doi}: {reason}")
+            self.finished.emit(success_count, error_count, skipped_count, error_list, skipped_details)
         
         finally:
             self._is_running = False

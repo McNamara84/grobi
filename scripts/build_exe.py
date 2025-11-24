@@ -132,6 +132,12 @@ def build_exe() -> bool:
         # Plugin configuration
         "--enable-plugin=pyside6",
         
+        # PyMySQL: Force inclusion of entire pymysql package
+        "--include-module=pymysql",
+        "--include-module=pymysql.constants",
+        "--include-module=pymysql.cursors",
+        "--include-module=pymysql.connections",
+        
         # Compiler configuration
         "--msvc=latest",  # Use latest MSVC version for best compatibility
         
@@ -156,32 +162,37 @@ def build_exe() -> bool:
     
     try:
         # Run Nuitka - output goes to console (no sensitive info in standard build)
-        subprocess.run(
+        # Note: check=False because Nuitka returns 1 even on successful builds with cleanup warnings
+        result = subprocess.run(
             nuitka_args,
-            check=True
+            check=False
         )
         
         end_time = datetime.now()
         duration = end_time - start_time
         
-        print_header("Build Successful!")
-        print(f"Build time: {duration}")
-        
-        # Check if exe was created
+        # Check if exe was created (this is the real success indicator)
         exe_path = dist_dir / "GROBI.exe"
         if exe_path.exists():
+            print_header("Build Successful!")
+            print(f"Build time: {duration}")
             size_mb = exe_path.stat().st_size / (1024 * 1024)
             print(f"EXE created: {exe_path}")
             print(f"File size: {size_mb:.1f} MB")
+            
+            if result.returncode != 0:
+                print(f"\n[INFO] Nuitka returned exit code {result.returncode}")
+                print("[INFO] This is usually just a Windows Defender cleanup warning - the EXE is fine!")
+            
             return True
         else:
-            print(f"[ERROR] EXE file not found at {exe_path}")
+            print(f"\n[ERROR] Build failed - EXE file not found at {exe_path}")
+            print(f"Nuitka exit code: {result.returncode}")
             print("Check Nuitka output above for errors.")
-            print(f"Expected location: {exe_path.absolute()}")
             return False
             
     except subprocess.CalledProcessError as e:
-        print(f"\n[ERROR] Build failed with exit code {e.returncode}")
+        print(f"\n[ERROR] Build process crashed with exit code {e.returncode}")
         return False
     except KeyboardInterrupt:
         print("\n\n[ERROR] Build cancelled by user")

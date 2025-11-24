@@ -25,7 +25,7 @@ class AuthorsUpdateWorker(QObject):
     progress_update = Signal(int, int, str)  # current, total, message
     dry_run_complete = Signal(int, int, list)  # valid_count, invalid_count, validation_results
     doi_updated = Signal(str, bool, str)  # doi, success, message
-    finished = Signal(int, int, list)  # success_count, error_count, error_list
+    finished = Signal(int, int, int, list, list)  # success_count, error_count, skipped_count, error_list, skipped_details
     error_occurred = Signal(str)  # error_message
     request_save_credentials = Signal(str, str, str)  # username, password, api_type
     
@@ -67,6 +67,122 @@ class AuthorsUpdateWorker(QObject):
         # Database client (Phase 3)
         self.db_client: Optional[SumarioPMDClient] = None
         self.db_updates_enabled = False
+    
+    # Phase 2: Change Detection Helper Methods
+    
+    def _detect_creator_changes(
+        self, 
+        current_metadata: dict, 
+        csv_creators: list
+    ) -> tuple[bool, str]:
+        """
+        Compare current DataCite metadata with CSV data to detect changes.
+        
+        Args:
+            current_metadata: Full metadata dictionary from DataCite API
+            csv_creators: Creator list from CSV (in CSV order)
+        
+        Returns:
+            Tuple[bool, str]: (has_changes, change_description)
+            - (True, "Description of changes") if differences found
+            - (False, "No changes") if identical
+        """
+        try:
+            current_creators = current_metadata.get("data", {}).get("attributes", {}).get("creators", [])
+        except (KeyError, AttributeError) as e:
+            logger.error(f"Error extracting creators from metadata: {e}")
+            return True, "Metadaten-Struktur ungültig (Update erforderlich)"
+        
+        # Count mismatch → Always update
+        if len(current_creators) != len(csv_creators):
+            return True, f"Creator-Anzahl unterschiedlich (aktuell: {len(current_creators)}, CSV: {len(csv_creators)})"
+        
+        # No creators in both → No changes
+        if len(current_creators) == 0:
+            return False, "Keine Creators vorhanden"
+        
+        # Field-by-field comparison
+        changes = []
+        for i, (current, csv_creator) in enumerate(zip(current_creators, csv_creators), 1):
+            # Compare name
+            current_name = current.get("name", "")
+            csv_name = csv_creator.get("name", "")
+            if current_name != csv_name:
+                changes.append(f"Creator {i}: Name geändert")
+            
+            # Compare nameType
+            current_type = current.get("nameType", "Personal")
+            csv_type = csv_creator.get("nameType", "Personal")
+            if current_type != csv_type:
+                changes.append(f"Creator {i}: NameType geändert")
+            
+            # Compare given/family names (only for Personal)
+            if csv_type == "Personal":
+                current_given = current.get("givenName", "")
+                csv_given = csv_creator.get("givenName", "")
+                if current_given != csv_given:
+                    changes.append(f"Creator {i}: GivenName geändert")
+                
+                current_family = current.get("familyName", "")
+                csv_family = csv_creator.get("familyName", "")
+                if current_family != csv_family:
+                    changes.append(f"Creator {i}: FamilyName geändert")
+            
+            # Compare ORCID (normalized)
+            current_orcid = self._extract_orcid(current)
+            csv_orcid = self._normalize_orcid(csv_creator.get("nameIdentifier", ""))
+            if current_orcid != csv_orcid:
+                changes.append(f"Creator {i}: ORCID geändert")
+        
+        if changes:
+            # Return first 3 changes, indicate if more exist
+            change_desc = "; ".join(changes[:3])
+            if len(changes) > 3:
+                change_desc += f" (+ {len(changes) - 3} weitere)"
+            return True, change_desc
+        else:
+            return False, "Keine Änderungen in Creator-Metadaten"
+    
+    def _normalize_orcid(self, orcid: str) -> str:
+        """
+        Normalize ORCID to ID-only format.
+        
+        Examples:
+            "https://orcid.org/0000-0001-5000-0007" → "0000-0001-5000-0007"
+            "http://orcid.org/0000-0001-5000-0007" → "0000-0001-5000-0007"
+            "0000-0001-5000-0007" → "0000-0001-5000-0007"
+            "" → ""
+        
+        Args:
+            orcid: ORCID string (with or without URL prefix)
+        
+        Returns:
+            Normalized ORCID (ID only, no URL prefix)
+        """
+        if not orcid:
+            return ""
+        if orcid.startswith("https://orcid.org/"):
+            return orcid.replace("https://orcid.org/", "")
+        elif orcid.startswith("http://orcid.org/"):
+            return orcid.replace("http://orcid.org/", "")
+        return orcid
+    
+    def _extract_orcid(self, creator: dict) -> str:
+        """
+        Extract ORCID from DataCite creator object (normalized).
+        
+        Args:
+            creator: Creator dictionary from DataCite API
+        
+        Returns:
+            Normalized ORCID (only ID, without URL prefix) or ""
+        """
+        identifiers = creator.get("nameIdentifiers", [])
+        for identifier in identifiers:
+            if identifier.get("nameIdentifierScheme", "").upper() == "ORCID":
+                orcid = identifier.get("nameIdentifier", "")
+                return self._normalize_orcid(orcid)
+        return ""
     
     def _initialize_db_client(self) -> bool:
         """
@@ -132,7 +248,7 @@ class AuthorsUpdateWorker(QObject):
                 error_msg = f"Fehler beim Lesen der CSV-Datei: {str(e)}"
                 logger.error(error_msg)
                 self.error_occurred.emit(error_msg)
-                self.finished.emit(0, 0, [])
+                self.finished.emit(0, 0, 0, [], [])
                 return
             
             total_dois = len(creators_by_doi)
@@ -157,7 +273,7 @@ class AuthorsUpdateWorker(QObject):
                 error_msg = f"Fehler beim Initialisieren des DataCite Clients: {str(e)}"
                 logger.error(error_msg)
                 self.error_occurred.emit(error_msg)
-                self.finished.emit(0, 0, [])
+                self.finished.emit(0, 0, 0, [], [])
                 return
             
             # Step 2b: VALIDATION PHASE - Test system availability
@@ -174,7 +290,7 @@ class AuthorsUpdateWorker(QObject):
                 logger.error(error_msg)
                 self.validation_update.emit("  ✗ DataCite API nicht erreichbar")
                 self.error_occurred.emit(error_msg)
-                self.finished.emit(0, 0, [])
+                self.finished.emit(0, 0, 0, [], [])
                 return
             
             # Test Database availability (if enabled)
@@ -194,7 +310,7 @@ class AuthorsUpdateWorker(QObject):
                 logger.error("Database enabled but unavailable - aborting")
                 self.validation_update.emit("  ✗ Datenbank nicht erreichbar (aber aktiviert!)")
                 self.error_occurred.emit(error_msg)
-                self.finished.emit(0, 0, [])
+                self.finished.emit(0, 0, 0, [], [])
                 return
             
             if db_available:
@@ -213,6 +329,7 @@ class AuthorsUpdateWorker(QObject):
             invalid_count = 0
             validation_results = []
             metadata_cache = {}  # Cache metadata for later updates
+            skipped_details = []  # List of (doi, reason) tuples for skipped DOIs
             
             for index, (doi, creators) in enumerate(creators_by_doi.items(), start=1):
                 if not self._is_running:
@@ -248,13 +365,33 @@ class AuthorsUpdateWorker(QObject):
                     is_valid, message = client.validate_creators_match(doi, creators)
                     
                     if is_valid:
-                        valid_count += 1
-                        result = {
-                            'doi': doi,
-                            'valid': True,
-                            'message': message,
-                            'creator_count': len(creators)
-                        }
+                        # Phase 2: Check if creators actually changed
+                        has_changes, change_description = self._detect_creator_changes(metadata, creators)
+                        
+                        if not has_changes:
+                            # No changes detected → Skip update
+                            valid_count += 1  # Count as valid
+                            result = {
+                                'doi': doi,
+                                'valid': True,
+                                'changed': False,  # NEW FIELD
+                                'message': f"Validiert: {change_description}"
+                            }
+                            skipped_details.append((doi, change_description))
+                            logger.info(f"DOI {doi}: No changes detected, will skip update")
+                        else:
+                            # Changes detected → Mark for update
+                            valid_count += 1
+                            result = {
+                                'doi': doi,
+                                'valid': True,
+                                'changed': True,  # NEW FIELD
+                                'message': f"Validiert: {change_description}",
+                                'creator_count': len(creators)
+                            }
+                            logger.info(f"DOI {doi}: Changes detected: {change_description}")
+                        
+                        validation_results.append(result)
                         logger.info(f"Validation passed: {doi}")
                     else:
                         invalid_count += 1
@@ -263,22 +400,21 @@ class AuthorsUpdateWorker(QObject):
                             'valid': False,
                             'message': message
                         }
+                        validation_results.append(result)
                         logger.warning(f"Validation failed: {doi} - {message}")
-                    
-                    validation_results.append(result)
                 
                 except AuthenticationError as e:
                     error_msg = f"Authentifizierungsfehler: {str(e)}"
                     logger.error(error_msg)
                     self.error_occurred.emit(error_msg)
-                    self.finished.emit(0, 0, [])
+                    self.finished.emit(0, 0, 0, [], [])
                     return
                 
                 except NetworkError as e:
                     error_msg = f"Netzwerkfehler: {str(e)}"
                     logger.error(error_msg)
                     self.error_occurred.emit(error_msg)
-                    self.finished.emit(0, 0, [])
+                    self.finished.emit(0, 0, 0, [], [])
                     return
                 
                 except DataCiteAPIError as e:
@@ -310,7 +446,9 @@ class AuthorsUpdateWorker(QObject):
             # If dry run only, finish here
             if self.dry_run_only:
                 logger.info("Dry run only - finishing without updates")
-                self.finished.emit(valid_count, invalid_count, [])
+                # Calculate skipped count for dry run
+                skipped_dois = [result['doi'] for result in validation_results if result['valid'] and not result.get('changed', True)]
+                self.finished.emit(valid_count, invalid_count, len(skipped_dois), [], skipped_details)
                 return
             
             # Step 4: Perform actual updates (only if not dry_run_only)
@@ -318,11 +456,36 @@ class AuthorsUpdateWorker(QObject):
             error_count = 0
             error_list = []
             
-            # Only update DOIs that passed validation
-            valid_dois = [result['doi'] for result in validation_results if result['valid']]
-            total_updates = len(valid_dois)
+            # Phase 2: Only update DOIs that passed validation AND have changes
+            valid_dois_with_changes = [
+                result['doi'] 
+                for result in validation_results 
+                if result['valid'] and result.get('changed', True)  # Default True for backwards compatibility
+            ]
             
-            for index, doi in enumerate(valid_dois, start=1):
+            skipped_dois = [
+                result['doi']
+                for result in validation_results
+                if result['valid'] and not result.get('changed', False)
+            ]
+            
+            skipped_count = len(skipped_dois)
+            total_updates = len(valid_dois_with_changes)
+            
+            logger.info(
+                f"Update plan: {total_updates} DOIs with changes, "
+                f"{skipped_count} DOIs unchanged (will be skipped)"
+            )
+            
+            # Log skipped DOIs (first 10 for brevity)
+            if skipped_dois:
+                logger.info(f"Skipping {skipped_count} unchanged DOIs:")
+                for doi in skipped_dois[:10]:
+                    logger.info(f"  - {doi}")
+                if len(skipped_dois) > 10:
+                    logger.info(f"  ... and {len(skipped_dois) - 10} more")
+            
+            for index, doi in enumerate(valid_dois_with_changes, start=1):
                 if not self._is_running:
                     logger.info("Update process cancelled by user")
                     break
@@ -492,7 +655,7 @@ class AuthorsUpdateWorker(QObject):
                     error_msg = f"Netzwerkfehler: {str(e)}"
                     logger.error(error_msg)
                     self.error_occurred.emit(error_msg)
-                    self.finished.emit(success_count, error_count, error_list)
+                    self.finished.emit(success_count, error_count, skipped_count, error_list, skipped_details)
                     return
                 
                 except Exception as e:
@@ -505,9 +668,20 @@ class AuthorsUpdateWorker(QObject):
             
             # Step 5: Emit final results
             logger.info(
-                f"Creator update complete: {success_count} successful, {error_count} failed"
+                f"Creator update complete: {success_count} successful, {skipped_count} skipped (no changes), {error_count} failed"
             )
-            self.finished.emit(success_count, error_count, error_list)
+            # Log first 5 skipped DOIs for reference
+            if skipped_details:
+                count = len(skipped_details)
+                if count < 5:
+                    logger.info(f"Skipped DOIs ({count} total):")
+                elif count == 5:
+                    logger.info(f"Skipped DOIs (all {count}):")
+                else:
+                    logger.info(f"Skipped DOIs (first 5 of {count}):")
+                for doi, reason in skipped_details[:5]:
+                    logger.info(f"  - {doi}: {reason}")
+            self.finished.emit(success_count, error_count, skipped_count, error_list, skipped_details)
         
         finally:
             self._is_running = False
