@@ -182,7 +182,7 @@ class TestResourceLookup:
         assert resource_id is None
     
     def test_get_resource_id_database_error(self, mock_pymysql_connect):
-        """Test database error raises ConnectionError (from context manager)."""
+        """Test database error raises DatabaseError for query failures."""
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.execute.side_effect = pymysql.Error("Query failed")
@@ -192,7 +192,10 @@ class TestResourceLookup:
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         
-        with pytest.raises(ConnectionError, match="Database connection failed"):
+        # Import DatabaseError from the module
+        from src.db.sumariopmd_client import DatabaseError
+        
+        with pytest.raises(DatabaseError, match="Failed to fetch resource_id"):
             client.get_resource_id_for_doi("10.5880/test.doi")
 
 
@@ -253,7 +256,7 @@ class TestFetchCreators:
         assert creators == []
     
     def test_fetch_creators_database_error(self, mock_pymysql_connect):
-        """Test database error raises ConnectionError (from context manager)."""
+        """Test database error raises DatabaseError for query failures."""
         mock_connection = Mock()
         mock_cursor = Mock()
         mock_cursor.execute.side_effect = pymysql.Error("Query failed")
@@ -263,7 +266,10 @@ class TestFetchCreators:
         
         client = SumarioPMDClient("host", "db", "user", "pass")
         
-        with pytest.raises(ConnectionError, match="Database connection failed"):
+        # Import DatabaseError from the module
+        from src.db.sumariopmd_client import DatabaseError
+        
+        with pytest.raises(DatabaseError, match="Failed to fetch creators"):
             client.fetch_creators_for_resource(1429)
 
 
