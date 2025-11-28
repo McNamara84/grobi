@@ -387,3 +387,153 @@ class CSVParser:
         )
         
         return bool(orcid_pattern.match(orcid))
+
+    @staticmethod
+    def parse_publisher_update_csv(filepath: str) -> Tuple[Dict[str, Dict], List[str]]:
+        """
+        Parse CSV file containing DOI and publisher metadata for updates.
+        
+        Expected CSV format:
+        - Header: DOI,Publisher Name,Publisher Identifier,Publisher Identifier Scheme,Scheme URI,Language
+        - One row per DOI (each DOI has exactly one publisher)
+        
+        Args:
+            filepath: Path to the CSV file
+            
+        Returns:
+            Tuple of:
+            - Dict[DOI, PublisherData]: Publisher data by DOI
+            - List[str]: Warning messages (non-fatal issues)
+            
+        Raises:
+            CSVParseError: If file cannot be read or has invalid format
+            FileNotFoundError: If file does not exist
+        """
+        file_path = Path(filepath)
+        
+        # Check if file exists
+        if not file_path.exists():
+            raise FileNotFoundError(f"CSV-Datei nicht gefunden: {filepath}")
+        
+        # Check if file is readable
+        if not file_path.is_file():
+            raise CSVParseError(f"Pfad ist keine Datei: {filepath}")
+        
+        logger.info(f"Parsing publisher CSV file: {filepath}")
+        
+        # Use OrderedDict to preserve DOI order
+        publisher_by_doi = OrderedDict()
+        warnings = []
+        
+        # Expected headers
+        expected_headers = [
+            'DOI',
+            'Publisher Name',
+            'Publisher Identifier',
+            'Publisher Identifier Scheme',
+            'Scheme URI',
+            'Language'
+        ]
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as csvfile:
+                reader = csv.DictReader(csvfile)
+                
+                # Validate headers
+                if not reader.fieldnames:
+                    raise CSVParseError("CSV-Datei hat keine Header-Zeile.")
+                
+                # Check if all expected headers are present
+                missing_headers = [h for h in expected_headers if h not in reader.fieldnames]
+                if missing_headers:
+                    raise CSVParseError(
+                        f"CSV-Datei fehlen folgende Header: {', '.join(missing_headers)}. "
+                        f"Erwartet: {', '.join(expected_headers)}"
+                    )
+                
+                # Parse rows
+                for row_num, row in enumerate(reader, start=2):  # Start at 2 (line 1 is header)
+                    # Extract and trim fields
+                    doi = row.get('DOI', '').strip()
+                    publisher_name = row.get('Publisher Name', '').strip()
+                    publisher_identifier = row.get('Publisher Identifier', '').strip()
+                    publisher_identifier_scheme = row.get('Publisher Identifier Scheme', '').strip()
+                    scheme_uri = row.get('Scheme URI', '').strip()
+                    lang = row.get('Language', '').strip()
+                    
+                    # Validate DOI
+                    if not doi:
+                        warnings.append(f"Zeile {row_num}: DOI fehlt - überspringe Zeile")
+                        logger.warning(f"Row {row_num}: Missing DOI")
+                        continue
+                    
+                    if not CSVParser.validate_doi_format(doi):
+                        raise CSVParseError(
+                            f"Zeile {row_num}: Ungültiges DOI-Format '{doi}'. "
+                            "Erwartetes Format: 10.X/..."
+                        )
+                    
+                    # Validate publisher name (required)
+                    if not publisher_name:
+                        raise CSVParseError(
+                            f"Zeile {row_num}: Publisher Name fehlt für DOI '{doi}'. "
+                            "Jede DOI muss einen Publisher haben."
+                        )
+                    
+                    # Check for duplicate DOIs
+                    if doi in publisher_by_doi:
+                        raise CSVParseError(
+                            f"Zeile {row_num}: DOI '{doi}' ist mehrfach in der CSV-Datei. "
+                            "Jede DOI darf nur einmal vorkommen (genau ein Publisher pro DOI)."
+                        )
+                    
+                    # Validate publisherIdentifierScheme if publisherIdentifier is provided
+                    if publisher_identifier and not publisher_identifier_scheme:
+                        warnings.append(
+                            f"Zeile {row_num}: Publisher Identifier '{publisher_identifier}' "
+                            "ohne Publisher Identifier Scheme angegeben"
+                        )
+                        logger.warning(f"Row {row_num}: publisherIdentifier without scheme for DOI {doi}")
+                    
+                    # Validate language code (if provided, should be 2-3 characters)
+                    if lang and (len(lang) < 2 or len(lang) > 5):
+                        warnings.append(
+                            f"Zeile {row_num}: Ungewöhnlicher Language-Code '{lang}' "
+                            "(erwartet: z.B. 'en', 'de', 'en-US')"
+                        )
+                        logger.warning(f"Row {row_num}: Unusual language code: {lang}")
+                    
+                    # Build publisher data structure
+                    publisher_data = {
+                        'name': publisher_name,
+                        'publisherIdentifier': publisher_identifier,
+                        'publisherIdentifierScheme': publisher_identifier_scheme,
+                        'schemeUri': scheme_uri,
+                        'lang': lang
+                    }
+                    
+                    publisher_by_doi[doi] = publisher_data
+                    logger.debug(f"Parsed publisher for {doi}: {publisher_name}")
+        
+        except csv.Error as e:
+            raise CSVParseError(f"Fehler beim Lesen der CSV-Datei: {str(e)}")
+        
+        except UnicodeDecodeError:
+            raise CSVParseError(
+                "CSV-Datei konnte nicht gelesen werden. "
+                "Stelle sicher, dass die Datei UTF-8 kodiert ist."
+            )
+        
+        if not publisher_by_doi:
+            raise CSVParseError(
+                "Keine gültigen Publisher-Daten in der CSV-Datei gefunden. "
+                "Stelle sicher, dass die Datei mindestens eine Datenzeile enthält."
+            )
+        
+        logger.info(
+            f"Successfully parsed {len(publisher_by_doi)} DOIs with "
+            f"publisher data from CSV"
+        )
+        
+        return publisher_by_doi, warnings
+
