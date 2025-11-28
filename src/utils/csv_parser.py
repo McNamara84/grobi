@@ -495,11 +495,11 @@ class CSVParser:
                         )
                         logger.warning(f"Row {row_num}: publisherIdentifier without scheme for DOI {doi}")
                     
-                    # Validate language code (if provided, should be 2-5 characters to support codes like 'en-US')
-                    if lang and (len(lang) < 2 or len(lang) > 5):
+                    # Validate language code (BCP 47 allows 2-11 characters, e.g. 'en', 'zh-Hans', 'pt-BR')
+                    if lang and (len(lang) < 2 or len(lang) > 11):
                         warnings.append(
                             f"Zeile {row_num}: Ungewöhnlicher Language-Code '{lang}' "
-                            "(erwartet: z.B. 'en', 'de', 'en-US')"
+                            "(erwartet: BCP 47 Format, z.B. 'en', 'de', 'zh-Hans')"
                         )
                         logger.warning(f"Row {row_num}: Unusual language code: {lang}")
                     

@@ -431,8 +431,8 @@ class TestPublisherUpdateWorker:
         has_changes, description = worker_dry_run._detect_publisher_changes(mock_metadata, csv_publisher)
         
         assert has_changes is False
-        # Accept either singular or plural form
-        assert "keine änderung" in description.lower()
+        # Match the exact message from implementation ("Keine Änderungen")
+        assert "keine änderungen" in description.lower()
     
     def test_publisher_change_detection_name_change(self, worker_dry_run, mock_metadata):
         """Test that name change is detected."""
@@ -604,4 +604,4 @@ class TestPublisherUpdateWorkerSkippedDetails:
         # Check that skipped details contains DOI and reason
         skipped_doi, reason = skipped_details[0]
         assert skipped_doi == "10.5880/GFZ.1"
-        assert "keine änderung" in reason.lower()
+        assert "keine änderungen" in reason.lower()

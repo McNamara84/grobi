@@ -576,6 +576,20 @@ class MainWindow(QMainWindow):
         self.log_text.append(message)
         logger.info(message)
     
+    def _set_buttons_enabled(self, enabled: bool):
+        """
+        Enable or disable all main action buttons.
+        
+        Args:
+            enabled: True to enable buttons, False to disable
+        """
+        self.load_button.setEnabled(enabled)
+        self.load_authors_button.setEnabled(enabled)
+        self.load_publisher_button.setEnabled(enabled)
+        self.update_button.setEnabled(enabled)
+        self.update_authors_button.setEnabled(enabled)
+        self.update_publisher_button.setEnabled(enabled)
+    
     def _open_settings_dialog(self):
         """Open settings dialog."""
         try:
@@ -794,12 +808,7 @@ class MainWindow(QMainWindow):
     def _cleanup_thread(self):
         """Clean up thread and worker after completion."""
         self.progress_bar.setVisible(False)
-        self.load_button.setEnabled(True)
-        self.load_authors_button.setEnabled(True)
-        self.load_publisher_button.setEnabled(True)
-        self.update_button.setEnabled(True)
-        self.update_authors_button.setEnabled(True)
-        self.update_publisher_button.setEnabled(True)
+        self._set_buttons_enabled(True)
         
         # Reset references (objects are deleted via deleteLater)
         self.thread = None
@@ -844,12 +853,7 @@ class MainWindow(QMainWindow):
         self._log(f"Starte Autoren-Abruf für Benutzer '{username}' ({api_type})...")
         
         # Disable buttons and show progress
-        self.load_button.setEnabled(False)
-        self.load_authors_button.setEnabled(False)
-        self.load_publisher_button.setEnabled(False)
-        self.update_button.setEnabled(False)
-        self.update_authors_button.setEnabled(False)
-        self.update_publisher_button.setEnabled(False)
+        self._set_buttons_enabled(False)
         self.progress_bar.setVisible(True)
         
         # Create worker and thread
@@ -942,12 +946,7 @@ class MainWindow(QMainWindow):
     def _cleanup_creator_thread(self):
         """Clean up creator thread and worker after completion."""
         self.progress_bar.setVisible(False)
-        self.load_button.setEnabled(True)
-        self.load_authors_button.setEnabled(True)
-        self.load_publisher_button.setEnabled(True)
-        self.update_button.setEnabled(True)
-        self.update_authors_button.setEnabled(True)
-        self.update_publisher_button.setEnabled(True)
+        self._set_buttons_enabled(True)
         
         # Reset references (objects are deleted via deleteLater)
         self.creator_thread = None
@@ -975,12 +974,7 @@ class MainWindow(QMainWindow):
         self._log(f"CSV-Datei: {Path(csv_path).name}")
         
         # Disable buttons and show progress
-        self.load_button.setEnabled(False)
-        self.load_authors_button.setEnabled(False)
-        self.load_publisher_button.setEnabled(False)
-        self.update_button.setEnabled(False)
-        self.update_authors_button.setEnabled(False)
-        self.update_publisher_button.setEnabled(False)
+        self._set_buttons_enabled(False)
         self.progress_bar.setVisible(True)
         
         # Create worker and thread
@@ -1118,12 +1112,7 @@ class MainWindow(QMainWindow):
         """Clean up update thread and worker after completion."""
         self.progress_bar.setVisible(False)
         self.progress_bar.setMaximum(0)  # Reset to indeterminate
-        self.load_button.setEnabled(True)
-        self.load_authors_button.setEnabled(True)
-        self.load_publisher_button.setEnabled(True)
-        self.update_button.setEnabled(True)
-        self.update_authors_button.setEnabled(True)
-        self.update_publisher_button.setEnabled(True)
+        self._set_buttons_enabled(True)
         
         # Reset references (objects are deleted via deleteLater)
         self.update_thread = None
@@ -1221,12 +1210,7 @@ class MainWindow(QMainWindow):
         self._log(f"CSV-Datei: {Path(csv_path).name}")
         
         # Disable buttons and show progress
-        self.load_button.setEnabled(False)
-        self.load_authors_button.setEnabled(False)
-        self.load_publisher_button.setEnabled(False)
-        self.update_button.setEnabled(False)
-        self.update_authors_button.setEnabled(False)
-        self.update_publisher_button.setEnabled(False)
+        self._set_buttons_enabled(False)
         self.progress_bar.setVisible(True)
         
         # Create worker and thread for DRY RUN
@@ -1382,12 +1366,7 @@ class MainWindow(QMainWindow):
         credentials_are_new = self._authors_update_credentials_are_new
         
         # Disable buttons again
-        self.load_button.setEnabled(False)
-        self.load_authors_button.setEnabled(False)
-        self.load_publisher_button.setEnabled(False)
-        self.update_button.setEnabled(False)
-        self.update_authors_button.setEnabled(False)
-        self.update_publisher_button.setEnabled(False)
+        self._set_buttons_enabled(False)
         self.progress_bar.setVisible(True)
         self.progress_bar.setMaximum(0)  # Indeterminate
         
@@ -1518,12 +1497,7 @@ class MainWindow(QMainWindow):
         """Clean up authors update thread and worker after completion."""
         self.progress_bar.setVisible(False)
         self.progress_bar.setMaximum(0)  # Reset to indeterminate
-        self.load_button.setEnabled(True)
-        self.load_authors_button.setEnabled(True)
-        self.load_publisher_button.setEnabled(True)
-        self.update_button.setEnabled(True)
-        self.update_authors_button.setEnabled(True)
-        self.update_publisher_button.setEnabled(True)
+        self._set_buttons_enabled(True)
         
         # Reset references (objects are deleted via deleteLater)
         self.authors_update_thread = None
@@ -1748,12 +1722,7 @@ class MainWindow(QMainWindow):
     def _cleanup_publisher_thread(self):
         """Clean up publisher thread and worker after completion."""
         self.progress_bar.setVisible(False)
-        self.load_button.setEnabled(True)
-        self.load_authors_button.setEnabled(True)
-        self.load_publisher_button.setEnabled(True)
-        self.update_button.setEnabled(True)
-        self.update_authors_button.setEnabled(True)
-        self.update_publisher_button.setEnabled(True)
+        self._set_buttons_enabled(True)
         
         # Reset references (objects are deleted via deleteLater)
         self.publisher_thread = None
@@ -1788,12 +1757,7 @@ class MainWindow(QMainWindow):
         self._log(f"CSV-Datei: {Path(csv_path).name}")
         
         # Disable buttons and show progress
-        self.load_button.setEnabled(False)
-        self.load_authors_button.setEnabled(False)
-        self.load_publisher_button.setEnabled(False)
-        self.update_button.setEnabled(False)
-        self.update_authors_button.setEnabled(False)
-        self.update_publisher_button.setEnabled(False)
+        self._set_buttons_enabled(False)
         self.progress_bar.setVisible(True)
         
         # Create worker and thread for DRY RUN (validation phase)
@@ -1949,12 +1913,7 @@ class MainWindow(QMainWindow):
         credentials_are_new = self._publisher_update_credentials_are_new
         
         # Disable buttons again
-        self.load_button.setEnabled(False)
-        self.load_authors_button.setEnabled(False)
-        self.load_publisher_button.setEnabled(False)
-        self.update_button.setEnabled(False)
-        self.update_authors_button.setEnabled(False)
-        self.update_publisher_button.setEnabled(False)
+        self._set_buttons_enabled(False)
         self.progress_bar.setVisible(True)
         self.progress_bar.setMaximum(0)  # Indeterminate
         
@@ -2085,12 +2044,7 @@ class MainWindow(QMainWindow):
         """Clean up publisher update thread and worker after completion."""
         self.progress_bar.setVisible(False)
         self.progress_bar.setMaximum(0)  # Reset to indeterminate
-        self.load_button.setEnabled(True)
-        self.load_authors_button.setEnabled(True)
-        self.load_publisher_button.setEnabled(True)
-        self.update_button.setEnabled(True)
-        self.update_authors_button.setEnabled(True)
-        self.update_publisher_button.setEnabled(True)
+        self._set_buttons_enabled(True)
         
         # Reset references (objects are deleted via deleteLater)
         self.publisher_update_thread = None
