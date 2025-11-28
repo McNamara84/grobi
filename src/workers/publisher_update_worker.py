@@ -406,8 +406,13 @@ class PublisherUpdateWorker(QObject):
                             if db_success_result:
                                 self.database_update.emit(f"    ✓ {db_message}")
                             else:
-                                db_success = False
-                                self.database_update.emit(f"    ✗ {db_message}")
+                                # Check if DOI not found in DB (not a fatal error)
+                                if "nicht in der Datenbank gefunden" in db_message:
+                                    self.database_update.emit(f"  ⚠️ DOI nicht in DB: {doi}")
+                                    logger.warning(f"DOI {doi} not found in database")
+                                else:
+                                    db_success = False
+                                    self.database_update.emit(f"    ✗ {db_message}")
                         else:
                             self.database_update.emit(f"  📊 DB: Keine Änderung für {doi}")
                     
@@ -417,14 +422,9 @@ class PublisherUpdateWorker(QObject):
                         logger.error(f"Database error for {doi}: {e}")
                     
                     except Exception as e:
-                        # DOI not found in DB is not a fatal error
-                        if "nicht in der Datenbank gefunden" in str(e):
-                            self.database_update.emit(f"  ⚠️ DOI nicht in DB: {doi}")
-                            logger.warning(f"DOI {doi} not found in database")
-                        else:
-                            db_success = False
-                            self.database_update.emit(f"    ✗ Unerwarteter Fehler: {str(e)}")
-                            logger.error(f"Unexpected database error for {doi}: {e}")
+                        db_success = False
+                        self.database_update.emit(f"    ✗ Unerwarteter Fehler: {str(e)}")
+                        logger.error(f"Unexpected database error for {doi}: {e}")
                 
                 # Step 4b: Update DataCite (only if DB succeeded or DB not enabled)
                 if db_success:

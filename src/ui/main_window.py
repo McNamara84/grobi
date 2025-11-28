@@ -1798,7 +1798,7 @@ class MainWindow(QMainWindow):
         
         # Create worker and thread for DRY RUN (validation phase)
         self.publisher_update_worker = PublisherUpdateWorker(
-            username, password, csv_path, use_test_api, dry_run_only=True, credentials_are_new=False
+            username, password, csv_path, use_test_api, dry_run_only=True, credentials_are_new=credentials_are_new
         )
         self.publisher_update_thread = QThread()
         self.publisher_update_worker.moveToThread(self.publisher_update_thread)

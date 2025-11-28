@@ -495,7 +495,7 @@ class CSVParser:
                         )
                         logger.warning(f"Row {row_num}: publisherIdentifier without scheme for DOI {doi}")
                     
-                    # Validate language code (if provided, should be 2-3 characters)
+                    # Validate language code (if provided, should be 2-5 characters to support codes like 'en-US')
                     if lang and (len(lang) < 2 or len(lang) > 5):
                         warnings.append(
                             f"Zeile {row_num}: Ungewöhnlicher Language-Code '{lang}' "

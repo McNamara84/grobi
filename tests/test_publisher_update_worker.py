@@ -1,7 +1,7 @@
 """Tests for PublisherUpdateWorker."""
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import tempfile
 import os
 
@@ -24,7 +24,7 @@ class TestPublisherUpdateWorker:
         ) as f:
             f.write("DOI,Publisher Name,Publisher Identifier,Publisher Identifier Scheme,Scheme URI,Language\n")
             f.write('10.5880/GFZ.1.1.2021.001,GFZ German Research Centre for Geosciences,https://ror.org/04z8jg394,ROR,https://ror.org,en\n')
-            f.write('10.5880/GFZ.1.1.2021.002,Helmholtz Centre Potsdam,,,,,\n')
+            f.write('10.5880/GFZ.1.1.2021.002,Helmholtz Centre Potsdam,,,,\n')
             csv_path = f.name
         
         yield csv_path
@@ -543,7 +543,7 @@ class TestPublisherUpdateWorkerSkippedDetails:
             mode='w', suffix='.csv', delete=False, encoding='utf-8', newline=''
         ) as f:
             f.write("DOI,Publisher Name,Publisher Identifier,Publisher Identifier Scheme,Scheme URI,Language\n")
-            f.write('10.5880/GFZ.1,Old Publisher,,,,,\n')
+            f.write('10.5880/GFZ.1,Old Publisher,,,,\n')
             f.write('10.5880/GFZ.2,New Publisher,https://ror.org/test,ROR,https://ror.org,en\n')
             csv_path = f.name
         yield csv_path
