@@ -369,7 +369,7 @@ class TestPublisherUpdateWorker:
     # ===================== NETWORK ERROR TESTS =====================
     
     def test_network_error_during_validation(self, valid_csv_file):
-        """Test handling of network errors during validation."""
+        """Test handling of network errors during API availability check."""
         with patch('src.workers.publisher_update_worker.QSettings') as mock_settings:
             settings_instance = Mock()
             settings_instance.value.return_value = False
@@ -386,19 +386,27 @@ class TestPublisherUpdateWorker:
         mock_client = Mock()
         mock_client.get_doi_metadata.side_effect = NetworkError("Connection failed")
         
-        dry_run_results = []
-        worker.dry_run_complete.connect(
-            lambda v, i, r: dry_run_results.append((v, i, r))
+        error_results = []
+        worker.error_occurred.connect(lambda msg: error_results.append(msg))
+        
+        finished_results = []
+        worker.finished.connect(
+            lambda s, e, sk, el, sd: finished_results.append((s, e, sk, el, sd))
         )
         
         with patch('src.workers.publisher_update_worker.DataCiteClient', return_value=mock_client):
             with patch('src.workers.publisher_update_worker.load_db_credentials', return_value=None):
                 worker.run()
         
-        # Network errors during validation should mark DOIs as invalid
-        assert len(dry_run_results) == 1
-        valid_count, invalid_count, results = dry_run_results[0]
-        assert invalid_count == 2  # Both DOIs should be invalid due to network error
+        # Network error during API check should abort with error
+        assert len(error_results) == 1
+        assert "nicht erreichbar" in error_results[0] or "Connection failed" in error_results[0]
+        
+        # Finished signal should indicate no updates
+        assert len(finished_results) == 1
+        success_count, error_count, skipped_count, error_list, skipped_details = finished_results[0]
+        assert success_count == 0
+        assert error_count == 0
     
     # ===================== STOP METHOD TESTS =====================
     

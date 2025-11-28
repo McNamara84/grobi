@@ -2110,8 +2110,7 @@ class MainWindow(QMainWindow):
             skipped_details: List of (doi, reason) tuples for skipped DOIs
         """
         try:
-            # Check if database sync is enabled
-            from PySide6.QtCore import QSettings
+            # Check if database sync is enabled (QSettings already imported at module level)
             settings = QSettings("GFZ", "GROBI")
             db_enabled = settings.value("database/enabled", False, type=bool)
             
@@ -2173,7 +2172,7 @@ class MainWindow(QMainWindow):
                     f.write("=" * 70 + "\n")
                     f.write("DATABASE-FIRST UPDATE PATTERN:\n")
                     f.write("=" * 70 + "\n")
-                    f.write("1. Datenbank wird ZUERST aktualisiert (mit ROLLBACK bei Fehlern)\n")
+                    f.write("1. Datenbank wird ZUERST aktualisiert (sofortiges COMMIT)\n")
                     f.write("2. DataCite wird DANACH aktualisiert (nur wenn DB erfolgreich)\n")
                     f.write("3. Bei DataCite-Fehlern erfolgt automatischer Retry\n")
                     f.write("\n")

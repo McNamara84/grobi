@@ -151,6 +151,7 @@ class PublisherUpdateWorker(QObject):
         Returns:
             True if DB client successfully initialized, False otherwise
         """
+        # QSettings already imported at module level
         settings = QSettings("GFZ", "GROBI")
         self.db_updates_enabled = settings.value("database/enabled", False, type=bool)
         
@@ -240,7 +241,27 @@ class PublisherUpdateWorker(QObject):
             self.validation_update.emit("⏳ Prüfe Systemverfügbarkeit...")
             logger.info("Starting validation phase: Testing system availability")
             
-            self.validation_update.emit("  ✓ DataCite API erreichbar")
+            # Test DataCite API availability with a lightweight request
+            try:
+                # Fetch metadata for first DOI to verify API connectivity
+                first_doi = list(publisher_by_doi.keys())[0]
+                client.get_doi_metadata(first_doi)
+                self.validation_update.emit("  ✓ DataCite API erreichbar")
+                logger.info("DataCite API connectivity verified")
+            except AuthenticationError as e:
+                error_msg = f"DataCite Authentifizierung fehlgeschlagen: {str(e)}"
+                logger.error(error_msg)
+                self.validation_update.emit("  ✗ DataCite Authentifizierung fehlgeschlagen")
+                self.error_occurred.emit(error_msg)
+                self.finished.emit(0, 0, 0, [], [])
+                return
+            except (NetworkError, DataCiteAPIError) as e:
+                error_msg = f"DataCite API nicht erreichbar: {str(e)}"
+                logger.error(error_msg)
+                self.validation_update.emit("  ✗ DataCite API nicht erreichbar")
+                self.error_occurred.emit(error_msg)
+                self.finished.emit(0, 0, 0, [], [])
+                return
             
             # Test Database availability (if enabled)
             db_available = self._initialize_db_client()
