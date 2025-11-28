@@ -495,7 +495,7 @@ class CSVParser:
                         )
                         logger.warning(f"Row {row_num}: publisherIdentifier without scheme for DOI {doi}")
                     
-                    # Validate language code (BCP 47 allows 2-11 characters, e.g. 'en', 'zh-Hans', 'pt-BR')
+                    # Validate language code (simplified BCP 47: typically 2-11 chars for common codes like 'en', 'zh-Hans', 'pt-BR')
                     if lang and (len(lang) < 2 or len(lang) > 11):
                         warnings.append(
                             f"Zeile {row_num}: Ungewöhnlicher Language-Code '{lang}' "

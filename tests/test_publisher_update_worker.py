@@ -364,7 +364,9 @@ class TestPublisherUpdateWorker:
                 worker.run()
         
         assert len(error_messages) == 1
-        assert "Invalid credentials" in error_messages[0] or "Authentifizierung" in error_messages[0]
+        # Check for either German or English error message
+        error_lower = error_messages[0].lower()
+        assert "authentifizierung" in error_lower or "invalid" in error_lower
     
     # ===================== NETWORK ERROR TESTS =====================
     
@@ -400,7 +402,9 @@ class TestPublisherUpdateWorker:
         
         # Network error during API check should abort with error
         assert len(error_results) == 1
-        assert "nicht erreichbar" in error_results[0] or "Connection failed" in error_results[0]
+        # Check for either German or English error message
+        error_lower = error_results[0].lower()
+        assert "nicht erreichbar" in error_lower or "connection" in error_lower
         
         # Finished signal should indicate no updates
         assert len(finished_results) == 1

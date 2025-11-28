@@ -590,6 +590,30 @@ class MainWindow(QMainWindow):
         self.update_authors_button.setEnabled(enabled)
         self.update_publisher_button.setEnabled(enabled)
     
+    def _format_error_list(self, items: list, max_items: int = 10, bullet: str = "") -> str:
+        """
+        Format a list of items for display, limiting to first N items.
+        
+        Args:
+            items: List of items (strings) to format
+            max_items: Maximum number of items to show (default: 10)
+            bullet: Optional bullet character to prefix each item
+            
+        Returns:
+            Formatted string with items, possibly truncated with "... und X weitere"
+        """
+        if not items:
+            return ""
+        
+        prefix = f"{bullet} " if bullet else ""
+        display_items = items[:max_items]
+        result = "\n".join(f"{prefix}{item}" for item in display_items)
+        
+        if len(items) > max_items:
+            result += f"\n... und {len(items) - max_items} weitere Fehler"
+        
+        return result
+    
     def _open_settings_dialog(self):
         """Open settings dialog."""
         try:
@@ -1076,9 +1100,7 @@ class MainWindow(QMainWindow):
                 f"Effizienz: {skipped_count} unnötige API-Calls vermieden!"
             )
         else:
-            error_details = "\n".join(error_list[:10])  # Show first 10 errors
-            if len(error_list) > 10:
-                error_details += f"\n... und {len(error_list) - 10} weitere Fehler"
+            error_details = self._format_error_list(error_list, max_items=10)
             
             QMessageBox.warning(
                 self,
@@ -1314,11 +1336,12 @@ class MainWindow(QMainWindow):
             return
         
         if invalid_count > 0:
-            # Show errors and ask if user wants to continue
-            error_details = "\n".join(
-                f"• {r['doi']}: {r['message']}"
-                for r in validation_results if not r['valid']
-            )[:500]  # Limit to 500 chars
+            # Show errors and ask if user wants to continue (show first 10 errors)
+            invalid_results = [r for r in validation_results if not r['valid']]
+            error_items = [f"{r['doi']}: {r['message']}" for r in invalid_results[:10]]
+            error_details = self._format_error_list(error_items, max_items=10, bullet="•")
+            if len(invalid_results) > 10:
+                error_details += f"\n... und {len(invalid_results) - 10} weitere Fehler"
             
             reply = QMessageBox.question(
                 self,
@@ -1461,9 +1484,7 @@ class MainWindow(QMainWindow):
                     f"Effizienz: {skipped_count} unnötige API-Calls vermieden!"
                 )
             else:
-                error_details = "\n".join(error_list[:10])  # Show first 10 errors
-                if len(error_list) > 10:
-                    error_details += f"\n... und {len(error_list) - 10} weitere Fehler"
+                error_details = self._format_error_list(error_list, max_items=10)
                 
                 QMessageBox.warning(
                     self,
@@ -1617,12 +1638,7 @@ class MainWindow(QMainWindow):
         self._log(f"Starte Publisher-Abruf für Benutzer '{username}' ({api_type})...")
         
         # Disable buttons and show progress
-        self.load_button.setEnabled(False)
-        self.load_authors_button.setEnabled(False)
-        self.load_publisher_button.setEnabled(False)
-        self.update_button.setEnabled(False)
-        self.update_authors_button.setEnabled(False)
-        self.update_publisher_button.setEnabled(False)
+        self._set_buttons_enabled(False)
         self.progress_bar.setVisible(True)
         
         # Create worker and thread
@@ -1861,11 +1877,12 @@ class MainWindow(QMainWindow):
             return
         
         if invalid_count > 0:
-            # Show errors and ask if user wants to continue
-            error_details = "\n".join(
-                f"• {r['doi']}: {r['message']}"
-                for r in validation_results if not r['valid']
-            )[:500]  # Limit to 500 chars
+            # Show errors and ask if user wants to continue (show first 10 errors)
+            invalid_results = [r for r in validation_results if not r['valid']]
+            error_items = [f"{r['doi']}: {r['message']}" for r in invalid_results[:10]]
+            error_details = self._format_error_list(error_items, max_items=10, bullet="•")
+            if len(invalid_results) > 10:
+                error_details += f"\n... und {len(invalid_results) - 10} weitere Fehler"
             
             reply = QMessageBox.question(
                 self,
@@ -2008,9 +2025,7 @@ class MainWindow(QMainWindow):
                     f"Effizienz: {skipped_count} unnötige API-Calls vermieden!"
                 )
             else:
-                error_details = "\n".join(error_list[:10])  # Show first 10 errors
-                if len(error_list) > 10:
-                    error_details += f"\n... und {len(error_list) - 10} weitere Fehler"
+                error_details = self._format_error_list(error_list, max_items=10)
                 
                 QMessageBox.warning(
                     self,
@@ -2128,7 +2143,7 @@ class MainWindow(QMainWindow):
                     f.write("=" * 70 + "\n")
                     f.write("1. Datenbank wird ZUERST aktualisiert (sofortiges COMMIT)\n")
                     f.write("2. DataCite wird DANACH aktualisiert (nur wenn DB erfolgreich)\n")
-                    f.write("3. Bei DataCite-Fehlern erfolgt automatischer Retry\n")
+                    f.write("3. Bei DataCite-Fehlern wird der Fehler protokolliert\n")
                     f.write("\n")
                     f.write("HINWEIS: Falls INKONSISTENZEN auftraten, müssen diese manuell\n")
                     f.write("         korrigiert werden (Datenbank committed, DataCite failed).\n")

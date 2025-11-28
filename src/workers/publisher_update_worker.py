@@ -421,19 +421,18 @@ class PublisherUpdateWorker(QObject):
                         current_db_publisher = self.db_client.get_publisher_for_doi(doi)
                         new_publisher_name = publisher_data.get("name", "")
                         
-                        if current_db_publisher != new_publisher_name:
+                        # Handle case when DOI is not in database
+                        if current_db_publisher is None:
+                            self.database_update.emit(f"  ⚠️ DOI nicht in DB: {doi}")
+                            logger.warning(f"DOI {doi} not found in database, skipping DB update")
+                        elif current_db_publisher != new_publisher_name:
                             self.database_update.emit(f"  📊 DB Update: {doi}")
                             db_success_result, db_message = self.db_client.update_publisher(doi, new_publisher_name)
                             if db_success_result:
                                 self.database_update.emit(f"    ✓ {db_message}")
                             else:
-                                # Check if DOI not found in DB (not a fatal error)
-                                if "nicht in der Datenbank gefunden" in db_message:
-                                    self.database_update.emit(f"  ⚠️ DOI nicht in DB: {doi}")
-                                    logger.warning(f"DOI {doi} not found in database")
-                                else:
-                                    db_success = False
-                                    self.database_update.emit(f"    ✗ {db_message}")
+                                db_success = False
+                                self.database_update.emit(f"    ✗ {db_message}")
                         else:
                             self.database_update.emit(f"  📊 DB: Keine Änderung für {doi}")
                     
@@ -448,6 +447,9 @@ class PublisherUpdateWorker(QObject):
                         logger.error(f"Unexpected database error for {doi}: {e}")
                 
                 # Step 4b: Update DataCite (only if DB succeeded or DB not enabled)
+                # Track if DB was actually updated (for inconsistency detection)
+                db_was_updated = db_available and self.db_updates_enabled and db_success
+                
                 if db_success:
                     try:
                         self.datacite_update.emit(f"  🌐 DataCite Update: {doi}")
@@ -465,13 +467,28 @@ class PublisherUpdateWorker(QObject):
                                 self.request_save_credentials.emit(self.username, self.password, api_type)
                         else:
                             error_count += 1
-                            error_list.append(f"{doi}: {message}")
+                            # Mark as inconsistency if DB was updated but DataCite failed
+                            if db_was_updated:
+                                error_msg = (
+                                    f"{doi}: INKONSISTENZ - Datenbank erfolgreich, DataCite fehlgeschlagen "
+                                    f"(Fehler: {message})"
+                                )
+                            else:
+                                error_msg = f"{doi}: {message}"
+                            error_list.append(error_msg)
                             self.datacite_update.emit(f"    ✗ {message}")
-                            self.doi_updated.emit(doi, False, message)
+                            self.doi_updated.emit(doi, False, error_msg)
                     
                     except NetworkError as e:
-                        error_msg = f"{doi}: Netzwerkfehler - {str(e)}"
                         error_count += 1
+                        # Mark as inconsistency if DB was updated but DataCite failed
+                        if db_was_updated:
+                            error_msg = (
+                                f"{doi}: INKONSISTENZ - Datenbank erfolgreich, DataCite fehlgeschlagen "
+                                f"(Netzwerkfehler: {str(e)})"
+                            )
+                        else:
+                            error_msg = f"{doi}: Netzwerkfehler - {str(e)}"
                         error_list.append(error_msg)
                         self.datacite_update.emit(f"    ✗ {error_msg}")
                         self.doi_updated.emit(doi, False, error_msg)
