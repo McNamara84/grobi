@@ -10,6 +10,7 @@ from unittest.mock import patch
 from src.utils.csv_exporter import (
     export_dois_to_csv,
     export_dois_with_creators_to_csv,
+    export_dois_with_publisher_to_csv,
     validate_csv_format,
     CSVExportError
 )
@@ -65,6 +66,37 @@ def sample_creator_data():
             "",
             "",
             ""
+        ),
+    ]
+
+
+@pytest.fixture
+def sample_publisher_data():
+    """Sample publisher data for testing."""
+    return [
+        (
+            "10.5880/GFZ.1.1.2021.001",
+            "GFZ German Research Centre for Geosciences",
+            "https://ror.org/04z8jg394",
+            "ROR",
+            "https://ror.org",
+            "en"
+        ),
+        (
+            "10.5880/GFZ.1.1.2021.002",
+            "Helmholtz Centre Potsdam",
+            "",
+            "",
+            "",
+            ""
+        ),
+        (
+            "10.5880/GFZ.1.1.2021.003",
+            "Example Publisher",
+            "https://ror.org/12345",
+            "ROR",
+            "https://ror.org",
+            "de"
         ),
     ]
 
@@ -440,3 +472,157 @@ class TestErrorMessages:
             
             error_message = str(exc_info.value)
             assert "CSV-Datei" in error_message or "gespeichert" in error_message
+
+
+class TestExportDOIsWithPublisherToCSV:
+    """Test CSV export functionality for DOIs with publisher data."""
+    
+    def test_successful_export_with_publisher(self, temp_dir, sample_publisher_data):
+        """Test successful export of DOIs with publisher information to CSV."""
+        username = "TIB.GFZ"
+        
+        filepath, warnings_count = export_dois_with_publisher_to_csv(
+            sample_publisher_data, username, temp_dir
+        )
+        
+        # Check that file was created
+        assert os.path.exists(filepath)
+        assert filepath.endswith("TIB.GFZ_publishers.csv")
+        
+        # Read and verify content
+        with open(filepath, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+        
+        # Check header
+        expected_header = [
+            'DOI',
+            'Publisher Name',
+            'Publisher Identifier',
+            'Publisher Identifier Scheme',
+            'Scheme URI',
+            'Language'
+        ]
+        assert rows[0] == expected_header
+        
+        # Check data rows
+        assert len(rows) == 4  # Header + 3 data rows
+        
+        # First publisher with full data
+        assert rows[1][0] == "10.5880/GFZ.1.1.2021.001"
+        assert rows[1][1] == "GFZ German Research Centre for Geosciences"
+        assert rows[1][2] == "https://ror.org/04z8jg394"
+        assert rows[1][3] == "ROR"
+        assert rows[1][4] == "https://ror.org"
+        assert rows[1][5] == "en"
+        
+        # Second publisher without identifier
+        assert rows[2][0] == "10.5880/GFZ.1.1.2021.002"
+        assert rows[2][1] == "Helmholtz Centre Potsdam"
+        assert rows[2][2] == ""  # No identifier
+    
+    def test_empty_publisher_list_export(self, temp_dir):
+        """Test export with empty publisher list."""
+        username = "TIB.GFZ"
+        
+        filepath, warnings_count = export_dois_with_publisher_to_csv([], username, temp_dir)
+        
+        # File should still be created with just header
+        assert os.path.exists(filepath)
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+        
+        assert len(rows) == 1  # Only header
+        assert warnings_count == 0
+    
+    def test_publisher_without_identifier_warning(self, temp_dir):
+        """Test that DOIs without publisher identifier generate warnings."""
+        data = [
+            (
+                "10.5880/GFZ.1",
+                "Publisher Without ID",
+                "",  # No identifier
+                "",
+                "",
+                ""
+            ),
+            (
+                "10.5880/GFZ.2",
+                "Publisher With ID",
+                "https://ror.org/12345",
+                "ROR",
+                "https://ror.org",
+                "en"
+            ),
+        ]
+        
+        filepath, warnings_count = export_dois_with_publisher_to_csv(
+            data, "TEST", temp_dir
+        )
+        
+        assert warnings_count == 1  # One DOI without identifier
+    
+    def test_utf8_encoding_publisher(self, temp_dir):
+        """Test UTF-8 encoding with special characters in publisher names."""
+        data = [
+            (
+                "10.5880/GFZ.1.1.2021.001",
+                "Müller Förschungszentrum für Geowissenschaften",
+                "https://ror.org/12345",
+                "ROR",
+                "https://ror.org",
+                "de"
+            ),
+        ]
+        
+        filepath, warnings_count = export_dois_with_publisher_to_csv(
+            data, "TEST", temp_dir
+        )
+        
+        # Read and verify encoding
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        assert "Müller" in content
+        assert "Förschungszentrum" in content
+    
+    def test_returns_filepath_and_warnings_tuple(self, temp_dir, sample_publisher_data):
+        """Test that function returns (filepath, warnings_count) tuple."""
+        result = export_dois_with_publisher_to_csv(
+            sample_publisher_data, "TEST", temp_dir
+        )
+        
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        
+        filepath, warnings_count = result
+        assert isinstance(filepath, str)
+        assert isinstance(warnings_count, int)
+        assert filepath.endswith("TEST_publishers.csv")
+    
+    def test_username_sanitization_publisher(self, temp_dir, sample_publisher_data):
+        """Test that username is sanitized in filename."""
+        username = "TIB/GFZ:Test"  # Contains invalid chars
+        
+        filepath, _ = export_dois_with_publisher_to_csv(
+            sample_publisher_data, username, temp_dir
+        )
+        
+        # Filename should not contain invalid characters
+        filename = os.path.basename(filepath)
+        assert "/" not in filename
+        assert ":" not in filename
+    
+    def test_creates_output_directory_publisher(self, temp_dir, sample_publisher_data):
+        """Test that output directory is created if it doesn't exist."""
+        new_dir = os.path.join(temp_dir, "new_subdir")
+        assert not os.path.exists(new_dir)
+        
+        filepath, _ = export_dois_with_publisher_to_csv(
+            sample_publisher_data, "TEST", new_dir
+        )
+        
+        assert os.path.exists(new_dir)
+        assert os.path.exists(filepath)
