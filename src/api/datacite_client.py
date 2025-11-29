@@ -5,6 +5,8 @@ from typing import List, Tuple, Dict, Any, Optional
 import requests
 from requests.auth import HTTPBasicAuth
 
+from src.utils.publisher_parser import parse_publisher_from_metadata
+
 
 logger = logging.getLogger(__name__)
 
@@ -870,29 +872,13 @@ class DataCiteClient:
                     attributes = item.get("attributes", {})
                     publisher_raw = attributes.get("publisher", "")
                     
-                    # Publisher can be a string (simple) or dict (extended schema 4.6)
-                    if isinstance(publisher_raw, dict):
-                        # Extended publisher format (DataCite Schema 4.6)
-                        publisher_name = publisher_raw.get("name", "")
-                        publisher_identifier = publisher_raw.get("publisherIdentifier", "")
-                        publisher_identifier_scheme = publisher_raw.get("publisherIdentifierScheme", "")
-                        scheme_uri = publisher_raw.get("schemeUri", "")
-                        lang = publisher_raw.get("lang", "")
-                    elif isinstance(publisher_raw, str):
-                        # Simple string format (legacy)
-                        publisher_name = publisher_raw
-                        publisher_identifier = ""
-                        publisher_identifier_scheme = ""
-                        scheme_uri = ""
-                        lang = ""
-                    else:
-                        # Fallback for unexpected types
-                        logger.warning(f"DOI {doi}: Unexpected publisher type: {type(publisher_raw)}")
-                        publisher_name = str(publisher_raw) if publisher_raw else ""
-                        publisher_identifier = ""
-                        publisher_identifier_scheme = ""
-                        scheme_uri = ""
-                        lang = ""
+                    # Parse publisher using shared utility function
+                    parsed = parse_publisher_from_metadata(publisher_raw)
+                    publisher_name = parsed["name"]
+                    publisher_identifier = parsed["publisherIdentifier"]
+                    publisher_identifier_scheme = parsed["publisherIdentifierScheme"]
+                    scheme_uri = parsed["schemeUri"]
+                    lang = parsed["lang"]
                     
                     # Skip DOIs without publisher
                     if not publisher_name:

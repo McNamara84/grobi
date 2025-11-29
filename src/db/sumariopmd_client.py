@@ -432,9 +432,14 @@ class SumarioPMDClient:
             
         Returns:
             Tuple of (success: bool, message: str)
+            - (False, message) for validation errors (empty publisher name)
+            - (False, message) if DOI not found in database
+            - (True, message) on successful update
+            - (False, message) if update affected no rows
             
         Raises:
-            DatabaseError: If update fails
+            DatabaseError: Only raised for actual database errors during query execution
+                          (e.g., connection lost, SQL syntax error, constraint violation)
         """
         if not publisher_name:
             return False, "Publisher-Name darf nicht leer sein"

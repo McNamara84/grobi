@@ -275,8 +275,9 @@ def export_dois_with_publisher_to_csv(
             for row in data:
                 writer.writerow(row)
                 # Check if publisherIdentifier is empty (column index 2)
-                # Row must have exactly 6 elements as documented in function signature
-                if len(row) == 6 and not row[2]:
+                # Handle rows with fewer elements (trailing empty values may be omitted)
+                # and use strip() to properly detect empty strings with whitespace
+                if len(row) >= 3 and (not row[2] or not str(row[2]).strip()):
                     warnings_count += 1
                     logger.warning(f"DOI {row[0]} has no publisherIdentifier")
         

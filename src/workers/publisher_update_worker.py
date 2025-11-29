@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject, Signal, QSettings
 
 from src.api.datacite_client import DataCiteClient, NetworkError, DataCiteAPIError, AuthenticationError
 from src.utils.csv_parser import CSVParser, CSVParseError
+from src.utils.publisher_parser import parse_publisher_from_metadata
 from src.db.sumariopmd_client import (
     SumarioPMDClient,
     DatabaseError,
@@ -15,6 +16,26 @@ from src.utils.credential_manager import load_db_credentials
 
 
 logger = logging.getLogger(__name__)
+
+
+def _create_inconsistency_error(doi: str, error_detail: str, db_was_updated: bool) -> str:
+    """
+    Create error message with INKONSISTENZ marker if DB was updated but DataCite failed.
+    
+    Args:
+        doi: The DOI that failed
+        error_detail: Specific error message (e.g., "Netzwerkfehler: timeout")
+        db_was_updated: Whether the database was actually modified
+        
+    Returns:
+        Formatted error message with INKONSISTENZ marker if applicable
+    """
+    if db_was_updated:
+        return (
+            f"{doi}: INKONSISTENZ - Datenbank erfolgreich, DataCite fehlgeschlagen "
+            f"({error_detail})"
+        )
+    return f"{doi}: {error_detail}"
 
 
 class PublisherUpdateWorker(QObject):
@@ -90,25 +111,8 @@ class PublisherUpdateWorker(QObject):
             logger.error(f"Error extracting publisher from metadata: {e}")
             return True, "Metadaten-Struktur ungültig (Update erforderlich)"
         
-        # Parse current publisher (can be string or dict)
-        if isinstance(publisher_raw, dict):
-            current_name = publisher_raw.get("name", "")
-            current_identifier = publisher_raw.get("publisherIdentifier", "")
-            current_scheme = publisher_raw.get("publisherIdentifierScheme", "")
-            current_scheme_uri = publisher_raw.get("schemeUri", "")
-            current_lang = publisher_raw.get("lang", "")
-        elif isinstance(publisher_raw, str):
-            current_name = publisher_raw
-            current_identifier = ""
-            current_scheme = ""
-            current_scheme_uri = ""
-            current_lang = ""
-        else:
-            current_name = str(publisher_raw) if publisher_raw else ""
-            current_identifier = ""
-            current_scheme = ""
-            current_scheme_uri = ""
-            current_lang = ""
+        # Parse current publisher using shared utility function
+        current = parse_publisher_from_metadata(publisher_raw)
         
         # Get CSV values
         csv_name = csv_publisher.get("name", "")
@@ -120,20 +124,20 @@ class PublisherUpdateWorker(QObject):
         # Field-by-field comparison
         changes = []
         
-        if current_name != csv_name:
-            changes.append(f"Name: '{current_name}' → '{csv_name}'")
+        if current["name"] != csv_name:
+            changes.append(f"Name: '{current['name']}' → '{csv_name}'")
         
-        if current_identifier != csv_identifier:
-            changes.append(f"Identifier: '{current_identifier}' → '{csv_identifier}'")
+        if current["publisherIdentifier"] != csv_identifier:
+            changes.append(f"Identifier: '{current['publisherIdentifier']}' → '{csv_identifier}'")
         
-        if current_scheme != csv_scheme:
-            changes.append(f"Scheme: '{current_scheme}' → '{csv_scheme}'")
+        if current["publisherIdentifierScheme"] != csv_scheme:
+            changes.append(f"Scheme: '{current['publisherIdentifierScheme']}' → '{csv_scheme}'")
         
-        if current_scheme_uri != csv_scheme_uri:
-            changes.append(f"SchemeURI: '{current_scheme_uri}' → '{csv_scheme_uri}'")
+        if current["schemeUri"] != csv_scheme_uri:
+            changes.append(f"SchemeURI: '{current['schemeUri']}' → '{csv_scheme_uri}'")
         
-        if current_lang != csv_lang:
-            changes.append(f"Language: '{current_lang}' → '{csv_lang}'")
+        if current["lang"] != csv_lang:
+            changes.append(f"Language: '{current['lang']}' → '{csv_lang}'")
         
         if changes:
             # Return first 3 changes, indicate if more exist
@@ -244,6 +248,12 @@ class PublisherUpdateWorker(QObject):
             # Test DataCite API availability with a lightweight request
             try:
                 # Fetch metadata for first DOI to verify API connectivity
+                if not publisher_by_doi:
+                    error_msg = "Keine DOIs in der CSV-Datei gefunden."
+                    logger.error(error_msg)
+                    self.error_occurred.emit(error_msg)
+                    self.finished.emit(0, 0, 0, [], [])
+                    return
                 first_doi = list(publisher_by_doi.keys())[0]
                 client.get_doi_metadata(first_doi)
                 self.validation_update.emit("  ✓ DataCite API erreichbar")
@@ -274,8 +284,8 @@ class PublisherUpdateWorker(QObject):
                     "- Keine VPN-Verbindung zum GFZ-Netzwerk\n"
                     "- Falsche Datenbank-Credentials in Einstellungen\n"
                     "- Datenbank-Server nicht verfügbar\n\n"
-                    "Bitte prüfen Sie die Verbindung oder deaktivieren Sie Datenbank-Updates "
-                    "in den Einstellungen (Strg+,)."
+                    "Lösung: Öffnen Sie Einstellungen (Menü: Bearbeiten → Einstellungen oder Strg+,), \n"
+                    "wechseln Sie zum Tab 'Datenbank' und deaktivieren Sie 'Datenbank-Updates aktivieren'."
                 )
                 logger.error("Database enabled but unavailable - aborting")
                 self.validation_update.emit("  ✗ Datenbank nicht erreichbar (aber aktiviert!)")
@@ -468,13 +478,7 @@ class PublisherUpdateWorker(QObject):
                         else:
                             error_count += 1
                             # Mark as inconsistency if DB was updated but DataCite failed
-                            if db_was_updated:
-                                error_msg = (
-                                    f"{doi}: INKONSISTENZ - Datenbank erfolgreich, DataCite fehlgeschlagen "
-                                    f"(Fehler: {message})"
-                                )
-                            else:
-                                error_msg = f"{doi}: {message}"
+                            error_msg = _create_inconsistency_error(doi, f"Fehler: {message}", db_was_updated)
                             error_list.append(error_msg)
                             self.datacite_update.emit(f"    ✗ {message}")
                             self.doi_updated.emit(doi, False, error_msg)
@@ -482,13 +486,7 @@ class PublisherUpdateWorker(QObject):
                     except NetworkError as e:
                         error_count += 1
                         # Mark as inconsistency if DB was updated but DataCite failed
-                        if db_was_updated:
-                            error_msg = (
-                                f"{doi}: INKONSISTENZ - Datenbank erfolgreich, DataCite fehlgeschlagen "
-                                f"(Netzwerkfehler: {str(e)})"
-                            )
-                        else:
-                            error_msg = f"{doi}: Netzwerkfehler - {str(e)}"
+                        error_msg = _create_inconsistency_error(doi, f"Netzwerkfehler: {str(e)}", db_was_updated)
                         error_list.append(error_msg)
                         self.datacite_update.emit(f"    ✗ {error_msg}")
                         self.doi_updated.emit(doi, False, error_msg)
