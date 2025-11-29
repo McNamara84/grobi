@@ -414,6 +414,7 @@ class PublisherUpdateWorker(QObject):
                 
                 # Step 4a: Update Database FIRST (if enabled)
                 db_success = True
+                db_was_updated = False  # Track if DB was actually modified
                 if db_available and self.db_updates_enabled:
                     try:
                         # Only update publisher name in database
@@ -430,6 +431,7 @@ class PublisherUpdateWorker(QObject):
                             db_success_result, db_message = self.db_client.update_publisher(doi, new_publisher_name)
                             if db_success_result:
                                 self.database_update.emit(f"    ✓ {db_message}")
+                                db_was_updated = True  # DB was actually modified
                             else:
                                 db_success = False
                                 self.database_update.emit(f"    ✗ {db_message}")
@@ -447,8 +449,6 @@ class PublisherUpdateWorker(QObject):
                         logger.error(f"Unexpected database error for {doi}: {e}")
                 
                 # Step 4b: Update DataCite (only if DB succeeded or DB not enabled)
-                # Track if DB was actually updated (for inconsistency detection)
-                db_was_updated = db_available and self.db_updates_enabled and db_success
                 
                 if db_success:
                     try:

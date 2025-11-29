@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox
 )
-from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt
+from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt, QSettings
 from PySide6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices, QPixmap
 
 from src.ui.credentials_dialog import CredentialsDialog
