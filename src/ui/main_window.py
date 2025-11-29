@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox
 )
-from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt
+from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt, QSettings
 from PySide6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices, QPixmap
 
 from src.ui.credentials_dialog import CredentialsDialog
@@ -17,9 +17,10 @@ from src.ui.save_credentials_dialog import SaveCredentialsDialog
 from src.ui.about_dialog import AboutDialog
 from src.ui.theme_manager import ThemeManager, Theme
 from src.api.datacite_client import DataCiteClient, DataCiteAPIError, AuthenticationError, NetworkError
-from src.utils.csv_exporter import export_dois_to_csv, export_dois_with_creators_to_csv, CSVExportError
+from src.utils.csv_exporter import export_dois_to_csv, export_dois_with_creators_to_csv, export_dois_with_publisher_to_csv, CSVExportError
 from src.workers.update_worker import UpdateWorker
 from src.workers.authors_update_worker import AuthorsUpdateWorker
+from src.workers.publisher_update_worker import PublisherUpdateWorker
 
 
 logger = logging.getLogger(__name__)
@@ -141,6 +142,64 @@ class DOICreatorFetchWorker(QObject):
             self.error.emit(f"Unerwarteter Fehler: {str(e)}")
 
 
+class DOIPublisherFetchWorker(QObject):
+    """Worker for fetching DOIs with publisher information in a separate thread."""
+    
+    # Signals
+    progress = Signal(str)  # Progress message
+    finished = Signal(list, str, int)  # List of publisher tuples, username, warnings count
+    error = Signal(str)  # Error message
+    request_save_credentials = Signal(str, str, str)  # username, password, api_type
+    
+    def __init__(self, username, password, use_test_api, credentials_are_new=False):
+        """
+        Initialize the worker.
+        
+        Args:
+            username: DataCite username
+            password: DataCite password
+            use_test_api: Whether to use test API
+            credentials_are_new: Whether these are newly entered credentials (not from saved account)
+        """
+        super().__init__()
+        self.username = username
+        self.password = password
+        self.use_test_api = use_test_api
+        self.credentials_are_new = credentials_are_new
+    
+    def run(self):
+        """Fetch DOIs with publisher information from DataCite API."""
+        try:
+            self.progress.emit("Verbindung zur DataCite API wird hergestellt...")
+            
+            client = DataCiteClient(
+                self.username,
+                self.password,
+                self.use_test_api
+            )
+            
+            self.progress.emit("DOIs und Publisher-Metadaten werden abgerufen...")
+            publisher_data = client.fetch_all_dois_with_publisher()
+            
+            # If credentials are new and API call was successful, offer to save them
+            if self.credentials_are_new and publisher_data:
+                api_type = "test" if self.use_test_api else "production"
+                self.request_save_credentials.emit(self.username, self.password, api_type)
+            
+            self.progress.emit(f"[OK] {len(publisher_data)} DOIs mit Publisher-Daten erfolgreich abgerufen")
+            # warnings_count will be calculated during export
+            self.finished.emit(publisher_data, self.username, 0)
+            
+        except AuthenticationError as e:
+            self.error.emit(str(e))
+        except NetworkError as e:
+            self.error.emit(str(e))
+        except DataCiteAPIError as e:
+            self.error.emit(str(e))
+        except Exception as e:
+            self.error.emit(f"Unerwarteter Fehler: {str(e)}")
+
+
 class MainWindow(QMainWindow):
     """Main application window."""
     
@@ -170,6 +229,14 @@ class MainWindow(QMainWindow):
         # Thread and worker for authors update
         self.authors_update_thread = None
         self.authors_update_worker = None
+        
+        # Thread and worker for DOI publisher fetch
+        self.publisher_thread = None
+        self.publisher_worker = None
+        
+        # Thread and worker for publisher update
+        self.publisher_update_thread = None
+        self.publisher_update_worker = None
         
         # Track current username for CSV detection
         self._current_username = None
@@ -318,6 +385,30 @@ class MainWindow(QMainWindow):
         authors_group.setLayout(authors_layout)
         layout.addWidget(authors_group)
         
+        # GroupBox 3: Publisher Metadata
+        publisher_group = QGroupBox("📦 Publisher-Metadaten")
+        publisher_layout = QVBoxLayout()
+        publisher_layout.setSpacing(10)
+        
+        # Status label for publisher
+        self.publisher_status_label = QLabel("⚪ Keine CSV-Datei gefunden")
+        publisher_layout.addWidget(self.publisher_status_label)
+        
+        # Buttons for publisher workflow
+        self.load_publisher_button = QPushButton("📥 DOIs und Publisher-Metadaten laden")
+        self.load_publisher_button.setMinimumHeight(40)
+        self.load_publisher_button.clicked.connect(self._on_load_publisher_clicked)
+        publisher_layout.addWidget(self.load_publisher_button)
+        
+        self.update_publisher_button = QPushButton("🔄 Publisher-Metadaten aktualisieren")
+        self.update_publisher_button.setMinimumHeight(40)
+        self.update_publisher_button.setEnabled(False)  # Initially disabled
+        self.update_publisher_button.clicked.connect(self._on_update_publisher_clicked)
+        publisher_layout.addWidget(self.update_publisher_button)
+        
+        publisher_group.setLayout(publisher_layout)
+        layout.addWidget(publisher_group)
+        
         # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
@@ -412,10 +503,15 @@ class MainWindow(QMainWindow):
         authors_csv_found = False
         authors_csv_name = None
         
+        # Check for publisher CSV
+        publisher_csv_found = False
+        publisher_csv_name = None
+        
         # If we have a username, check for specific files
         if self._current_username:
             urls_csv_path = output_dir / f"{self._current_username}_urls.csv"
             authors_csv_path = output_dir / f"{self._current_username}_authors.csv"
+            publisher_csv_path = output_dir / f"{self._current_username}_publishers.csv"
             
             if urls_csv_path.exists():
                 urls_csv_found = True
@@ -424,10 +520,15 @@ class MainWindow(QMainWindow):
             if authors_csv_path.exists():
                 authors_csv_found = True
                 authors_csv_name = authors_csv_path.name
+            
+            if publisher_csv_path.exists():
+                publisher_csv_found = True
+                publisher_csv_name = publisher_csv_path.name
         else:
-            # Check for any *_urls.csv and *_authors.csv files
+            # Check for any *_urls.csv, *_authors.csv and *_publishers.csv files
             urls_files = list(output_dir.glob("*_urls.csv"))
             authors_files = list(output_dir.glob("*_authors.csv"))
+            publisher_files = list(output_dir.glob("*_publishers.csv"))
             
             if urls_files:
                 urls_csv_found = True
@@ -436,6 +537,10 @@ class MainWindow(QMainWindow):
             if authors_files:
                 authors_csv_found = True
                 authors_csv_name = authors_files[0].name
+            
+            if publisher_files:
+                publisher_csv_found = True
+                publisher_csv_name = publisher_files[0].name
         
         # Update URLs status
         if urls_csv_found:
@@ -452,6 +557,14 @@ class MainWindow(QMainWindow):
         else:
             self.authors_status_label.setText("⚪ Keine CSV-Datei gefunden")
             self.update_authors_button.setEnabled(False)
+        
+        # Update publisher status
+        if publisher_csv_found:
+            self.publisher_status_label.setText(f"🟢 CSV bereit: {publisher_csv_name}")
+            self.update_publisher_button.setEnabled(True)
+        else:
+            self.publisher_status_label.setText("⚪ Keine CSV-Datei gefunden")
+            self.update_publisher_button.setEnabled(False)
     
     def _log(self, message):
         """
@@ -462,6 +575,44 @@ class MainWindow(QMainWindow):
         """
         self.log_text.append(message)
         logger.info(message)
+    
+    def _set_buttons_enabled(self, enabled: bool):
+        """
+        Enable or disable all main action buttons.
+        
+        Args:
+            enabled: True to enable buttons, False to disable
+        """
+        self.load_button.setEnabled(enabled)
+        self.load_authors_button.setEnabled(enabled)
+        self.load_publisher_button.setEnabled(enabled)
+        self.update_button.setEnabled(enabled)
+        self.update_authors_button.setEnabled(enabled)
+        self.update_publisher_button.setEnabled(enabled)
+    
+    def _format_error_list(self, items: list, max_items: int = 10, bullet: str = "") -> str:
+        """
+        Format a list of items for display, limiting to first N items.
+        
+        Args:
+            items: List of items (strings) to format
+            max_items: Maximum number of items to show (default: 10)
+            bullet: Optional bullet character to prefix each item
+            
+        Returns:
+            Formatted string with items, possibly truncated with "... und X weitere"
+        """
+        if not items:
+            return ""
+        
+        prefix = f"{bullet} " if bullet else ""
+        display_items = items[:max_items]
+        result = "\n".join(f"{prefix}{item}" for item in display_items)
+        
+        if len(items) > max_items:
+            result += f"\n... und {len(items) - max_items} weitere Fehler"
+        
+        return result
     
     def _open_settings_dialog(self):
         """Open settings dialog."""
@@ -588,8 +739,10 @@ class MainWindow(QMainWindow):
         # Disable buttons and show progress
         self.load_button.setEnabled(False)
         self.load_authors_button.setEnabled(False)
+        self.load_publisher_button.setEnabled(False)
         self.update_button.setEnabled(False)
         self.update_authors_button.setEnabled(False)
+        self.update_publisher_button.setEnabled(False)
         self.progress_bar.setVisible(True)
         
         # Create worker and thread
@@ -679,10 +832,7 @@ class MainWindow(QMainWindow):
     def _cleanup_thread(self):
         """Clean up thread and worker after completion."""
         self.progress_bar.setVisible(False)
-        self.load_button.setEnabled(True)
-        self.load_authors_button.setEnabled(True)
-        self.update_button.setEnabled(True)
-        self.update_authors_button.setEnabled(True)
+        self._set_buttons_enabled(True)
         
         # Reset references (objects are deleted via deleteLater)
         self.thread = None
@@ -727,10 +877,7 @@ class MainWindow(QMainWindow):
         self._log(f"Starte Autoren-Abruf für Benutzer '{username}' ({api_type})...")
         
         # Disable buttons and show progress
-        self.load_button.setEnabled(False)
-        self.load_authors_button.setEnabled(False)
-        self.update_button.setEnabled(False)
-        self.update_authors_button.setEnabled(False)
+        self._set_buttons_enabled(False)
         self.progress_bar.setVisible(True)
         
         # Create worker and thread
@@ -823,10 +970,7 @@ class MainWindow(QMainWindow):
     def _cleanup_creator_thread(self):
         """Clean up creator thread and worker after completion."""
         self.progress_bar.setVisible(False)
-        self.load_button.setEnabled(True)
-        self.load_authors_button.setEnabled(True)
-        self.update_button.setEnabled(True)
-        self.update_authors_button.setEnabled(True)
+        self._set_buttons_enabled(True)
         
         # Reset references (objects are deleted via deleteLater)
         self.creator_thread = None
@@ -854,10 +998,7 @@ class MainWindow(QMainWindow):
         self._log(f"CSV-Datei: {Path(csv_path).name}")
         
         # Disable buttons and show progress
-        self.load_button.setEnabled(False)
-        self.load_authors_button.setEnabled(False)
-        self.update_button.setEnabled(False)
-        self.update_authors_button.setEnabled(False)
+        self._set_buttons_enabled(False)
         self.progress_bar.setVisible(True)
         
         # Create worker and thread
@@ -959,9 +1100,7 @@ class MainWindow(QMainWindow):
                 f"Effizienz: {skipped_count} unnötige API-Calls vermieden!"
             )
         else:
-            error_details = "\n".join(error_list[:10])  # Show first 10 errors
-            if len(error_list) > 10:
-                error_details += f"\n... und {len(error_list) - 10} weitere Fehler"
+            error_details = self._format_error_list(error_list, max_items=10)
             
             QMessageBox.warning(
                 self,
@@ -995,10 +1134,7 @@ class MainWindow(QMainWindow):
         """Clean up update thread and worker after completion."""
         self.progress_bar.setVisible(False)
         self.progress_bar.setMaximum(0)  # Reset to indeterminate
-        self.load_button.setEnabled(True)
-        self.load_authors_button.setEnabled(True)
-        self.update_button.setEnabled(True)
-        self.update_authors_button.setEnabled(True)
+        self._set_buttons_enabled(True)
         
         # Reset references (objects are deleted via deleteLater)
         self.update_thread = None
@@ -1096,10 +1232,7 @@ class MainWindow(QMainWindow):
         self._log(f"CSV-Datei: {Path(csv_path).name}")
         
         # Disable buttons and show progress
-        self.load_button.setEnabled(False)
-        self.load_authors_button.setEnabled(False)
-        self.update_button.setEnabled(False)
-        self.update_authors_button.setEnabled(False)
+        self._set_buttons_enabled(False)
         self.progress_bar.setVisible(True)
         
         # Create worker and thread for DRY RUN
@@ -1203,11 +1336,12 @@ class MainWindow(QMainWindow):
             return
         
         if invalid_count > 0:
-            # Show errors and ask if user wants to continue
-            error_details = "\n".join(
-                f"• {r['doi']}: {r['message']}"
-                for r in validation_results if not r['valid']
-            )[:500]  # Limit to 500 chars
+            # Show errors and ask if user wants to continue (show first 10 errors)
+            invalid_results = [r for r in validation_results if not r['valid']]
+            error_items = [f"{r['doi']}: {r['message']}" for r in invalid_results[:10]]
+            error_details = self._format_error_list(error_items, max_items=10, bullet="•")
+            if len(invalid_results) > 10:
+                error_details += f"\n... und {len(invalid_results) - 10} weitere Fehler"
             
             reply = QMessageBox.question(
                 self,
@@ -1255,10 +1389,7 @@ class MainWindow(QMainWindow):
         credentials_are_new = self._authors_update_credentials_are_new
         
         # Disable buttons again
-        self.load_button.setEnabled(False)
-        self.load_authors_button.setEnabled(False)
-        self.update_button.setEnabled(False)
-        self.update_authors_button.setEnabled(False)
+        self._set_buttons_enabled(False)
         self.progress_bar.setVisible(True)
         self.progress_bar.setMaximum(0)  # Indeterminate
         
@@ -1353,9 +1484,7 @@ class MainWindow(QMainWindow):
                     f"Effizienz: {skipped_count} unnötige API-Calls vermieden!"
                 )
             else:
-                error_details = "\n".join(error_list[:10])  # Show first 10 errors
-                if len(error_list) > 10:
-                    error_details += f"\n... und {len(error_list) - 10} weitere Fehler"
+                error_details = self._format_error_list(error_list, max_items=10)
                 
                 QMessageBox.warning(
                     self,
@@ -1389,10 +1518,7 @@ class MainWindow(QMainWindow):
         """Clean up authors update thread and worker after completion."""
         self.progress_bar.setVisible(False)
         self.progress_bar.setMaximum(0)  # Reset to indeterminate
-        self.load_button.setEnabled(True)
-        self.load_authors_button.setEnabled(True)
-        self.update_button.setEnabled(True)
-        self.update_authors_button.setEnabled(True)
+        self._set_buttons_enabled(True)
         
         # Reset references (objects are deleted via deleteLater)
         self.authors_update_thread = None
@@ -1490,6 +1616,546 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._log(f"[WARNUNG] Log-Datei konnte nicht erstellt werden: {str(e)}")
     
+    # ==================== PUBLISHER METHODS ====================
+    
+    def _on_load_publisher_clicked(self):
+        """Handle load publisher button click."""
+        # Show credentials dialog
+        dialog = CredentialsDialog(self)
+        credentials = dialog.get_credentials()
+        
+        if credentials is None:
+            self._log("Vorgang abgebrochen.")
+            return
+        
+        username, password, csv_path, use_test_api = credentials
+        # csv_path is None in export mode, we don't need it here
+        
+        # Check if user selected new credentials or loaded saved account
+        credentials_are_new = dialog.is_new_credentials()
+        
+        api_type = "Test-API" if use_test_api else "Produktions-API"
+        self._log(f"Starte Publisher-Abruf für Benutzer '{username}' ({api_type})...")
+        
+        # Disable buttons and show progress
+        self._set_buttons_enabled(False)
+        self.progress_bar.setVisible(True)
+        
+        # Create worker and thread
+        self.publisher_worker = DOIPublisherFetchWorker(username, password, use_test_api, credentials_are_new)
+        self.publisher_thread = QThread()
+        self.publisher_worker.moveToThread(self.publisher_thread)
+        
+        # Connect signals
+        self.publisher_thread.started.connect(self.publisher_worker.run)
+        self.publisher_worker.progress.connect(self._log)
+        self.publisher_worker.finished.connect(self._on_publisher_fetch_finished)
+        self.publisher_worker.error.connect(self._on_publisher_fetch_error)
+        self.publisher_worker.request_save_credentials.connect(self._on_request_save_credentials)
+        
+        # Clean up after worker finishes or errors
+        self.publisher_worker.finished.connect(self.publisher_worker.deleteLater)
+        self.publisher_worker.error.connect(self.publisher_worker.deleteLater)
+        self.publisher_worker.finished.connect(self.publisher_thread.quit)
+        self.publisher_worker.error.connect(self.publisher_thread.quit)
+        
+        # Clean up thread when it finishes
+        self.publisher_thread.finished.connect(self.publisher_thread.deleteLater)
+        self.publisher_thread.finished.connect(self._cleanup_publisher_thread)
+        
+        # Start the thread
+        self.publisher_thread.start()
+    
+    def _on_publisher_fetch_finished(self, publisher_data, username, _warnings_count):
+        """
+        Handle successful publisher fetch.
+        
+        Args:
+            publisher_data: List of publisher tuples (DOI, Name, Identifier, ...)
+            username: DataCite username
+            _warnings_count: Ignored, we calculate warnings during export
+        """
+        if not publisher_data:
+            self._log("[WARNUNG] Keine DOIs mit Publisher-Daten gefunden.")
+            QMessageBox.information(
+                self,
+                "Keine Publisher",
+                f"Für den Benutzer '{username}' wurden keine DOIs mit Publisher-Daten gefunden."
+            )
+            return
+        
+        # Export to CSV
+        try:
+            output_dir = os.getcwd()
+            filepath, warnings_count = export_dois_with_publisher_to_csv(publisher_data, username, output_dir)
+            
+            self._log(f"[OK] CSV-Datei erfolgreich erstellt: {filepath}")
+            
+            if warnings_count > 0:
+                self._log(f"[WARNUNG] {warnings_count} DOI(s) ohne Publisher Identifier")
+            
+            # Update username and check CSV files
+            self._current_username = username
+            self._check_csv_files()
+            
+            message = (
+                f"{len(publisher_data)} DOIs mit Publisher-Daten wurden erfolgreich exportiert.\n\n"
+                f"Datei: {Path(filepath).name}\n"
+                f"Verzeichnis: {output_dir}"
+            )
+            if warnings_count > 0:
+                message += f"\n\n⚠️ {warnings_count} DOI(s) haben keinen Publisher Identifier."
+            
+            QMessageBox.information(
+                self,
+                "Erfolg",
+                message
+            )
+            
+        except CSVExportError as e:
+            self._log(f"[FEHLER] Fehler beim CSV-Export: {str(e)}")
+            QMessageBox.critical(
+                self,
+                "Fehler beim Export",
+                f"Die CSV-Datei konnte nicht erstellt werden:\n\n{str(e)}"
+            )
+    
+    def _on_publisher_fetch_error(self, error_message):
+        """
+        Handle publisher fetch error.
+        
+        Args:
+            error_message: Error message
+        """
+        self._log(f"[FEHLER] {error_message}")
+        
+        QMessageBox.critical(
+            self,
+            "Fehler",
+            f"Beim Abrufen der Publisher-Daten ist ein Fehler aufgetreten:\n\n{error_message}"
+        )
+    
+    def _cleanup_publisher_thread(self):
+        """Clean up publisher thread and worker after completion."""
+        self.progress_bar.setVisible(False)
+        self._set_buttons_enabled(True)
+        
+        # Reset references (objects are deleted via deleteLater)
+        self.publisher_thread = None
+        self.publisher_worker = None
+        
+        self._log("Bereit für nächsten Vorgang.")
+    
+    def _on_update_publisher_clicked(self):
+        """Handle update publisher button click."""
+        # Show credentials dialog in update_publisher mode
+        dialog = CredentialsDialog(self, mode="update_publisher")
+        credentials = dialog.get_credentials()
+        
+        if credentials is None:
+            self._log("Publisher-Update abgebrochen.")
+            return
+        
+        username, password, csv_path, use_test_api = credentials
+        
+        # Check if user selected new credentials or loaded saved account
+        credentials_are_new = dialog.is_new_credentials()
+        
+        # Store credentials for second worker (actual update)
+        self._publisher_update_username = username
+        self._publisher_update_password = password
+        self._publisher_update_csv_path = csv_path
+        self._publisher_update_use_test_api = use_test_api
+        self._publisher_update_credentials_are_new = credentials_are_new
+        
+        api_type = "Test-API" if use_test_api else "Produktions-API"
+        self._log(f"Starte Publisher-Update für Benutzer '{username}' ({api_type})...")
+        self._log(f"CSV-Datei: {Path(csv_path).name}")
+        
+        # Disable buttons and show progress
+        self._set_buttons_enabled(False)
+        self.progress_bar.setVisible(True)
+        
+        # Create worker and thread for DRY RUN (validation phase)
+        self.publisher_update_worker = PublisherUpdateWorker(
+            username, password, csv_path, use_test_api, dry_run_only=True, credentials_are_new=credentials_are_new
+        )
+        self.publisher_update_thread = QThread()
+        self.publisher_update_worker.moveToThread(self.publisher_update_thread)
+        
+        # Connect signals
+        self.publisher_update_thread.started.connect(self.publisher_update_worker.run)
+        self.publisher_update_worker.progress_update.connect(self._on_publisher_update_progress)
+        self.publisher_update_worker.validation_update.connect(self._on_publisher_validation_update)
+        self.publisher_update_worker.dry_run_complete.connect(self._on_publisher_dry_run_complete)
+        self.publisher_update_worker.finished.connect(self._on_publisher_update_finished)
+        self.publisher_update_worker.error_occurred.connect(self._on_publisher_update_error)
+        
+        # Clean up after worker finishes
+        self.publisher_update_worker.finished.connect(self.publisher_update_worker.deleteLater)
+        self.publisher_update_worker.finished.connect(self.publisher_update_thread.quit)
+        
+        # Clean up thread when it finishes
+        self.publisher_update_thread.finished.connect(self.publisher_update_thread.deleteLater)
+        self.publisher_update_thread.finished.connect(self._cleanup_publisher_update_thread)
+        
+        # Start the thread
+        self.publisher_update_thread.start()
+    
+    def _on_publisher_update_progress(self, current, total, message):
+        """
+        Handle publisher update progress signal.
+        
+        Args:
+            current: Current DOI number
+            total: Total number of DOIs
+            message: Progress message
+        """
+        self._log(message)
+        
+        # Update progress bar if we have valid numbers
+        if total > 0:
+            self.progress_bar.setMaximum(total)
+            self.progress_bar.setValue(current)
+    
+    def _on_publisher_validation_update(self, message):
+        """
+        Handle publisher validation phase progress signal.
+        
+        Args:
+            message: Validation status message
+        """
+        self._log(message)
+    
+    def _on_publisher_database_update(self, message):
+        """
+        Handle publisher database update progress signal.
+        
+        Args:
+            message: Database update status message
+        """
+        self._log(message)
+    
+    def _on_publisher_datacite_update(self, message):
+        """
+        Handle publisher DataCite update progress signal.
+        
+        Args:
+            message: DataCite update status message
+        """
+        self._log(message)
+    
+    def _on_publisher_dry_run_complete(self, valid_count, invalid_count, validation_results):
+        """
+        Handle publisher dry run validation completion.
+        
+        Args:
+            valid_count: Number of valid DOIs
+            invalid_count: Number of invalid DOIs
+            validation_results: List of validation result dicts
+        """
+        total = valid_count + invalid_count
+        
+        self._log("=" * 60)
+        self._log(f"Dry Run abgeschlossen: {valid_count}/{total} validiert")
+        self._log("=" * 60)
+        
+        # Show validation errors if any
+        if invalid_count > 0:
+            self._log(f"\n[WARNUNG] {invalid_count} DOI(s) sind ungültig:")
+            for result in validation_results:
+                if not result['valid']:
+                    self._log(f"  - {result['doi']}: {result['message']}")
+        
+        # Show dry run results dialog
+        if total == 0:
+            QMessageBox.warning(
+                self,
+                "Keine DOIs gefunden",
+                "Die CSV-Datei enthielt keine DOIs zum Validieren."
+            )
+            return
+        
+        if invalid_count > 0:
+            # Show errors and ask if user wants to continue (show first 10 errors)
+            invalid_results = [r for r in validation_results if not r['valid']]
+            error_items = [f"{r['doi']}: {r['message']}" for r in invalid_results[:10]]
+            error_details = self._format_error_list(error_items, max_items=10, bullet="•")
+            if len(invalid_results) > 10:
+                error_details += f"\n... und {len(invalid_results) - 10} weitere Fehler"
+            
+            reply = QMessageBox.question(
+                self,
+                "Validierung abgeschlossen mit Fehlern",
+                f"Dry Run Ergebnisse:\n\n"
+                f"✓ Gültig: {valid_count}\n"
+                f"✗ Ungültig: {invalid_count}\n\n"
+                f"Erste Fehler:\n{error_details}\n\n"
+                f"Möchtest du nur die {valid_count} gültigen DOIs aktualisieren?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                self._start_actual_publisher_update()
+            else:
+                self._log("Publisher-Update abgebrochen.")
+        else:
+            # All valid - ask for confirmation
+            reply = QMessageBox.question(
+                self,
+                "Validierung erfolgreich",
+                f"Alle {valid_count} DOIs wurden erfolgreich validiert.\n\n"
+                f"Möchtest du jetzt die Publisher-Metadaten bei DataCite aktualisieren?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                self._start_actual_publisher_update()
+            else:
+                self._log("Publisher-Update abgebrochen.")
+    
+    def _start_actual_publisher_update(self):
+        """Start the actual publisher update process (not dry run)."""
+        self._log("\n" + "=" * 60)
+        self._log("Starte ECHTES Update der Publisher-Metadaten...")
+        self._log("=" * 60)
+        
+        # Get credentials from stored instance variables (not from worker which may be deleted)
+        username = self._publisher_update_username
+        password = self._publisher_update_password
+        csv_path = self._publisher_update_csv_path
+        use_test_api = self._publisher_update_use_test_api
+        credentials_are_new = self._publisher_update_credentials_are_new
+        
+        # Disable buttons again
+        self._set_buttons_enabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setMaximum(0)  # Indeterminate
+        
+        # Create new worker with dry_run_only=False
+        self.publisher_update_worker = PublisherUpdateWorker(
+            username, password, csv_path, use_test_api, dry_run_only=False, credentials_are_new=credentials_are_new
+        )
+        self.publisher_update_thread = QThread()
+        self.publisher_update_worker.moveToThread(self.publisher_update_thread)
+        
+        # Connect signals (no dry_run_complete this time)
+        self.publisher_update_thread.started.connect(self.publisher_update_worker.run)
+        self.publisher_update_worker.progress_update.connect(self._on_publisher_update_progress)
+        self.publisher_update_worker.validation_update.connect(self._on_publisher_validation_update)
+        self.publisher_update_worker.database_update.connect(self._on_publisher_database_update)
+        self.publisher_update_worker.datacite_update.connect(self._on_publisher_datacite_update)
+        self.publisher_update_worker.doi_updated.connect(self._on_publisher_doi_updated)
+        self.publisher_update_worker.finished.connect(self._on_publisher_update_finished)
+        self.publisher_update_worker.error_occurred.connect(self._on_publisher_update_error)
+        self.publisher_update_worker.request_save_credentials.connect(self._on_request_save_credentials)
+        
+        # Clean up after worker finishes
+        self.publisher_update_worker.finished.connect(self.publisher_update_worker.deleteLater)
+        self.publisher_update_worker.finished.connect(self.publisher_update_thread.quit)
+        
+        # Clean up thread when it finishes
+        self.publisher_update_thread.finished.connect(self.publisher_update_thread.deleteLater)
+        self.publisher_update_thread.finished.connect(self._cleanup_publisher_update_thread)
+        
+        # Start the thread
+        self.publisher_update_thread.start()
+    
+    def _on_publisher_doi_updated(self, doi, success, message):
+        """
+        Handle individual DOI publisher update result.
+        
+        Args:
+            doi: DOI that was updated
+            success: Whether update was successful
+            message: Result message (may include system status)
+        """
+        # Log all updates with appropriate prefix
+        if success:
+            self._log(f"[OK] {doi}: {message}")
+        else:
+            self._log(f"[FEHLER] {doi}: {message}")
+    
+    def _on_publisher_update_finished(self, success_count, error_count, skipped_count, error_list, skipped_details):
+        """
+        Handle publisher update completion.
+        
+        Args:
+            success_count: Number of successful updates
+            error_count: Number of failed updates
+            skipped_count: Number of skipped DOIs (no changes)
+            error_list: List of error messages
+            skipped_details: List of (doi, reason) tuples for skipped DOIs
+        """
+        total = success_count + skipped_count + error_count
+        
+        self._log("=" * 60)
+        if total > 0:
+            self._log(f"Publisher-Update abgeschlossen: {success_count} erfolgreich, {skipped_count} übersprungen (keine Änderungen), {error_count} fehlgeschlagen")
+        else:
+            self._log("Publisher-Update abgeschlossen")
+        self._log("=" * 60)
+        
+        # Check CSV files (in case user deleted/modified them during update)
+        self._check_csv_files()
+        
+        # Show summary dialog (only if not dry run)
+        if self.publisher_update_worker and not self.publisher_update_worker.dry_run_only:
+            if total == 0:
+                QMessageBox.information(
+                    self,
+                    "Keine Updates",
+                    "Es wurden keine DOIs aktualisiert (möglicherweise waren alle ungültig)."
+                )
+            elif error_count == 0 and skipped_count == 0:
+                QMessageBox.information(
+                    self,
+                    "Update erfolgreich",
+                    f"Alle {success_count} DOIs wurden erfolgreich aktualisiert!"
+                )
+            elif error_count == 0:
+                # Some skipped, none failed
+                QMessageBox.information(
+                    self,
+                    "Update abgeschlossen",
+                    f"✅ Erfolgreich aktualisiert: {success_count}\n"
+                    f"⏭️ Übersprungen (keine Änderungen): {skipped_count}\n\n"
+                    f"Effizienz: {skipped_count} unnötige API-Calls vermieden!"
+                )
+            else:
+                error_details = self._format_error_list(error_list, max_items=10)
+                
+                QMessageBox.warning(
+                    self,
+                    "Update abgeschlossen mit Fehlern",
+                    f"✅ Erfolgreich: {success_count}\n"
+                    f"⏭️ Übersprungen (keine Änderungen): {skipped_count}\n"
+                    f"❌ Fehlgeschlagen: {error_count}\n\n"
+                    f"Erste Fehler:\n{error_details}"
+                )
+            
+            # Create log file for actual updates
+            if total > 0:
+                self._create_publisher_update_log(success_count, skipped_count, error_count, error_list, skipped_details)
+    
+    def _on_publisher_update_error(self, error_message):
+        """
+        Handle critical publisher update error.
+        
+        Args:
+            error_message: Error message
+        """
+        self._log(f"[KRITISCHER FEHLER] {error_message}")
+        
+        QMessageBox.critical(
+            self,
+            "Publisher-Update Fehler",
+            f"Ein kritischer Fehler ist aufgetreten:\n\n{error_message}"
+        )
+    
+    def _cleanup_publisher_update_thread(self):
+        """Clean up publisher update thread and worker after completion."""
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setMaximum(0)  # Reset to indeterminate
+        self._set_buttons_enabled(True)
+        
+        # Reset references (objects are deleted via deleteLater)
+        self.publisher_update_thread = None
+        self.publisher_update_worker = None
+        
+        self._log("Bereit für nächsten Vorgang.")
+    
+    def _create_publisher_update_log(self, success_count, skipped_count, error_count, error_list, skipped_details):
+        """
+        Create a log file with publisher update results.
+        
+        Args:
+            success_count: Number of successful updates
+            skipped_count: Number of skipped DOIs (no changes)
+            error_count: Number of failed updates
+            error_list: List of error messages
+            skipped_details: List of (doi, reason) tuples for skipped DOIs
+        """
+        try:
+            # Check if database sync is enabled (QSettings already imported at module level)
+            settings = QSettings("GFZ", "GROBI")
+            db_enabled = settings.value("database/enabled", False, type=bool)
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_filename = f"publisher_update_log_{timestamp}.txt"
+            log_path = Path(os.getcwd()) / log_filename
+            
+            total = success_count + skipped_count + error_count
+            efficiency_gain = (skipped_count / total * 100) if total > 0 else 0
+            
+            with open(log_path, 'w', encoding='utf-8') as f:
+                f.write("=" * 70 + "\n")
+                f.write("GROBI - Publisher-Metadaten Update Log\n")
+                f.write("=" * 70 + "\n")
+                f.write(f"Datum: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Datenbank-Synchronisation: {'Aktiviert' if db_enabled else 'Deaktiviert'}\n")
+                f.write("\n")
+                f.write("ZUSAMMENFASSUNG:\n")
+                f.write(f"  Gesamt: {total} DOIs\n")
+                f.write(f"  Erfolgreich aktualisiert: {success_count}\n")
+                f.write(f"  Übersprungen (keine Änderungen): {skipped_count}\n")
+                f.write(f"  Fehlgeschlagen: {error_count}\n")
+                f.write("\n")
+                f.write("EFFIZIENZ:\n")
+                f.write(f"  API-Calls vermieden: {skipped_count}/{total} ({efficiency_gain:.1f}%)\n")
+                f.write(f"  Nur DOIs mit tatsächlichen Änderungen wurden aktualisiert\n")
+                
+                if db_enabled:
+                    # Count inconsistency warnings
+                    inconsistencies = [e for e in error_list if "INKONSISTENZ" in e]
+                    if inconsistencies:
+                        f.write(f"\n")
+                        f.write(f"  ⚠️ KRITISCHE INKONSISTENZEN: {len(inconsistencies)}\n")
+                        f.write(f"     (Datenbank erfolgreich, DataCite fehlgeschlagen)\n")
+                
+                f.write("\n")
+                
+                # Detailed list of skipped DOIs
+                if skipped_details:
+                    f.write("=" * 70 + "\n")
+                    f.write("ÜBERSPRUNGENE DOIs (keine Änderungen):\n")
+                    f.write("=" * 70 + "\n")
+                    for doi, reason in skipped_details:
+                        f.write(f"  - {doi}\n")
+                        f.write(f"    Grund: {reason}\n")
+                    f.write("\n")
+                
+                if error_list:
+                    f.write("=" * 70 + "\n")
+                    f.write("FEHLER:\n")
+                    f.write("=" * 70 + "\n")
+                    for error in error_list:
+                        f.write(f"  - {error}\n")
+                else:
+                    f.write("Keine Fehler aufgetreten.\n")
+                
+                if db_enabled:
+                    f.write("\n")
+                    f.write("=" * 70 + "\n")
+                    f.write("DATABASE-FIRST UPDATE PATTERN:\n")
+                    f.write("=" * 70 + "\n")
+                    f.write("1. Datenbank wird ZUERST aktualisiert (sofortiges COMMIT)\n")
+                    f.write("2. DataCite wird DANACH aktualisiert (nur wenn DB erfolgreich)\n")
+                    f.write("3. Bei DataCite-Fehlern wird der Fehler protokolliert\n")
+                    f.write("\n")
+                    f.write("HINWEIS: Falls INKONSISTENZEN auftraten, müssen diese manuell\n")
+                    f.write("         korrigiert werden (Datenbank committed, DataCite failed).\n")
+                
+                f.write("\n")
+                f.write("=" * 70 + "\n")
+            
+            self._log(f"[OK] Log-Datei erstellt: {log_filename}")
+            
+        except Exception as e:
+            self._log(f"[WARNUNG] Log-Datei konnte nicht erstellt werden: {str(e)}")
+    
     def closeEvent(self, event):
         """
         Handle window close event.
@@ -1518,5 +2184,19 @@ class MainWindow(QMainWindow):
                 self.authors_update_worker.stop()
             self.authors_update_thread.quit()
             self.authors_update_thread.wait(3000)  # Wait max 3 seconds
+        
+        # If publisher thread is running, wait for it to finish
+        if self.publisher_thread is not None and self.publisher_thread.isRunning():
+            self._log("Warte auf Abschluss des Publisher-Abrufs...")
+            self.publisher_thread.quit()
+            self.publisher_thread.wait(3000)  # Wait max 3 seconds
+        
+        # If publisher update thread is running, stop worker and wait for it to finish
+        if self.publisher_update_thread is not None and self.publisher_update_thread.isRunning():
+            self._log("Warte auf Abschluss des Publisher-Updates...")
+            if self.publisher_update_worker is not None:
+                self.publisher_update_worker.stop()
+            self.publisher_update_thread.quit()
+            self.publisher_update_thread.wait(3000)  # Wait max 3 seconds
         
         event.accept()

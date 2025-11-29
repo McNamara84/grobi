@@ -5,6 +5,8 @@ from typing import List, Tuple, Dict, Any, Optional
 import requests
 from requests.auth import HTTPBasicAuth
 
+from src.utils.publisher_parser import parse_publisher_from_metadata
+
 
 logger = logging.getLogger(__name__)
 
@@ -696,6 +698,320 @@ class DataCiteClient:
             if response.status_code == 200:
                 logger.info(f"Successfully updated creators for DOI {doi}")
                 return True, f"DOI {doi}: {len(updated_creators)} Creators erfolgreich aktualisiert"
+            
+            elif response.status_code == 401:
+                error_msg = f"Authentifizierung fehlgeschlagen für DOI {doi}"
+                logger.error(f"Authentication failed for DOI update: {doi}")
+                return False, error_msg
+            
+            elif response.status_code == 403:
+                error_msg = f"Keine Berechtigung für DOI {doi} (gehört möglicherweise einem anderen Client)"
+                logger.error(f"Forbidden: No permission to update DOI {doi}")
+                return False, error_msg
+            
+            elif response.status_code == 404:
+                error_msg = f"DOI {doi} nicht gefunden"
+                logger.error(f"DOI not found: {doi}")
+                return False, error_msg
+            
+            elif response.status_code == 422:
+                # Unprocessable Entity - validation error
+                error_msg = f"Validierungsfehler für DOI {doi}: {response.text}"
+                logger.error(f"Validation error for DOI {doi}: {response.text}")
+                return False, error_msg
+            
+            elif response.status_code == 429:
+                error_msg = "Zu viele Anfragen - Rate Limit erreicht"
+                logger.error("Rate limit exceeded during update")
+                return False, error_msg
+            
+            else:
+                error_msg = f"API Fehler (HTTP {response.status_code}): {response.text}"
+                logger.error(f"Unexpected status code {response.status_code} for DOI {doi}: {response.text}")
+                return False, error_msg
+                
+        except requests.exceptions.Timeout:
+            error_msg = f"Zeitüberschreitung bei DOI {doi}"
+            logger.error(f"Timeout updating DOI {doi}")
+            return False, error_msg
+        
+        except requests.exceptions.ConnectionError as e:
+            error_msg = "Verbindungsfehler zur DataCite API"
+            logger.error(f"Connection error during update: {e}")
+            raise NetworkError(error_msg)
+        
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Netzwerkfehler bei DOI {doi}: {str(e)}"
+            logger.error(f"Request exception during update: {e}")
+            raise NetworkError(error_msg)
+
+    # =========================================================================
+    # Publisher Methods (DataCite Schema 4.6)
+    # =========================================================================
+    
+    def fetch_all_dois_with_publisher(self) -> List[Tuple[str, str, str, str, str, str]]:
+        """
+        Fetch all DOIs with publisher information from DataCite API.
+        
+        Returns one row per DOI (each DOI has exactly one publisher).
+        
+        Returns:
+            List of tuples containing:
+            (DOI, Publisher Name, Publisher Identifier, Publisher Identifier Scheme, 
+             Scheme URI, Language)
+            
+        Raises:
+            AuthenticationError: If credentials are invalid
+            NetworkError: If connection to API fails
+            DataCiteAPIError: For other API errors
+        """
+        all_publisher_data = []
+        page_number = 1
+        
+        logger.info(f"Starting to fetch DOIs with publisher for client: {self.username}")
+        
+        while True:
+            try:
+                publisher_data, has_more = self._fetch_page_with_publisher(page_number)
+                all_publisher_data.extend(publisher_data)
+                
+                logger.info(f"Fetched page {page_number}: {len(publisher_data)} publisher entries (Total: {len(all_publisher_data)})")
+                
+                if not has_more:
+                    break
+                    
+                page_number += 1
+                
+            except requests.exceptions.Timeout:
+                error_msg = "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut."
+                logger.error(f"Timeout on page {page_number}")
+                raise DataCiteAPIError(error_msg)
+            
+            except requests.exceptions.ConnectionError as e:
+                error_msg = "Verbindung zur DataCite API fehlgeschlagen. Bitte überprüfe deine Internetverbindung."
+                logger.error(f"Connection error: {e}")
+                raise NetworkError(error_msg)
+            
+            except requests.exceptions.RequestException as e:
+                error_msg = f"Netzwerkfehler bei der Kommunikation mit DataCite: {str(e)}"
+                logger.error(f"Request exception: {e}")
+                raise NetworkError(error_msg)
+        
+        logger.info(f"Successfully fetched {len(all_publisher_data)} publisher entries in total")
+        return all_publisher_data
+    
+    def _fetch_page_with_publisher(self, page_number: int) -> Tuple[List[Tuple[str, str, str, str, str, str]], bool]:
+        """
+        Fetch a single page of DOIs with publisher information from the API.
+        
+        Args:
+            page_number: Page number to fetch (1-indexed)
+            
+        Returns:
+            Tuple of (list of publisher tuples, has_more_pages boolean)
+            Each tuple contains: (DOI, Publisher Name, Publisher Identifier,
+                                 Publisher Identifier Scheme, Scheme URI, Language)
+            
+        Raises:
+            AuthenticationError: If credentials are invalid
+            DataCiteAPIError: For other API errors
+        """
+        url = f"{self.base_url}/dois"
+        params = {
+            "client-id": self.username,
+            "page[size]": self.PAGE_SIZE,
+            "page[number]": page_number
+        }
+        
+        logger.debug(f"Requesting publisher data from: {url} with params: {params}")
+        
+        response = requests.get(
+            url,
+            auth=self.auth,
+            params=params,
+            timeout=self.TIMEOUT,
+            headers={"Accept": "application/vnd.api+json"}
+        )
+        
+        # Handle authentication errors
+        if response.status_code == 401:
+            error_msg = "Anmeldung fehlgeschlagen. Bitte überprüfe deinen Benutzernamen und dein Passwort."
+            logger.error(f"Authentication failed for user: {self.username}")
+            raise AuthenticationError(error_msg)
+        
+        # Handle rate limiting
+        if response.status_code == 429:
+            error_msg = "Zu viele Anfragen. Bitte warte einen Moment und versuche es erneut."
+            logger.error("Rate limit exceeded")
+            raise DataCiteAPIError(error_msg)
+        
+        # Handle other HTTP errors
+        if response.status_code != 200:
+            error_msg = f"DataCite API Fehler (HTTP {response.status_code}): {response.text}"
+            logger.error(f"API error: {response.status_code} - {response.text}")
+            raise DataCiteAPIError(error_msg)
+        
+        # Parse JSON response
+        try:
+            data = response.json()
+        except ValueError as e:
+            error_msg = "Ungültige Antwort von der DataCite API (kein gültiges JSON)."
+            logger.error(f"Invalid JSON response: {e}")
+            raise DataCiteAPIError(error_msg)
+        
+        # Extract DOIs and publisher information
+        publisher_entries = []
+        if "data" in data and isinstance(data["data"], list):
+            for item in data["data"]:
+                try:
+                    doi = item.get("id")
+                    if not doi:
+                        logger.warning("DOI entry without ID, skipping")
+                        continue
+                    
+                    attributes = item.get("attributes", {})
+                    publisher_raw = attributes.get("publisher", "")
+                    
+                    # Parse publisher using shared utility function
+                    parsed = parse_publisher_from_metadata(publisher_raw)
+                    publisher_name = parsed["name"]
+                    publisher_identifier = parsed["publisherIdentifier"]
+                    publisher_identifier_scheme = parsed["publisherIdentifierScheme"]
+                    scheme_uri = parsed["schemeUri"]
+                    lang = parsed["lang"]
+                    
+                    # Skip DOIs without publisher
+                    if not publisher_name:
+                        logger.warning(f"DOI {doi} has no publisher, skipping")
+                        continue
+                    
+                    # Create tuple entry
+                    entry = (
+                        doi,
+                        publisher_name,
+                        publisher_identifier,
+                        publisher_identifier_scheme,
+                        scheme_uri,
+                        lang
+                    )
+                    publisher_entries.append(entry)
+                    
+                except (KeyError, AttributeError, TypeError) as e:
+                    logger.warning(f"Error parsing publisher data for DOI {item.get('id', 'unknown')}: {e}")
+                    continue
+        
+        # Check if there are more pages
+        has_more = False
+        if "links" in data and "next" in data["links"]:
+            has_more = True
+        
+        # Alternative: Check meta information
+        if "meta" in data:
+            meta = data["meta"]
+            page = meta.get("page", page_number)
+            total_pages = meta.get("totalPages", 1)
+            
+            if page < total_pages:
+                has_more = True
+        
+        return publisher_entries, has_more
+    
+    def update_doi_publisher(
+        self, 
+        doi: str, 
+        publisher_data: Dict[str, str],
+        current_metadata: Dict[str, Any]
+    ) -> Tuple[bool, str]:
+        """
+        Update publisher metadata for a specific DOI.
+        
+        This method preserves ALL existing metadata and only updates the publisher.
+        It follows the pattern: GET current metadata → Replace publisher → PUT full metadata.
+        
+        Args:
+            doi: The DOI identifier
+            publisher_data: Dictionary with publisher fields:
+                - name: Publisher name (required)
+                - publisherIdentifier: Identifier (e.g., ROR ID)
+                - publisherIdentifierScheme: Scheme name (e.g., "ROR")
+                - schemeUri: Scheme URI (e.g., "https://ror.org/")
+                - lang: Language code (e.g., "en")
+            current_metadata: Full current metadata from get_doi_metadata()
+            
+        Returns:
+            Tuple of (success: bool, message: str)
+            - (True, "Success message") if update succeeded
+            - (False, "Error message") if update failed
+            
+        Raises:
+            NetworkError: If connection to API fails
+        """
+        url = f"{self.base_url}/dois/{doi}"
+        
+        logger.info(f"Updating publisher for DOI {doi}")
+        
+        # Build publisher object for DataCite API
+        publisher_name = publisher_data.get("name", "")
+        if not publisher_name:
+            error_msg = f"Publisher-Name fehlt für DOI {doi}"
+            logger.error(error_msg)
+            return False, error_msg
+        
+        # Check if we have extended publisher fields
+        publisher_identifier = publisher_data.get("publisherIdentifier", "")
+        publisher_identifier_scheme = publisher_data.get("publisherIdentifierScheme", "")
+        scheme_uri = publisher_data.get("schemeUri", "")
+        lang = publisher_data.get("lang", "")
+        
+        # If we have any extended fields, use object format; otherwise use string
+        if publisher_identifier or publisher_identifier_scheme or scheme_uri or lang:
+            # Extended publisher format (DataCite Schema 4.6)
+            updated_publisher = {"name": publisher_name}
+            if publisher_identifier:
+                updated_publisher["publisherIdentifier"] = publisher_identifier
+            if publisher_identifier_scheme:
+                updated_publisher["publisherIdentifierScheme"] = publisher_identifier_scheme
+            if scheme_uri:
+                updated_publisher["schemeUri"] = scheme_uri
+            if lang:
+                updated_publisher["lang"] = lang
+        else:
+            # Simple string format (legacy compatibility)
+            updated_publisher = publisher_name
+        
+        # Create payload preserving all existing metadata
+        try:
+            payload = {
+                "data": {
+                    "type": "dois",
+                    "attributes": current_metadata["data"]["attributes"].copy()
+                }
+            }
+            # Replace only the publisher
+            payload["data"]["attributes"]["publisher"] = updated_publisher
+            
+        except (KeyError, TypeError) as e:
+            error_msg = f"Fehler beim Erstellen der Payload für DOI {doi}: {str(e)}"
+            logger.error(f"Error building payload: {e}")
+            return False, error_msg
+        
+        # Send PUT request
+        try:
+            response = requests.put(
+                url,
+                auth=self.auth,
+                json=payload,
+                timeout=self.TIMEOUT,
+                headers={
+                    "Content-Type": "application/vnd.api+json",
+                    "Accept": "application/vnd.api+json"
+                }
+            )
+            
+            # Handle different response codes
+            if response.status_code == 200:
+                logger.info(f"Successfully updated publisher for DOI {doi}")
+                return True, f"DOI {doi}: Publisher erfolgreich aktualisiert"
             
             elif response.status_code == 401:
                 error_msg = f"Authentifizierung fehlgeschlagen für DOI {doi}"

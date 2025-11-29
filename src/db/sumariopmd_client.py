@@ -376,6 +376,106 @@ class SumarioPMDClient:
             errors.append(str(e))
             return False, error_msg, errors
     
+    # =========================================================================
+    # Publisher Methods
+    # =========================================================================
+    
+    def get_publisher_for_doi(self, doi: str) -> Optional[str]:
+        """
+        Get the publisher name for a given DOI.
+        
+        Args:
+            doi: DOI string (e.g., "10.5880/GFZ.1.1.2021.001")
+            
+        Returns:
+            Publisher name (str) or None if not found
+            
+        Raises:
+            DatabaseError: If query fails
+        """
+        query = """
+            SELECT publisher 
+            FROM resource 
+            WHERE identifier = %s
+            LIMIT 1
+        """
+        
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(query, (doi,))
+                    result = cursor.fetchone()
+                    
+                    if result:
+                        publisher = result['publisher']
+                        logger.debug(f"Found publisher '{publisher}' for DOI {doi}")
+                        return publisher
+                    else:
+                        logger.warning(f"No resource found for DOI {doi}")
+                        return None
+                        
+        except pymysql.Error as e:
+            logger.error(f"Database error fetching publisher for {doi}: {e}")
+            raise DatabaseError(f"Failed to fetch publisher: {e}") from e
+    
+    def update_publisher(self, doi: str, publisher_name: str) -> Tuple[bool, str]:
+        """
+        Update the publisher name for a DOI in the resource table.
+        
+        Note: The database only stores the publisher name (varchar(255)),
+        not the extended publisher metadata (identifier, scheme, etc.)
+        which are only stored in DataCite.
+        
+        Args:
+            doi: DOI string
+            publisher_name: New publisher name
+            
+        Returns:
+            Tuple of (success: bool, message: str)
+            - (False, message) for validation errors (empty publisher name)
+            - (False, message) if DOI not found in database
+            - (True, message) on successful update
+            - (False, message) if update affected no rows
+            
+        Raises:
+            DatabaseError: Only raised for actual database errors during query execution
+                          (e.g., connection lost, SQL syntax error, constraint violation)
+        """
+        if not publisher_name:
+            return False, "Publisher-Name darf nicht leer sein"
+        
+        # First check if DOI exists
+        resource_id = self.get_resource_id_for_doi(doi)
+        if resource_id is None:
+            return False, f"DOI {doi} nicht in der Datenbank gefunden"
+        
+        query = """
+            UPDATE resource 
+            SET publisher = %s, updated_at = NOW()
+            WHERE identifier = %s
+        """
+        
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(query, (publisher_name, doi))
+                    conn.commit()
+                    
+                    if cursor.rowcount > 0:
+                        message = f"✓ Publisher für DOI {doi} aktualisiert: {publisher_name}"
+                        logger.info(message)
+                        return True, message
+                    else:
+                        message = f"✗ Keine Änderung für DOI {doi}"
+                        logger.warning(message)
+                        return False, message
+                        
+        except pymysql.Error as e:
+            error_msg = f"✗ Database update failed for {doi}: {str(e)}"
+            logger.error(error_msg)
+            raise DatabaseError(error_msg) from e
+    
     def close_pool(self):
         """No-op for PyMySQL (connections are created on demand)."""
         logger.info("Connection cleanup requested (PyMySQL creates connections on demand)")
+
