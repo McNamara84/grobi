@@ -525,7 +525,7 @@ class TestPublisherUpdateWorker:
                 }
         
         mock_client.get_doi_metadata.side_effect = get_metadata_side_effect
-        mock_client.update_doi_publisher.return_value = True
+        mock_client.update_doi_publisher.return_value = (True, "Successfully updated")
         
         finished_results = []
         worker.finished.connect(
