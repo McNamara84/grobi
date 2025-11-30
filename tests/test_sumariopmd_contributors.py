@@ -8,7 +8,6 @@ import pymysql
 from src.db.sumariopmd_client import (
     SumarioPMDClient,
     DatabaseError,
-    TransactionError
 )
 
 
