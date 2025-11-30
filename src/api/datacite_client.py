@@ -1009,27 +1009,37 @@ class DataCiteClient:
                 # ContactInfo is linked to resourceagent, not to a specific role
                 db_contactinfo = db_client.fetch_all_contactinfo_for_resource(resource_id)
                 
-                # Create lookup map: (lastname, firstname) -> contactinfo
-                # For organizational names, use (name, "") as key
+                # Create lookup map with multiple key formats for flexible matching
+                # DB may have: lastname+firstname separate OR only "name" in "Lastname, Firstname" format
                 contactinfo_lookup = {}
                 for db_entry in db_contactinfo:
                     lastname = db_entry.get("lastname", "") or ""
                     firstname = db_entry.get("firstname", "") or ""
                     name = db_entry.get("name", "") or ""
                     
-                    # Try to match by lastname + firstname first
-                    if lastname:
-                        key = (lastname.lower().strip(), firstname.lower().strip())
-                    else:
-                        # Organizational name
-                        key = (name.lower().strip(), "")
-                    
-                    # Store the contactinfo fields
-                    contactinfo_lookup[key] = {
+                    contactinfo_data = {
                         "email": db_entry.get("email", "") or "",
                         "website": db_entry.get("website", "") or "",
                         "position": db_entry.get("position", "") or ""
                     }
+                    
+                    # Key 1: If we have separate lastname/firstname, use those
+                    if lastname:
+                        key = (lastname.lower().strip(), firstname.lower().strip())
+                        contactinfo_lookup[key] = contactinfo_data
+                    
+                    # Key 2: If we have a "name" field, try to parse "Lastname, Firstname" format
+                    if name:
+                        # Also store with full name as key (for organizational names)
+                        contactinfo_lookup[(name.lower().strip(), "")] = contactinfo_data
+                        
+                        # Try to parse "Lastname, Firstname" format
+                        if ", " in name:
+                            parts = name.split(", ", 1)
+                            if len(parts) == 2:
+                                parsed_lastname = parts[0].lower().strip()
+                                parsed_firstname = parts[1].lower().strip()
+                                contactinfo_lookup[(parsed_lastname, parsed_firstname)] = contactinfo_data
                 
                 # Enrich each contributor
                 for idx, row in contributors:
@@ -1038,14 +1048,27 @@ class DataCiteClient:
                     contributor_name = row[1] or ""  # Contributor Name
                     contributor_types = row[8] or ""  # Contributor Types
                     
-                    # Try to find matching contactinfo
-                    key = (family_name.lower().strip(), given_name.lower().strip())
-                    if not family_name:
+                    # Try to find matching contactinfo with multiple key formats
+                    contactinfo = None
+                    
+                    # Try 1: exact match with family_name + given_name
+                    if family_name:
+                        key = (family_name.lower().strip(), given_name.lower().strip())
+                        contactinfo = contactinfo_lookup.get(key)
+                    
+                    # Try 2: match with contributor_name (full name format)
+                    if not contactinfo and contributor_name:
                         key = (contributor_name.lower().strip(), "")
+                        contactinfo = contactinfo_lookup.get(key)
+                        
+                        # Try 3: parse contributor_name if it's "Lastname, Firstname" format
+                        if not contactinfo and ", " in contributor_name:
+                            parts = contributor_name.split(", ", 1)
+                            if len(parts) == 2:
+                                key = (parts[0].lower().strip(), parts[1].lower().strip())
+                                contactinfo = contactinfo_lookup.get(key)
                     
-                    contactinfo = contactinfo_lookup.get(key, {})
-                    
-                    # Only add contactinfo if this is a ContactPerson
+                    # Only add contactinfo if this is a ContactPerson and we found a match
                     if "ContactPerson" in contributor_types and contactinfo:
                         email = contactinfo.get("email", "") or ""
                         website = contactinfo.get("website", "") or ""
