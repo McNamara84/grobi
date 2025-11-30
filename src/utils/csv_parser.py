@@ -538,3 +538,267 @@ class CSVParser:
         
         return publisher_by_doi, warnings
 
+    # Valid ContributorTypes as per DataCite schema
+    VALID_CONTRIBUTOR_TYPES = {
+        "ContactPerson", "DataCollector", "DataCurator", "DataManager",
+        "Distributor", "Editor", "HostingInstitution", "Producer",
+        "ProjectLeader", "ProjectManager", "ProjectMember", "RegistrationAgency",
+        "RegistrationAuthority", "RelatedPerson", "Researcher",
+        "ResearchGroup", "RightsHolder", "Sponsor", "Supervisor",
+        "WorkPackageLeader", "Other",
+        # GFZ-internal type (used in SUMARIOPMD database)
+        "pointOfContact"
+    }
+
+    @staticmethod
+    def parse_contributors_update_csv(filepath: str) -> Tuple[Dict[str, List[Dict]], List[str]]:
+        """
+        Parse CSV file containing DOI and contributor metadata for updates.
+        
+        Expected CSV format:
+        - Header: DOI,Contributor Name,Name Type,Given Name,Family Name,
+                  Name Identifier,Name Identifier Scheme,Scheme URI,
+                  Contributor Types,Affiliation,Affiliation Identifier,
+                  Email,Website,Position
+        - Multiple rows per DOI (one per contributor)
+        - Preserves order of contributors per DOI
+        - ContributorTypes can be comma-separated for multiple types
+        - Email/Website/Position only for ContactPerson (DB only, ignored in DataCite API)
+        
+        Args:
+            filepath: Path to the CSV file
+            
+        Returns:
+            Tuple of:
+            - Dict[DOI, List[ContributorData]]: Contributors grouped by DOI, preserving order
+            - List[str]: Warning messages (non-fatal issues)
+            
+        Raises:
+            CSVParseError: If file cannot be read or has invalid format
+            FileNotFoundError: If file does not exist
+        """
+        file_path = Path(filepath)
+        
+        # Check if file exists
+        if not file_path.exists():
+            raise FileNotFoundError(f"CSV-Datei nicht gefunden: {filepath}")
+        
+        # Check if file is readable
+        if not file_path.is_file():
+            raise CSVParseError(f"Pfad ist keine Datei: {filepath}")
+        
+        logger.info(f"Parsing contributors CSV file: {filepath}")
+        
+        # Use OrderedDict to preserve DOI order
+        contributors_by_doi = OrderedDict()
+        warnings = []
+        
+        # Expected headers (14 columns)
+        expected_headers = [
+            'DOI',
+            'Contributor Name',
+            'Name Type',
+            'Given Name',
+            'Family Name',
+            'Name Identifier',
+            'Name Identifier Scheme',
+            'Scheme URI',
+            'Contributor Types',
+            'Affiliation',
+            'Affiliation Identifier',
+            'Email',
+            'Website',
+            'Position'
+        ]
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as csvfile:
+                reader = csv.DictReader(csvfile)
+                
+                # Validate headers
+                if not reader.fieldnames:
+                    raise CSVParseError("CSV-Datei hat keine Header-Zeile.")
+                
+                # Check if all expected headers are present
+                missing_headers = [h for h in expected_headers if h not in reader.fieldnames]
+                if missing_headers:
+                    raise CSVParseError(
+                        f"CSV-Datei fehlen folgende Header: {', '.join(missing_headers)}. "
+                        f"Erwartet: {', '.join(expected_headers)}"
+                    )
+                
+                # Parse rows
+                for row_num, row in enumerate(reader, start=2):  # Start at 2 (line 1 is header)
+                    # Extract and trim fields
+                    doi = row.get('DOI', '').strip()
+                    contributor_name = row.get('Contributor Name', '').strip()
+                    name_type = row.get('Name Type', '').strip()
+                    given_name = row.get('Given Name', '').strip()
+                    family_name = row.get('Family Name', '').strip()
+                    name_identifier = row.get('Name Identifier', '').strip()
+                    name_identifier_scheme = row.get('Name Identifier Scheme', '').strip()
+                    scheme_uri = row.get('Scheme URI', '').strip()
+                    contributor_types_str = row.get('Contributor Types', '').strip()
+                    affiliation = row.get('Affiliation', '').strip()
+                    affiliation_identifier = row.get('Affiliation Identifier', '').strip()
+                    email = row.get('Email', '').strip()
+                    website = row.get('Website', '').strip()
+                    position = row.get('Position', '').strip()
+                    
+                    # Validate DOI
+                    if not doi:
+                        warnings.append(f"Zeile {row_num}: DOI fehlt - überspringe Zeile")
+                        logger.warning(f"Row {row_num}: Missing DOI")
+                        continue
+                    
+                    if not CSVParser.validate_doi_format(doi):
+                        raise CSVParseError(
+                            f"Zeile {row_num}: Ungültiges DOI-Format '{doi}'. "
+                            "Erwartetes Format: 10.X/..."
+                        )
+                    
+                    # Validate Name Type
+                    if name_type not in ['Personal', 'Organizational', '']:
+                        raise CSVParseError(
+                            f"Zeile {row_num}: Ungültiger Name Type '{name_type}'. "
+                            "Erlaubt: 'Personal' oder 'Organizational'"
+                        )
+                    
+                    # Validate contributor has at least a name
+                    if not contributor_name:
+                        raise CSVParseError(
+                            f"Zeile {row_num}: Contributor Name fehlt für DOI '{doi}'. "
+                            "Jeder Contributor muss mindestens einen Namen haben."
+                        )
+                    
+                    # Validate ContributorTypes (required, can be comma-separated)
+                    if not contributor_types_str:
+                        raise CSVParseError(
+                            f"Zeile {row_num}: Contributor Types fehlt für DOI '{doi}'. "
+                            "Mindestens ein Contributor Type ist erforderlich."
+                        )
+                    
+                    # Parse and validate each contributor type
+                    contributor_types = [ct.strip() for ct in contributor_types_str.split(',')]
+                    invalid_types = [ct for ct in contributor_types if ct not in CSVParser.VALID_CONTRIBUTOR_TYPES]
+                    if invalid_types:
+                        warnings.append(
+                            f"Zeile {row_num}: Unbekannte Contributor Types: {', '.join(invalid_types)}"
+                        )
+                        logger.warning(f"Row {row_num}: Unknown ContributorTypes: {invalid_types}")
+                    
+                    # Validate Personal vs Organizational consistency
+                    if name_type == 'Organizational':
+                        if given_name or family_name:
+                            raise CSVParseError(
+                                f"Zeile {row_num}: Organizational Contributor '{contributor_name}' "
+                                "darf keine Given Name oder Family Name haben."
+                            )
+                    
+                    # Validate ORCID format (if provided)
+                    if name_identifier:
+                        if name_identifier_scheme.upper() == 'ORCID':
+                            if not CSVParser.validate_orcid_format(name_identifier):
+                                warnings.append(
+                                    f"Zeile {row_num}: ORCID-Format möglicherweise ungültig: {name_identifier}"
+                                )
+                                logger.warning(f"Row {row_num}: Invalid ORCID format: {name_identifier}")
+                    
+                    # Validate ContactInfo fields (Email, Website, Position)
+                    # These are only relevant for ContactPerson type
+                    has_contact_info = bool(email or website or position)
+                    is_contact_person = 'ContactPerson' in contributor_types
+                    
+                    if has_contact_info and not is_contact_person:
+                        warnings.append(
+                            f"Zeile {row_num}: Email/Website/Position angegeben, aber "
+                            "ContributorType ist nicht 'ContactPerson'. "
+                            "ContactInfo wird nur für ContactPerson gespeichert."
+                        )
+                        logger.warning(
+                            f"Row {row_num}: ContactInfo provided but not ContactPerson"
+                        )
+                    
+                    # Validate email format if provided
+                    if email and not CSVParser._validate_email_format(email):
+                        warnings.append(
+                            f"Zeile {row_num}: Email-Format möglicherweise ungültig: {email}"
+                        )
+                        logger.warning(f"Row {row_num}: Invalid email format: {email}")
+                    
+                    # Validate website URL format if provided
+                    if website and not CSVParser.validate_url_format(website):
+                        warnings.append(
+                            f"Zeile {row_num}: Website-URL möglicherweise ungültig: {website}"
+                        )
+                        logger.warning(f"Row {row_num}: Invalid website URL: {website}")
+                    
+                    # Build contributor data structure
+                    contributor_data = {
+                        'name': contributor_name,
+                        'nameType': name_type if name_type else 'Personal',  # Default to Personal
+                        'givenName': given_name,
+                        'familyName': family_name,
+                        'nameIdentifier': name_identifier,
+                        'nameIdentifierScheme': name_identifier_scheme,
+                        'schemeUri': scheme_uri,
+                        'contributorTypes': contributor_types,  # List of types
+                        'affiliation': affiliation,
+                        'affiliationIdentifier': affiliation_identifier,
+                        # ContactInfo (DB only)
+                        'email': email,
+                        'website': website,
+                        'position': position
+                    }
+                    
+                    # Add to contributors list for this DOI (preserving order)
+                    if doi not in contributors_by_doi:
+                        contributors_by_doi[doi] = []
+                    
+                    contributors_by_doi[doi].append(contributor_data)
+                    logger.debug(f"Parsed contributor for {doi}: {contributor_name}")
+        
+        except csv.Error as e:
+            raise CSVParseError(f"Fehler beim Lesen der CSV-Datei: {str(e)}")
+        
+        except UnicodeDecodeError:
+            raise CSVParseError(
+                "CSV-Datei konnte nicht gelesen werden. "
+                "Stelle sicher, dass die Datei UTF-8 kodiert ist."
+            )
+        
+        if not contributors_by_doi:
+            raise CSVParseError(
+                "Keine gültigen Contributor-Daten in der CSV-Datei gefunden. "
+                "Stelle sicher, dass die Datei mindestens eine Datenzeile enthält."
+            )
+        
+        total_contributors = sum(len(contribs) for contribs in contributors_by_doi.values())
+        logger.info(
+            f"Successfully parsed {len(contributors_by_doi)} DOIs with "
+            f"{total_contributors} contributors from CSV"
+        )
+        
+        return contributors_by_doi, warnings
+
+    @staticmethod
+    def _validate_email_format(email: str) -> bool:
+        """
+        Validate email format (basic validation).
+        
+        Args:
+            email: Email string to validate
+            
+        Returns:
+            True if email format is valid, False otherwise
+        """
+        if not email:
+            return False
+        
+        # Basic email pattern: something@something.something
+        email_pattern = re.compile(
+            r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        )
+        
+        return bool(email_pattern.match(email))
+
