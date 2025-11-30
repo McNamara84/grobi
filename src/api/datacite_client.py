@@ -968,8 +968,8 @@ class DataCiteClient:
         Enrich contributor data from DataCite API with database information.
         
         For each contributor that is a ContactPerson, fetch Email, Website, and Position
-        from the SUMARIOPMD database. Other fields (Affiliation, Affiliation Identifier)
-        are not stored separately in the database and remain empty.
+        from the SUMARIOPMD database. ContactInfo is linked to resourceagents regardless
+        of their role, so we fetch all contactinfo and match by name.
         
         Args:
             contributor_data: List of 14-tuples from fetch_all_dois_with_contributors()
@@ -1005,18 +1005,17 @@ class DataCiteClient:
                         enriched_data.append((idx, row))
                     continue
                 
-                # Fetch all contributors from DB for this resource
-                db_contributors = db_client.fetch_contributors_for_resource(resource_id)
+                # Fetch ALL contactinfo from DB for this resource (regardless of role)
+                # ContactInfo is linked to resourceagent, not to a specific role
+                db_contactinfo = db_client.fetch_all_contactinfo_for_resource(resource_id)
                 
                 # Create lookup map: (lastname, firstname) -> contactinfo
                 # For organizational names, use (name, "") as key
-                # DB returns: lastname, firstname, name, roles (as comma-separated string), email, website, position
                 contactinfo_lookup = {}
-                for db_contrib in db_contributors:
-                    # DB columns: lastname, firstname (not family_name, given_name)
-                    lastname = db_contrib.get("lastname", "") or ""
-                    firstname = db_contrib.get("firstname", "") or ""
-                    name = db_contrib.get("name", "") or ""
+                for db_entry in db_contactinfo:
+                    lastname = db_entry.get("lastname", "") or ""
+                    firstname = db_entry.get("firstname", "") or ""
+                    name = db_entry.get("name", "") or ""
                     
                     # Try to match by lastname + firstname first
                     if lastname:
@@ -1025,15 +1024,12 @@ class DataCiteClient:
                         # Organizational name
                         key = (name.lower().strip(), "")
                     
-                    # roles is a comma-separated string from DB, check if ContactPerson is included
-                    roles_str = db_contrib.get("roles", "") or ""
-                    if "ContactPerson" in roles_str:
-                        # Store the contactinfo fields directly
-                        contactinfo_lookup[key] = {
-                            "email": db_contrib.get("email", "") or "",
-                            "website": db_contrib.get("website", "") or "",
-                            "position": db_contrib.get("position", "") or ""
-                        }
+                    # Store the contactinfo fields
+                    contactinfo_lookup[key] = {
+                        "email": db_entry.get("email", "") or "",
+                        "website": db_entry.get("website", "") or "",
+                        "position": db_entry.get("position", "") or ""
+                    }
                 
                 # Enrich each contributor
                 for idx, row in contributors:

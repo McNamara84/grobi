@@ -500,6 +500,58 @@ class SumarioPMDClient:
     # Contributor Methods (non-Creator roles)
     # =========================================================================
     
+    def fetch_all_contactinfo_for_resource(self, resource_id: int) -> List[Dict[str, Any]]:
+        """
+        Fetch all ContactInfo data for a resource, regardless of role.
+        
+        This retrieves contactinfo for ALL resourceagents (Creators and Contributors alike).
+        ContactInfo is linked to the resourceagent, not to a specific role.
+        
+        Args:
+            resource_id: Resource ID from resource table
+            
+        Returns:
+            List of dictionaries with keys:
+            - firstname: str
+            - lastname: str
+            - name: str (full "Lastname, Firstname" format)
+            - email: str or None
+            - website: str or None
+            - position: str or None
+            
+        Raises:
+            DatabaseError: If query fails
+        """
+        query = """
+            SELECT 
+                ra.firstname,
+                ra.lastname,
+                ra.name,
+                ci.email,
+                ci.website,
+                ci.position
+            FROM resourceagent ra
+            INNER JOIN contactinfo ci 
+                ON ci.resourceagent_resource_id = ra.resource_id 
+                AND ci.resourceagent_order = ra.order
+            WHERE ra.resource_id = %s
+                AND (ci.email IS NOT NULL OR ci.website IS NOT NULL OR ci.position IS NOT NULL)
+            ORDER BY ra.order ASC
+        """
+        
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(query, (resource_id,))
+                    results = cursor.fetchall()
+                    
+                    logger.info(f"Fetched {len(results)} contactinfo entries for resource_id {resource_id}")
+                    return results
+                    
+        except pymysql.Error as e:
+            logger.error(f"Database error fetching contactinfo for resource_id {resource_id}: {e}")
+            raise DatabaseError(f"Failed to fetch contactinfo: {e}") from e
+    
     def fetch_contributors_for_resource(self, resource_id: int) -> List[Dict[str, Any]]:
         """
         Fetch all Contributors (non-Creator roles) for a resource.
