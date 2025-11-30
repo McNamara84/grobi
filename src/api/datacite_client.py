@@ -905,21 +905,36 @@ class DataCiteClient:
                         family_name = contributor.get("familyName", "")
                         contributor_type = contributor.get("contributorType", "")
                         
-                        # Infer nameType if not provided by DataCite
-                        # Personal: has givenName or familyName
-                        # Organizational: only has name, no givenName/familyName
-                        if not name_type:
-                            if given_name or family_name:
-                                name_type = "Personal"
-                                logger.debug(f"Inferred nameType 'Personal' for '{contributor_name}' (has given/family name)")
-                            else:
-                                name_type = "Organizational"
-                                logger.debug(f"Inferred nameType 'Organizational' for '{contributor_name}' (no given/family name)")
-                        
                         # Default contributorType to "Other" if not provided
                         if not contributor_type:
                             contributor_type = "Other"
                             logger.debug(f"Using default contributorType 'Other' for '{contributor_name}'")
+                        
+                        # ContributorTypes that are ALWAYS organizations (never persons)
+                        ORGANIZATIONAL_CONTRIBUTOR_TYPES = {
+                            "HostingInstitution",
+                            "DistributionCenter",
+                            "RegistrationAgency",
+                            "RegistrationAuthority",
+                            "ResearchGroup",
+                            "Sponsor",
+                            "Funder",
+                        }
+                        
+                        # Infer nameType if not provided by DataCite
+                        if not name_type:
+                            # First check: ContributorType implies Organization
+                            if contributor_type in ORGANIZATIONAL_CONTRIBUTOR_TYPES:
+                                name_type = "Organizational"
+                                logger.debug(f"Inferred nameType 'Organizational' for '{contributor_name}' (contributorType={contributor_type})")
+                            # Second check: has givenName or familyName -> Personal
+                            elif given_name or family_name:
+                                name_type = "Personal"
+                                logger.debug(f"Inferred nameType 'Personal' for '{contributor_name}' (has given/family name)")
+                            # Fallback: no given/family name -> Organizational
+                            else:
+                                name_type = "Organizational"
+                                logger.debug(f"Inferred nameType 'Organizational' for '{contributor_name}' (no given/family name)")
                         
                         # Extract name identifier if present (ORCID, ROR, ISNI)
                         name_identifier = ""
