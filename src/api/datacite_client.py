@@ -746,6 +746,423 @@ class DataCiteClient:
             raise NetworkError(error_msg)
 
     # =========================================================================
+    # Contributor Methods (DataCite Schema 4.6)
+    # =========================================================================
+    
+    # Valid DataCite ContributorTypes
+    VALID_CONTRIBUTOR_TYPES = [
+        "ContactPerson", "DataCollector", "DataCurator", "DataManager",
+        "Distributor", "Editor", "HostingInstitution", "Producer",
+        "ProjectLeader", "ProjectManager", "ProjectMember",
+        "RegistrationAgency", "RegistrationAuthority", "RelatedPerson",
+        "Researcher", "ResearchGroup", "RightsHolder", "Sponsor",
+        "Supervisor", "Translator", "WorkPackageLeader", "Other"
+    ]
+    
+    def fetch_all_dois_with_contributors(self) -> List[Tuple[str, str, str, str, str, str, str, str, str]]:
+        """
+        Fetch all DOIs with contributor information from DataCite API.
+        
+        Returns one row per contributor, so a DOI with multiple contributors will appear multiple times.
+        Each contributor may have multiple contributorTypes, which are returned as comma-separated list.
+        Only ORCID/ROR/ISNI identifiers are included.
+        
+        Returns:
+            List of tuples containing:
+            (DOI, Contributor Name, Name Type, Given Name, Family Name, 
+             Name Identifier, Name Identifier Scheme, Scheme URI, Contributor Types)
+            
+        Raises:
+            AuthenticationError: If credentials are invalid
+            NetworkError: If connection to API fails
+            DataCiteAPIError: For other API errors
+        """
+        all_contributor_data = []
+        page_number = 1
+        
+        logger.info(f"Starting to fetch DOIs with contributors for client: {self.username}")
+        
+        while True:
+            try:
+                contributor_data, has_more = self._fetch_page_with_contributors(page_number)
+                all_contributor_data.extend(contributor_data)
+                
+                logger.info(f"Fetched page {page_number}: {len(contributor_data)} contributor entries (Total: {len(all_contributor_data)})")
+                
+                if not has_more:
+                    break
+                    
+                page_number += 1
+                
+            except requests.exceptions.Timeout:
+                error_msg = "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut."
+                logger.error(f"Timeout on page {page_number}")
+                raise DataCiteAPIError(error_msg)
+            
+            except requests.exceptions.ConnectionError as e:
+                error_msg = "Verbindung zur DataCite API fehlgeschlagen. Bitte überprüfe deine Internetverbindung."
+                logger.error(f"Connection error: {e}")
+                raise NetworkError(error_msg)
+            
+            except requests.exceptions.RequestException as e:
+                error_msg = f"Netzwerkfehler bei der Kommunikation mit DataCite: {str(e)}"
+                logger.error(f"Request exception: {e}")
+                raise NetworkError(error_msg)
+        
+        logger.info(f"Successfully fetched {len(all_contributor_data)} contributor entries in total")
+        return all_contributor_data
+    
+    def _fetch_page_with_contributors(self, page_number: int) -> Tuple[List[Tuple[str, str, str, str, str, str, str, str, str]], bool]:
+        """
+        Fetch a single page of DOIs with contributor information from the API.
+        
+        Args:
+            page_number: Page number to fetch (1-indexed)
+            
+        Returns:
+            Tuple of (list of contributor tuples, has_more_pages boolean)
+            Each tuple contains: (DOI, Contributor Name, Name Type, Given Name, Family Name,
+                                 Name Identifier, Name Identifier Scheme, Scheme URI, Contributor Types)
+            
+        Raises:
+            AuthenticationError: If credentials are invalid
+            DataCiteAPIError: For other API errors
+        """
+        url = f"{self.base_url}/dois"
+        params = {
+            "client-id": self.username,
+            "page[size]": self.PAGE_SIZE,
+            "page[number]": page_number
+        }
+        
+        logger.debug(f"Requesting contributors from: {url} with params: {params}")
+        
+        response = requests.get(
+            url,
+            auth=self.auth,
+            params=params,
+            timeout=self.TIMEOUT,
+            headers={"Accept": "application/vnd.api+json"}
+        )
+        
+        # Handle authentication errors
+        if response.status_code == 401:
+            error_msg = "Anmeldung fehlgeschlagen. Bitte überprüfe deinen Benutzernamen und dein Passwort."
+            logger.error(f"Authentication failed for user: {self.username}")
+            raise AuthenticationError(error_msg)
+        
+        # Handle rate limiting
+        if response.status_code == 429:
+            error_msg = "Zu viele Anfragen. Bitte warte einen Moment und versuche es erneut."
+            logger.error("Rate limit exceeded")
+            raise DataCiteAPIError(error_msg)
+        
+        # Handle other HTTP errors
+        if response.status_code != 200:
+            error_msg = f"DataCite API Fehler (HTTP {response.status_code}): {response.text}"
+            logger.error(f"API error: {response.status_code} - {response.text}")
+            raise DataCiteAPIError(error_msg)
+        
+        # Parse JSON response
+        try:
+            data = response.json()
+        except ValueError as e:
+            error_msg = "Ungültige Antwort von der DataCite API (kein gültiges JSON)."
+            logger.error(f"Invalid JSON response: {e}")
+            raise DataCiteAPIError(error_msg)
+        
+        # Extract DOIs and contributor information
+        contributor_entries = []
+        if "data" in data and isinstance(data["data"], list):
+            for item in data["data"]:
+                try:
+                    doi = item.get("id")
+                    if not doi:
+                        logger.warning("DOI entry without ID, skipping")
+                        continue
+                    
+                    attributes = item.get("attributes", {})
+                    contributors = attributes.get("contributors", [])
+                    
+                    # Skip DOIs without contributors
+                    if not contributors:
+                        continue
+                    
+                    # Process each contributor
+                    for contributor in contributors:
+                        contributor_name = contributor.get("name", "")
+                        name_type = contributor.get("nameType", "")
+                        given_name = contributor.get("givenName", "")
+                        family_name = contributor.get("familyName", "")
+                        contributor_type = contributor.get("contributorType", "")
+                        
+                        # Extract name identifier if present (ORCID, ROR, ISNI)
+                        name_identifier = ""
+                        name_identifier_scheme = ""
+                        scheme_uri = ""
+                        
+                        name_identifiers = contributor.get("nameIdentifiers", [])
+                        for identifier in name_identifiers:
+                            scheme = identifier.get("nameIdentifierScheme", "")
+                            if scheme.upper() in ["ORCID", "ROR", "ISNI"]:
+                                name_identifier = identifier.get("nameIdentifier", "")
+                                name_identifier_scheme = identifier.get("nameIdentifierScheme", "")
+                                scheme_uri = identifier.get("schemeUri", "")
+                                break  # Only take the first valid identifier
+                        
+                        # Create tuple entry
+                        entry = (
+                            doi,
+                            contributor_name,
+                            name_type,
+                            given_name,
+                            family_name,
+                            name_identifier,
+                            name_identifier_scheme,
+                            scheme_uri,
+                            contributor_type  # Single type from DataCite
+                        )
+                        contributor_entries.append(entry)
+                        
+                except (KeyError, AttributeError, TypeError) as e:
+                    logger.warning(f"Error parsing contributor data for DOI {item.get('id', 'unknown')}: {e}")
+                    continue
+        
+        # Check if there are more pages
+        has_more = False
+        if "links" in data and "next" in data["links"]:
+            has_more = True
+        
+        # Alternative: Check meta information
+        if "meta" in data:
+            meta = data["meta"]
+            page = meta.get("page", page_number)
+            total_pages = meta.get("totalPages", 1)
+            
+            if page < total_pages:
+                has_more = True
+        
+        return contributor_entries, has_more
+    
+    def validate_contributors_match(self, doi: str, csv_contributors: List[Dict[str, Any]]) -> Tuple[bool, str]:
+        """
+        Validate that CSV contributors match the current DataCite metadata.
+        
+        This is the "dry run" validation that checks:
+        - Same number of contributors
+        - Contributors exist in DataCite
+        
+        Args:
+            doi: The DOI identifier
+            csv_contributors: List of contributor dictionaries from CSV
+                             (in the order they appear in the CSV)
+            
+        Returns:
+            Tuple of (is_valid: bool, message: str)
+            - (True, "Success message") if validation passes
+            - (False, "Error message") if validation fails
+        """
+        logger.info(f"Validating contributors for DOI {doi}")
+        
+        # Fetch current metadata
+        try:
+            metadata = self.get_doi_metadata(doi)
+        except (AuthenticationError, NetworkError, DataCiteAPIError) as e:
+            return False, f"Fehler beim Abrufen der Metadaten: {str(e)}"
+        
+        if metadata is None:
+            return False, f"DOI {doi} nicht gefunden oder nicht erreichbar"
+        
+        # Extract current contributors from metadata
+        try:
+            current_contributors = metadata.get("data", {}).get("attributes", {}).get("contributors", [])
+        except (KeyError, AttributeError) as e:
+            logger.error(f"Error extracting contributors from metadata: {e}")
+            return False, f"Ungültige Metadatenstruktur für DOI {doi}"
+        
+        # Check if contributor counts match
+        if len(current_contributors) != len(csv_contributors):
+            return False, (
+                f"DOI {doi}: Anzahl der Contributors stimmt nicht überein "
+                f"(DataCite: {len(current_contributors)}, CSV: {len(csv_contributors)}). "
+                f"Contributors dürfen nicht hinzugefügt oder entfernt werden."
+            )
+        
+        # If no contributors in both, that's valid (though unusual)
+        if len(current_contributors) == 0:
+            logger.info(f"DOI {doi} has no contributors in DataCite or CSV")
+            return True, f"DOI {doi}: Keine Contributors vorhanden"
+        
+        logger.info(f"DOI {doi}: Validation passed ({len(current_contributors)} contributors)")
+        return True, f"DOI {doi}: {len(current_contributors)} Contributors validiert"
+    
+    def update_doi_contributors(
+        self, 
+        doi: str, 
+        new_contributors: List[Dict[str, Any]], 
+        current_metadata: Dict[str, Any]
+    ) -> Tuple[bool, str]:
+        """
+        Update contributor metadata for a specific DOI.
+        
+        This method preserves ALL existing metadata and only updates the contributors array.
+        It follows the pattern: GET current metadata → Replace contributors → PUT full metadata.
+        
+        Note: Email/Website/Position are NOT sent to DataCite (only stored in local DB).
+        Affiliations are preserved from current metadata and not modified.
+        
+        Args:
+            doi: The DOI identifier
+            new_contributors: List of contributor dictionaries with updated data
+            current_metadata: Full current metadata from get_doi_metadata()
+            
+        Returns:
+            Tuple of (success: bool, message: str)
+            - (True, "Success message") if update succeeded
+            - (False, "Error message") if update failed
+            
+        Raises:
+            NetworkError: If connection to API fails
+        """
+        url = f"{self.base_url}/dois/{doi}"
+        
+        logger.info(f"Updating contributors for DOI {doi}")
+        
+        # Get current contributors to preserve affiliations
+        try:
+            current_contributors = current_metadata.get("data", {}).get("attributes", {}).get("contributors", [])
+        except (KeyError, AttributeError):
+            current_contributors = []
+        
+        # Build new contributors array from CSV data
+        updated_contributors = []
+        for i, contributor_data in enumerate(new_contributors):
+            contributor_obj = {
+                "name": contributor_data.get("name", ""),
+                "nameType": contributor_data.get("nameType", "Personal")
+            }
+            
+            # Add contributorType (required for contributors)
+            # Handle comma-separated contributor types - use first one for DataCite
+            contributor_types = contributor_data.get("contributorTypes", "")
+            if contributor_types:
+                # Take first type for DataCite (DataCite only supports one type per contributor entry)
+                first_type = contributor_types.split(",")[0].strip()
+                if first_type in self.VALID_CONTRIBUTOR_TYPES:
+                    contributor_obj["contributorType"] = first_type
+                else:
+                    contributor_obj["contributorType"] = "Other"
+            else:
+                contributor_obj["contributorType"] = "Other"
+            
+            # Add given/family names if present (only for Personal contributors)
+            given_name = contributor_data.get("givenName", "")
+            family_name = contributor_data.get("familyName", "")
+            
+            if contributor_obj["nameType"] == "Personal":
+                if given_name:
+                    contributor_obj["givenName"] = given_name
+                if family_name:
+                    contributor_obj["familyName"] = family_name
+            
+            # Add name identifier if present
+            name_identifier = contributor_data.get("nameIdentifier", "")
+            if name_identifier:
+                name_identifier_scheme = contributor_data.get("nameIdentifierScheme", "ORCID")
+                scheme_uri = contributor_data.get("schemeUri", "https://orcid.org")
+                
+                contributor_obj["nameIdentifiers"] = [{
+                    "nameIdentifier": name_identifier,
+                    "nameIdentifierScheme": name_identifier_scheme,
+                    "schemeUri": scheme_uri
+                }]
+            
+            # Preserve affiliations from current metadata if available
+            if i < len(current_contributors) and "affiliation" in current_contributors[i]:
+                contributor_obj["affiliation"] = current_contributors[i]["affiliation"]
+            
+            updated_contributors.append(contributor_obj)
+        
+        # Create payload preserving all existing metadata
+        try:
+            payload = {
+                "data": {
+                    "type": "dois",
+                    "attributes": current_metadata["data"]["attributes"].copy()
+                }
+            }
+            # Replace only the contributors array
+            payload["data"]["attributes"]["contributors"] = updated_contributors
+            
+        except (KeyError, TypeError) as e:
+            error_msg = f"Fehler beim Erstellen der Payload für DOI {doi}: {str(e)}"
+            logger.error(f"Error building payload: {e}")
+            return False, error_msg
+        
+        # Send PUT request
+        try:
+            response = requests.put(
+                url,
+                auth=self.auth,
+                json=payload,
+                timeout=self.TIMEOUT,
+                headers={
+                    "Content-Type": "application/vnd.api+json",
+                    "Accept": "application/vnd.api+json"
+                }
+            )
+            
+            # Handle different response codes
+            if response.status_code == 200:
+                logger.info(f"Successfully updated contributors for DOI {doi}")
+                return True, f"DOI {doi}: {len(updated_contributors)} Contributors erfolgreich aktualisiert"
+            
+            elif response.status_code == 401:
+                error_msg = f"Authentifizierung fehlgeschlagen für DOI {doi}"
+                logger.error(f"Authentication failed for DOI update: {doi}")
+                return False, error_msg
+            
+            elif response.status_code == 403:
+                error_msg = f"Keine Berechtigung für DOI {doi} (gehört möglicherweise einem anderen Client)"
+                logger.error(f"Forbidden: No permission to update DOI {doi}")
+                return False, error_msg
+            
+            elif response.status_code == 404:
+                error_msg = f"DOI {doi} nicht gefunden"
+                logger.error(f"DOI not found: {doi}")
+                return False, error_msg
+            
+            elif response.status_code == 422:
+                # Unprocessable Entity - validation error
+                error_msg = f"Validierungsfehler für DOI {doi}: {response.text}"
+                logger.error(f"Validation error for DOI {doi}: {response.text}")
+                return False, error_msg
+            
+            elif response.status_code == 429:
+                error_msg = "Zu viele Anfragen - Rate Limit erreicht"
+                logger.error("Rate limit exceeded during update")
+                return False, error_msg
+            
+            else:
+                error_msg = f"API Fehler (HTTP {response.status_code}): {response.text}"
+                logger.error(f"Unexpected status code {response.status_code} for DOI {doi}: {response.text}")
+                return False, error_msg
+                
+        except requests.exceptions.Timeout:
+            error_msg = f"Zeitüberschreitung bei DOI {doi}"
+            logger.error(f"Timeout updating DOI {doi}")
+            return False, error_msg
+        
+        except requests.exceptions.ConnectionError as e:
+            error_msg = "Verbindungsfehler zur DataCite API"
+            logger.error(f"Connection error during update: {e}")
+            raise NetworkError(error_msg)
+        
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Netzwerkfehler bei DOI {doi}: {str(e)}"
+            logger.error(f"Request exception during update: {e}")
+            raise NetworkError(error_msg)
+    # =========================================================================
     # Publisher Methods (DataCite Schema 4.6)
     # =========================================================================
     
