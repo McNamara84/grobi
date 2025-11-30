@@ -921,17 +921,46 @@ class DataCiteClient:
                             "Funder",
                         }
                         
-                        # Infer nameType if not provided by DataCite
-                        if not name_type:
-                            # First check: ContributorType implies Organization
-                            if contributor_type in ORGANIZATIONAL_CONTRIBUTOR_TYPES:
+                        # ContributorTypes that are ALWAYS persons (never organizations)
+                        PERSONAL_CONTRIBUTOR_TYPES = {
+                            "ContactPerson",
+                            "DataCollector",
+                            "DataCurator",
+                            "DataManager",
+                            "Editor",
+                            "Producer",
+                            "ProjectLeader",
+                            "ProjectManager",
+                            "ProjectMember",
+                            "Researcher",
+                            "RightsHolder",
+                            "Supervisor",
+                            "WorkPackageLeader",
+                        }
+                        
+                        # Determine nameType - contributorType takes precedence over DataCite's nameType
+                        # because DataCite often returns incorrect/inconsistent nameType values
+                        if contributor_type in ORGANIZATIONAL_CONTRIBUTOR_TYPES:
+                            # These roles are ALWAYS organizations - override any incorrect nameType
+                            if name_type != "Organizational":
+                                if name_type:
+                                    logger.warning(f"Overriding incorrect nameType '{name_type}' to 'Organizational' for '{contributor_name}' (contributorType={contributor_type})")
                                 name_type = "Organizational"
-                                logger.debug(f"Inferred nameType 'Organizational' for '{contributor_name}' (contributorType={contributor_type})")
-                            # Second check: has givenName or familyName -> Personal
-                            elif given_name or family_name:
+                                # Clear given/family name for organizations (they shouldn't have them)
+                                given_name = ""
+                                family_name = ""
+                        elif contributor_type in PERSONAL_CONTRIBUTOR_TYPES:
+                            # These roles are ALWAYS persons - override any incorrect nameType
+                            if name_type != "Personal":
+                                if name_type:
+                                    logger.warning(f"Overriding incorrect nameType '{name_type}' to 'Personal' for '{contributor_name}' (contributorType={contributor_type})")
+                                name_type = "Personal"
+                        elif not name_type:
+                            # For ambiguous contributorTypes (e.g., "Other", "RelatedPerson"), 
+                            # infer from givenName/familyName presence
+                            if given_name or family_name:
                                 name_type = "Personal"
                                 logger.debug(f"Inferred nameType 'Personal' for '{contributor_name}' (has given/family name)")
-                            # Fallback: no given/family name -> Organizational
                             else:
                                 name_type = "Organizational"
                                 logger.debug(f"Inferred nameType 'Organizational' for '{contributor_name}' (no given/family name)")
