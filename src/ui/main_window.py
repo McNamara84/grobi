@@ -245,6 +245,44 @@ class DOIContributorFetchWorker(QObject):
                 api_type = "test" if self.use_test_api else "production"
                 self.request_save_credentials.emit(self.username, self.password, api_type)
             
+            # Try to enrich with database data if DB is enabled and credentials are saved
+            if contributor_data:
+                try:
+                    from PySide6.QtCore import QSettings
+                    from src.utils.credential_manager import load_db_credentials
+                    from src.db.sumariopmd_client import SumariopmdClient
+                    
+                    settings = QSettings("GFZ", "GROBI")
+                    db_enabled = settings.value("database/enabled", False, type=bool)
+                    
+                    if db_enabled:
+                        db_creds = load_db_credentials()
+                        if db_creds:
+                            self.progress.emit("ContactInfo aus Datenbank wird abgerufen...")
+                            
+                            db_client = SumariopmdClient(
+                                host=db_creds['host'],
+                                user=db_creds['username'],
+                                password=db_creds['password'],
+                                database=db_creds['database']
+                            )
+                            db_client.connect()
+                            
+                            contributor_data = DataCiteClient.enrich_contributors_with_db_data(
+                                contributor_data, db_client
+                            )
+                            
+                            db_client.disconnect()
+                            self.progress.emit("ContactInfo erfolgreich hinzugefügt")
+                        else:
+                            self.progress.emit("[INFO] Keine DB-Zugangsdaten gespeichert - ContactInfo nicht verfügbar")
+                    else:
+                        self.progress.emit("[INFO] Datenbank-Synchronisation deaktiviert - ContactInfo nicht verfügbar")
+                        
+                except Exception as db_error:
+                    # Log but don't fail - continue without DB enrichment
+                    self.progress.emit(f"[WARNUNG] ContactInfo konnte nicht geladen werden: {str(db_error)}")
+            
             # Count unique DOIs for better user feedback
             unique_dois = len(set(row[0] for row in contributor_data))
             self.progress.emit(f"[OK] {unique_dois} DOIs mit {len(contributor_data)} Contributors erfolgreich abgerufen")

@@ -759,7 +759,7 @@ class DataCiteClient:
         "Supervisor", "Translator", "WorkPackageLeader", "Other"
     ]
     
-    def fetch_all_dois_with_contributors(self) -> List[Tuple[str, str, str, str, str, str, str, str, str]]:
+    def fetch_all_dois_with_contributors(self) -> List[Tuple[str, str, str, str, str, str, str, str, str, str, str, str, str, str]]:
         """
         Fetch all DOIs with contributor information from DataCite API.
         
@@ -767,10 +767,15 @@ class DataCiteClient:
         Each contributor may have multiple contributorTypes, which are returned as comma-separated list.
         Only ORCID/ROR/ISNI identifiers are included.
         
+        The returned tuple includes placeholders for database-only fields (Affiliation, Affiliation Identifier,
+        Email, Website, Position) which are empty when fetched from DataCite.
+        These can be enriched with database data using enrich_contributors_with_db_data().
+        
         Returns:
-            List of tuples containing:
+            List of 14-tuples containing:
             (DOI, Contributor Name, Name Type, Given Name, Family Name, 
-             Name Identifier, Name Identifier Scheme, Scheme URI, Contributor Types)
+             Name Identifier, Name Identifier Scheme, Scheme URI, Contributor Types,
+             Affiliation, Affiliation Identifier, Email, Website, Position)
             
         Raises:
             AuthenticationError: If credentials are invalid
@@ -812,7 +817,7 @@ class DataCiteClient:
         logger.info(f"Successfully fetched {len(all_contributor_data)} contributor entries in total")
         return all_contributor_data
     
-    def _fetch_page_with_contributors(self, page_number: int) -> Tuple[List[Tuple[str, str, str, str, str, str, str, str, str]], bool]:
+    def _fetch_page_with_contributors(self, page_number: int) -> Tuple[List[Tuple[str, str, str, str, str, str, str, str, str, str, str, str, str, str]], bool]:
         """
         Fetch a single page of DOIs with contributor information from the API.
         
@@ -821,8 +826,12 @@ class DataCiteClient:
             
         Returns:
             Tuple of (list of contributor tuples, has_more_pages boolean)
-            Each tuple contains: (DOI, Contributor Name, Name Type, Given Name, Family Name,
-                                 Name Identifier, Name Identifier Scheme, Scheme URI, Contributor Types)
+            Each tuple contains 14 fields:
+            (DOI, Contributor Name, Name Type, Given Name, Family Name,
+             Name Identifier, Name Identifier Scheme, Scheme URI, Contributor Types,
+             Affiliation, Affiliation Identifier, Email, Website, Position)
+            Note: Affiliation, Affiliation Identifier, Email, Website, Position are empty
+                  as they come from the database, not DataCite.
             
         Raises:
             AuthenticationError: If credentials are invalid
@@ -910,7 +919,8 @@ class DataCiteClient:
                                 scheme_uri = identifier.get("schemeUri", "")
                                 break  # Only take the first valid identifier
                         
-                        # Create tuple entry
+                        # Create tuple entry with 14 fields
+                        # DB-only fields (Affiliation, Affiliation Identifier, Email, Website, Position) are empty
                         entry = (
                             doi,
                             contributor_name,
@@ -920,7 +930,12 @@ class DataCiteClient:
                             name_identifier,
                             name_identifier_scheme,
                             scheme_uri,
-                            contributor_type  # Single type from DataCite
+                            contributor_type,  # Single type from DataCite
+                            "",  # Affiliation (DB-only, empty from DataCite)
+                            "",  # Affiliation Identifier (DB-only, empty from DataCite)
+                            "",  # Email (DB-only, empty from DataCite)
+                            "",  # Website (DB-only, empty from DataCite)
+                            ""   # Position (DB-only, empty from DataCite)
                         )
                         contributor_entries.append(entry)
                         
@@ -944,6 +959,124 @@ class DataCiteClient:
         
         return contributor_entries, has_more
     
+    @staticmethod
+    def enrich_contributors_with_db_data(
+        contributor_data: List[Tuple[str, str, str, str, str, str, str, str, str, str, str, str, str, str]],
+        db_client
+    ) -> List[Tuple[str, str, str, str, str, str, str, str, str, str, str, str, str, str]]:
+        """
+        Enrich contributor data from DataCite API with database information.
+        
+        For each contributor that is a ContactPerson, fetch Email, Website, and Position
+        from the SUMARIOPMD database. Other fields (Affiliation, Affiliation Identifier)
+        are not stored separately in the database and remain empty.
+        
+        Args:
+            contributor_data: List of 14-tuples from fetch_all_dois_with_contributors()
+            db_client: Instance of SumariopmdClient (connected)
+            
+        Returns:
+            List of 14-tuples with Email, Website, Position enriched from database
+            for ContactPerson contributors.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        enriched_data = []
+        
+        # Group contributors by DOI for efficient DB lookups
+        from collections import defaultdict
+        dois_to_process = defaultdict(list)
+        for idx, row in enumerate(contributor_data):
+            doi = row[0]
+            dois_to_process[doi].append((idx, row))
+        
+        logger.info(f"Enriching {len(contributor_data)} contributors from {len(dois_to_process)} DOIs with DB data")
+        
+        # Process each DOI
+        for doi, contributors in dois_to_process.items():
+            try:
+                # Get resource_id for this DOI
+                resource_id = db_client.get_resource_id_by_doi(doi)
+                
+                if resource_id is None:
+                    # DOI not found in DB, keep original data
+                    for idx, row in contributors:
+                        enriched_data.append((idx, row))
+                    continue
+                
+                # Fetch all contributors from DB for this resource
+                db_contributors = db_client.fetch_contributors_for_resource(resource_id)
+                
+                # Create lookup map: (lastname, firstname) -> contactinfo
+                # For organizational names, use (name, "") as key
+                # DB returns: lastname, firstname, name, roles (as comma-separated string), email, website, position
+                contactinfo_lookup = {}
+                for db_contrib in db_contributors:
+                    # DB columns: lastname, firstname (not family_name, given_name)
+                    lastname = db_contrib.get("lastname", "") or ""
+                    firstname = db_contrib.get("firstname", "") or ""
+                    name = db_contrib.get("name", "") or ""
+                    
+                    # Try to match by lastname + firstname first
+                    if lastname:
+                        key = (lastname.lower().strip(), firstname.lower().strip())
+                    else:
+                        # Organizational name
+                        key = (name.lower().strip(), "")
+                    
+                    # roles is a comma-separated string from DB, check if ContactPerson is included
+                    roles_str = db_contrib.get("roles", "") or ""
+                    if "ContactPerson" in roles_str:
+                        # Store the contactinfo fields directly
+                        contactinfo_lookup[key] = {
+                            "email": db_contrib.get("email", "") or "",
+                            "website": db_contrib.get("website", "") or "",
+                            "position": db_contrib.get("position", "") or ""
+                        }
+                
+                # Enrich each contributor
+                for idx, row in contributors:
+                    family_name = row[4] or ""  # Family Name
+                    given_name = row[3] or ""   # Given Name
+                    contributor_name = row[1] or ""  # Contributor Name
+                    contributor_types = row[8] or ""  # Contributor Types
+                    
+                    # Try to find matching contactinfo
+                    key = (family_name.lower().strip(), given_name.lower().strip())
+                    if not family_name:
+                        key = (contributor_name.lower().strip(), "")
+                    
+                    contactinfo = contactinfo_lookup.get(key, {})
+                    
+                    # Only add contactinfo if this is a ContactPerson
+                    if "ContactPerson" in contributor_types and contactinfo:
+                        email = contactinfo.get("email", "") or ""
+                        website = contactinfo.get("website", "") or ""
+                        position = contactinfo.get("position", "") or ""
+                        
+                        # Create enriched tuple
+                        enriched_row = (
+                            row[0], row[1], row[2], row[3], row[4],
+                            row[5], row[6], row[7], row[8], row[9], row[10],
+                            email, website, position
+                        )
+                        enriched_data.append((idx, enriched_row))
+                    else:
+                        enriched_data.append((idx, row))
+                        
+            except Exception as e:
+                logger.warning(f"Error enriching DOI {doi} with DB data: {e}")
+                # Keep original data on error
+                for idx, row in contributors:
+                    enriched_data.append((idx, row))
+        
+        # Sort by original index to maintain order
+        enriched_data.sort(key=lambda x: x[0])
+        
+        # Return just the tuples
+        return [row for idx, row in enriched_data]
+
     def validate_contributors_match(self, doi: str, csv_contributors: List[Dict[str, Any]]) -> Tuple[bool, str]:
         """
         Validate that CSV contributors match the current DataCite metadata.
