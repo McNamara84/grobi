@@ -250,7 +250,7 @@ class DOIContributorFetchWorker(QObject):
                 try:
                     from PySide6.QtCore import QSettings
                     from src.utils.credential_manager import load_db_credentials
-                    from src.db.sumariopmd_client import SumariopmdClient
+                    from src.db.sumariopmd_client import SumarioPMDClient
                     
                     settings = QSettings("GFZ", "GROBI")
                     db_enabled = settings.value("database/enabled", False, type=bool)
@@ -260,19 +260,17 @@ class DOIContributorFetchWorker(QObject):
                         if db_creds:
                             self.progress.emit("ContactInfo aus Datenbank wird abgerufen...")
                             
-                            db_client = SumariopmdClient(
+                            db_client = SumarioPMDClient(
                                 host=db_creds['host'],
-                                user=db_creds['username'],
+                                username=db_creds['username'],
                                 password=db_creds['password'],
                                 database=db_creds['database']
                             )
-                            db_client.connect()
                             
                             contributor_data = DataCiteClient.enrich_contributors_with_db_data(
                                 contributor_data, db_client
                             )
                             
-                            db_client.disconnect()
                             self.progress.emit("ContactInfo erfolgreich hinzugefügt")
                         else:
                             self.progress.emit("[INFO] Keine DB-Zugangsdaten gespeichert - ContactInfo nicht verfügbar")

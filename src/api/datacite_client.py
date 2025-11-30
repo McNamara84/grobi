@@ -997,7 +997,7 @@ class DataCiteClient:
         for doi, contributors in dois_to_process.items():
             try:
                 # Get resource_id for this DOI
-                resource_id = db_client.get_resource_id_by_doi(doi)
+                resource_id = db_client.get_resource_id_for_doi(doi)
                 
                 if resource_id is None:
                     # DOI not found in DB, keep original data
