@@ -922,13 +922,13 @@ class DataCiteClient:
                         }
                         
                         # ContributorTypes that are ALWAYS persons (never organizations)
+                        # Note: "Producer" is intentionally NOT here - it can be a person OR organization
                         PERSONAL_CONTRIBUTOR_TYPES = {
                             "ContactPerson",
                             "DataCollector",
                             "DataCurator",
                             "DataManager",
                             "Editor",
-                            "Producer",
                             "ProjectLeader",
                             "ProjectManager",
                             "ProjectMember",
