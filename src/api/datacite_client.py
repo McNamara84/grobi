@@ -965,6 +965,15 @@ class DataCiteClient:
                             "krankenhaus", "hospital",
                             "geosurvey",  # catches "Iceland GeoSurvey"
                             "helmholtz",  # German research org
+                            # German government/geo agencies
+                            "landesamt",  # Landesamt für Geologie und Bergbau
+                            "regierungspräsidium",  # Regierungspräsidium Freiburg
+                            "geological survey",  # Geological Survey of Baden-Württemberg
+                            "geodynamics",  # European Center for Geodynamics
+                            "geophysik", "geophysics",  # Fachbereich Geophysik
+                            "geowissenschaften", "geosciences",  # Institut für Geowissenschaften
+                            "erdbebenstation",  # Erdbebenstation Bensberg
+                            "fachbereich",  # Fachbereich (academic department)
                         }
                         
                         # Shorter keywords that need word boundary matching
@@ -979,6 +988,7 @@ class DataCiteClient:
                             "firma", "gmbh", "ltd",
                             "group", "gruppe", "network", "netzwerk",
                             "survey",  # catches geological surveys
+                            "pool",  # Geophysical Instrument Pool
                             # Well-known research institution abbreviations (need word boundary)
                             "eth",  # ETH Zürich
                             "mit",  # Massachusetts Institute of Technology
@@ -989,6 +999,13 @@ class DataCiteClient:
                             "csic",  # Spanish National Research Council
                             "csiro",  # Commonwealth Scientific and Industrial Research Organisation
                             "rwth",  # RWTH Aachen
+                            "ipgp",  # Institut de Physique du Globe de Paris
+                            "gipp",  # Geophysical Instrument Pool Potsdam
+                            "gfz",  # GFZ German Research Centre for Geosciences
+                            "ucl",  # University College London
+                            # French research keywords
+                            "isterre",  # Institut des Sciences de la Terre
+                            "globe",  # Institut de physique du globe
                         }
                         
                         def _is_organization_name(name: str) -> bool:
@@ -1073,10 +1090,19 @@ class DataCiteClient:
                                 if name_type:
                                     logger.warning(f"Overriding nameType '{name_type}' to 'Personal' for '{contributor_name}' (has ORCID)")
                                 name_type = "Personal"
+                        elif name_looks_like_org:
+                            # Name contains CLEAR organizational keywords (University, Institut, etc.)
+                            # This overrides even API nameType because DataCite often incorrectly
+                            # marks organizations as Personal when they have comma in name
+                            # (e.g., "University of Potsdam, Germany" → givenName: Germany, familyName: University of Potsdam)
+                            if name_type == "Personal":
+                                logger.warning(f"Overriding nameType 'Personal' to 'Organizational' for '{contributor_name}' (name contains org keywords)")
+                            name_type = "Organizational"
+                            # Clear given/family name for organizations (they shouldn't have them)
+                            given_name = ""
+                            family_name = ""
                         elif name_type:
-                            # API provides nameType - TRUST IT, don't override
-                            # This respects DataCite's data even if it seems wrong
-                            # (e.g., "Universidad..." marked as Personal is a DataCite error, not ours to fix)
+                            # API provides nameType and name doesn't look like org - TRUST IT
                             pass
                         elif contributor_type in ORGANIZATIONAL_CONTRIBUTOR_TYPES:
                             # These roles are ALWAYS organizations - set nameType
