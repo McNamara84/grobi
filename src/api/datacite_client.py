@@ -882,6 +882,7 @@ class DataCiteClient:
         
         # Extract DOIs and contributor information
         contributor_entries = []
+        seen_contributors = set()  # Track (DOI, name, contributorType) to avoid duplicates
         if "data" in data and isinstance(data["data"], list):
             for item in data["data"]:
                 try:
@@ -964,13 +965,51 @@ class DataCiteClient:
                             name_lower = name.lower()
                             return any(keyword in name_lower for keyword in ORGANIZATION_KEYWORDS)
                         
+                        # Extract name identifier FIRST - needed for nameType determination
+                        # ORCID is ONLY given to persons, so having an ORCID proves it's a person
+                        name_identifier = ""
+                        name_identifier_scheme = ""
+                        scheme_uri = ""
+                        has_orcid = False
+                        
+                        name_identifiers = contributor.get("nameIdentifiers", [])
+                        for identifier in name_identifiers:
+                            scheme = identifier.get("nameIdentifierScheme", "")
+                            if scheme.upper() == "ORCID":
+                                has_orcid = True
+                                name_identifier = identifier.get("nameIdentifier", "")
+                                name_identifier_scheme = identifier.get("nameIdentifierScheme", "")
+                                scheme_uri = identifier.get("schemeUri", "")
+                                break
+                        
+                        # If no ORCID, check for ROR or ISNI
+                        if not name_identifier:
+                            for identifier in name_identifiers:
+                                scheme = identifier.get("nameIdentifierScheme", "")
+                                if scheme.upper() in ["ROR", "ISNI"]:
+                                    name_identifier = identifier.get("nameIdentifier", "")
+                                    name_identifier_scheme = identifier.get("nameIdentifierScheme", "")
+                                    scheme_uri = identifier.get("schemeUri", "")
+                                    break
+                        
                         # Check if the contributor name looks like an organization
                         # This catches cases where DataCite incorrectly splits org names into given/family
                         name_looks_like_org = _is_organization_name(contributor_name)
                         
-                        # Determine nameType - contributorType takes precedence over DataCite's nameType
-                        # because DataCite often returns incorrect/inconsistent nameType values
-                        if contributor_type in ORGANIZATIONAL_CONTRIBUTOR_TYPES:
+                        # Determine nameType with clear priority:
+                        # 1. ORCID present → ALWAYS Personal (ORCID is only for persons)
+                        # 2. Organizational contributor types → Organizational
+                        # 3. Personal contributor types (if name doesn't look like org) → Personal
+                        # 4. Name looks like organization → Organizational
+                        # 5. Fallback: infer from givenName/familyName presence
+                        
+                        if has_orcid:
+                            # ORCID is ONLY given to persons - this overrides everything
+                            if name_type != "Personal":
+                                if name_type:
+                                    logger.warning(f"Overriding nameType '{name_type}' to 'Personal' for '{contributor_name}' (has ORCID)")
+                                name_type = "Personal"
+                        elif contributor_type in ORGANIZATIONAL_CONTRIBUTOR_TYPES:
                             # These roles are ALWAYS organizations - override any incorrect nameType
                             if name_type != "Organizational":
                                 if name_type:
@@ -1005,19 +1044,13 @@ class DataCiteClient:
                                 name_type = "Organizational"
                                 logger.debug(f"Inferred nameType 'Organizational' for '{contributor_name}' (no given/family name)")
                         
-                        # Extract name identifier if present (ORCID, ROR, ISNI)
-                        name_identifier = ""
-                        name_identifier_scheme = ""
-                        scheme_uri = ""
-                        
-                        name_identifiers = contributor.get("nameIdentifiers", [])
-                        for identifier in name_identifiers:
-                            scheme = identifier.get("nameIdentifierScheme", "")
-                            if scheme.upper() in ["ORCID", "ROR", "ISNI"]:
-                                name_identifier = identifier.get("nameIdentifier", "")
-                                name_identifier_scheme = identifier.get("nameIdentifierScheme", "")
-                                scheme_uri = identifier.get("schemeUri", "")
-                                break  # Only take the first valid identifier
+                        # Create a unique key for this contributor to detect duplicates
+                        # Key: (DOI, contributor name, contributor type)
+                        contributor_key = (doi.lower(), contributor_name.lower(), contributor_type.lower())
+                        if contributor_key in seen_contributors:
+                            logger.debug(f"Skipping duplicate contributor: {contributor_name} ({contributor_type}) for DOI {doi}")
+                            continue
+                        seen_contributors.add(contributor_key)
                         
                         # Create tuple entry with 14 fields
                         # DB-only fields (Affiliation, Affiliation Identifier, Email, Website, Position) are empty
