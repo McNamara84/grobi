@@ -941,29 +941,55 @@ class DataCiteClient:
                         
                         # Keywords that indicate an organizational name (case-insensitive)
                         # Used to detect when DataCite incorrectly splits an org name into given/family name
+                        # NOTE: Only include keywords that are unlikely to appear as substrings in person names
+                        # Removed short keywords like "ag", "inc", "lab", "rat" that match parts of names
+                        # (e.g., "Wagner" contains "ag", "Vincze" contains "inc")
                         ORGANIZATION_KEYWORDS = {
                             "university", "universität", "institute", "institut", "center", "centre",
-                            "zentrum", "laboratory", "laboratorium", "lab", "college", "school",
+                            "zentrum", "laboratory", "laboratorium", "college", "school",
                             "faculty", "fakultät", "department", "abteilung", "division",
                             "agency", "agentur", "authority", "behörde", "ministry", "ministerium",
                             "office", "bureau", "service", "dienst", "commission", "kommission",
-                            "council", "rat", "board", "gremium", "committee", "ausschuss",
+                            "council", "board", "gremium", "committee", "ausschuss",
                             "foundation", "stiftung", "association", "verband", "verein",
                             "society", "gesellschaft", "organization", "organisation",
-                            "corporation", "company", "firma", "gmbh", "ltd", "inc", "ag",
-                            "group", "gruppe", "team", "network", "netzwerk", "consortium",
-                            "project", "projekt", "program", "programm", "initiative",
+                            "corporation", "company", "firma", "gmbh", "ltd",
+                            "group", "gruppe", "network", "netzwerk", "consortium",
                             "museum", "library", "bibliothek", "archive", "archiv",
                             "hospital", "klinik", "krankenhaus", "clinic",
-                            "crc", "transregio", "sfb", "dfg", "computing", "rrzk",
+                            "transregio", "computing",
                         }
                         
                         def _is_organization_name(name: str) -> bool:
-                            """Check if a name contains organizational keywords."""
+                            """Check if a name contains organizational keywords as whole words."""
                             if not name:
                                 return False
+                            import re
                             name_lower = name.lower()
-                            return any(keyword in name_lower for keyword in ORGANIZATION_KEYWORDS)
+                            # Use word boundary matching to avoid false positives
+                            # e.g., "Wagner" should not match "ag", "Vincze" should not match "inc"
+                            for keyword in ORGANIZATION_KEYWORDS:
+                                # Match keyword as a whole word (surrounded by non-word chars or start/end)
+                                pattern = r'\b' + re.escape(keyword) + r'\b'
+                                if re.search(pattern, name_lower):
+                                    return True
+                            return False
+                        
+                        def _looks_like_person_name(name: str) -> bool:
+                            """Check if a name looks like a person's name based on format heuristics."""
+                            if not name:
+                                return False
+                            # Format "Nachname, Vorname" - very likely a person
+                            if "," in name:
+                                parts = [p.strip() for p in name.split(",")]
+                                if len(parts) == 2 and all(len(p) > 0 for p in parts):
+                                    return True
+                            # Format "Vorname Nachname" or "Vorname M. Nachname" - 2-3 words without org keywords
+                            words = name.split()
+                            if 2 <= len(words) <= 4 and not _is_organization_name(name):
+                                # Check if words look like name parts (start with uppercase, reasonable length)
+                                return all(len(w) >= 1 and w[0].isupper() for w in words)
+                            return False
                         
                         # Extract name identifier FIRST - needed for nameType determination
                         # ORCID is ONLY given to persons, so having an ORCID proves it's a person
@@ -1036,13 +1062,19 @@ class DataCiteClient:
                                 family_name = ""
                         elif not name_type:
                             # For ambiguous contributorTypes (e.g., "Other", "RelatedPerson"), 
-                            # infer from givenName/familyName presence
+                            # infer from multiple signals
                             if given_name or family_name:
+                                # Has structured name parts - definitely a person
                                 name_type = "Personal"
                                 logger.debug(f"Inferred nameType 'Personal' for '{contributor_name}' (has given/family name)")
+                            elif _looks_like_person_name(contributor_name):
+                                # Name format looks like a person (e.g., "Blöcher Guido" or "Doe, John")
+                                name_type = "Personal"
+                                logger.debug(f"Inferred nameType 'Personal' for '{contributor_name}' (name format looks like person)")
                             else:
+                                # Default to Organizational for other cases
                                 name_type = "Organizational"
-                                logger.debug(f"Inferred nameType 'Organizational' for '{contributor_name}' (no given/family name)")
+                                logger.debug(f"Inferred nameType 'Organizational' for '{contributor_name}' (no person indicators)")
                         
                         # Create a unique key for this contributor to detect duplicates
                         # Key: (DOI, contributor name, contributor type)
