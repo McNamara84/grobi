@@ -1065,20 +1065,71 @@ class DataCiteClient:
                         }
                         
                         def _is_organization_name(name: str) -> bool:
-                            """Check if a name contains organizational keywords, URLs, or email addresses."""
+                            """Check if a name contains organizational keywords, URLs, or email addresses.
+                            
+                            IMPORTANT: This function should NOT match person names with affiliations!
+                            Examples that should return False (persons):
+                            - "Bindi, Dino (GFZ)" - person with affiliation
+                            - "Simone Cesca, cesca@gfz.de" - person with email
+                            - "Jari Kortström, jari.kortstrom@helsinki.fi" - person with email
+                            
+                            Examples that should return True (organizations):
+                            - "geofon@gfz.de" - email as contact (no person name)
+                            - "Deutsches GeoForschungsZentrum GFZ" - organization
+                            - "University of Potsdam, Germany" - organization with location
+                            """
                             if not name:
                                 return False
                             import re
                             name_lower = name.lower()
                             
+                            # First, detect "Person Name, email" or "Person Name (Affiliation)" patterns
+                            # These are persons with contact info, NOT organizations
+                            if ',' in name:
+                                parts = name.split(',', 1)
+                                first_part = parts[0].strip()
+                                second_part = parts[1].strip() if len(parts) > 1 else ""
+                                
+                                # Check if first part looks like a person name (1-3 words, starts with uppercase)
+                                first_words = first_part.split()
+                                if 1 <= len(first_words) <= 3:
+                                    all_name_like = all(
+                                        len(w) >= 1 and w[0].isupper() and 
+                                        not any(kw in w.lower() for kw in ['university', 'institut', 'center', 'centre'])
+                                        for w in first_words
+                                    )
+                                    if all_name_like:
+                                        # Second part is email? -> Person with contact
+                                        if '@' in second_part:
+                                            return False
+                                        # Second part is short (likely first name)? -> Person
+                                        second_words = second_part.split()
+                                        if len(second_words) == 1 and len(second_part) <= 20:
+                                            # Likely "Lastname, Firstname" pattern
+                                            return False
+                            
+                            # Check for "Name (Affiliation)" pattern - person with institutional affiliation
+                            if '(' in name and ')' in name:
+                                before_paren = name.split('(')[0].strip()
+                                # If what's before parenthesis looks like "Lastname, Firstname" -> person
+                                if ',' in before_paren:
+                                    parts = before_paren.split(',')
+                                    if len(parts) == 2:
+                                        p1, p2 = parts[0].strip(), parts[1].strip()
+                                        # Both parts are short name-like strings
+                                        if (1 <= len(p1.split()) <= 2 and 1 <= len(p2.split()) <= 2 and
+                                            len(p1) <= 30 and len(p2) <= 20):
+                                            return False
+                            
                             # URLs are always organizational (websites, project pages, etc.)
                             if name_lower.startswith(('http://', 'https://', 'www.')):
                                 return True
                             
-                            # Email addresses are always organizational (contact addresses)
+                            # Email addresses ONLY when they ARE the name (not attached to person name)
+                            # "geofon@gfz.de" -> Org, but "Simone Cesca, cesca@gfz.de" -> Person (handled above)
                             if '@' in name and '.' in name:
-                                # Simple email pattern check
-                                if re.search(r'[\w.-]+@[\w.-]+\.[a-z]{2,}', name_lower):
+                                # Check if the ENTIRE name is basically just an email
+                                if re.match(r'^[\w.-]+@[\w.-]+\.[a-z]{2,}$', name_lower.strip()):
                                     return True
                             
                             # First check substring keywords (safe for compound words)
