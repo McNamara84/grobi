@@ -938,6 +938,36 @@ class DataCiteClient:
                             "WorkPackageLeader",
                         }
                         
+                        # Keywords that indicate an organizational name (case-insensitive)
+                        # Used to detect when DataCite incorrectly splits an org name into given/family name
+                        ORGANIZATION_KEYWORDS = {
+                            "university", "universität", "institute", "institut", "center", "centre",
+                            "zentrum", "laboratory", "laboratorium", "lab", "college", "school",
+                            "faculty", "fakultät", "department", "abteilung", "division",
+                            "agency", "agentur", "authority", "behörde", "ministry", "ministerium",
+                            "office", "bureau", "service", "dienst", "commission", "kommission",
+                            "council", "rat", "board", "gremium", "committee", "ausschuss",
+                            "foundation", "stiftung", "association", "verband", "verein",
+                            "society", "gesellschaft", "organization", "organisation",
+                            "corporation", "company", "firma", "gmbh", "ltd", "inc", "ag",
+                            "group", "gruppe", "team", "network", "netzwerk", "consortium",
+                            "project", "projekt", "program", "programm", "initiative",
+                            "museum", "library", "bibliothek", "archive", "archiv",
+                            "hospital", "klinik", "krankenhaus", "clinic",
+                            "crc", "transregio", "sfb", "dfg", "computing", "rrzk",
+                        }
+                        
+                        def _is_organization_name(name: str) -> bool:
+                            """Check if a name contains organizational keywords."""
+                            if not name:
+                                return False
+                            name_lower = name.lower()
+                            return any(keyword in name_lower for keyword in ORGANIZATION_KEYWORDS)
+                        
+                        # Check if the contributor name looks like an organization
+                        # This catches cases where DataCite incorrectly splits org names into given/family
+                        name_looks_like_org = _is_organization_name(contributor_name)
+                        
                         # Determine nameType - contributorType takes precedence over DataCite's nameType
                         # because DataCite often returns incorrect/inconsistent nameType values
                         if contributor_type in ORGANIZATIONAL_CONTRIBUTOR_TYPES:
@@ -949,12 +979,22 @@ class DataCiteClient:
                                 # Clear given/family name for organizations (they shouldn't have them)
                                 given_name = ""
                                 family_name = ""
-                        elif contributor_type in PERSONAL_CONTRIBUTOR_TYPES:
+                        elif contributor_type in PERSONAL_CONTRIBUTOR_TYPES and not name_looks_like_org:
                             # These roles are ALWAYS persons - override any incorrect nameType
+                            # BUT only if the name doesn't look like an organization
                             if name_type != "Personal":
                                 if name_type:
                                     logger.warning(f"Overriding incorrect nameType '{name_type}' to 'Personal' for '{contributor_name}' (contributorType={contributor_type})")
                                 name_type = "Personal"
+                        elif name_looks_like_org:
+                            # Name contains organizational keywords - treat as organization
+                            if name_type != "Organizational":
+                                if name_type:
+                                    logger.warning(f"Overriding nameType '{name_type}' to 'Organizational' for '{contributor_name}' (name contains org keywords)")
+                                name_type = "Organizational"
+                                # Clear given/family name for organizations (they shouldn't have them)
+                                given_name = ""
+                                family_name = ""
                         elif not name_type:
                             # For ambiguous contributorTypes (e.g., "Other", "RelatedPerson"), 
                             # infer from givenName/familyName presence
