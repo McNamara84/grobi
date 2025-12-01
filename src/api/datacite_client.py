@@ -940,38 +940,75 @@ class DataCiteClient:
                         
                         # Keywords that indicate an organizational name (case-insensitive)
                         # Used to detect when DataCite incorrectly splits an org name into given/family name
-                        # NOTE: Only include keywords that are unlikely to appear as substrings in person names
-                        # Removed short keywords like "ag", "inc", "lab", "rat" that match parts of names
-                        # (e.g., "Wagner" contains "ag", "Vincze" contains "inc")
-                        ORGANIZATION_KEYWORDS = {
-                            "university", "universität", "institute", "institut", "center", "centre",
-                            "zentrum", "laboratory", "laboratorium", "college", "school",
-                            "faculty", "fakultät", "department", "abteilung", "division",
-                            "agency", "agentur", "authority", "behörde", "ministry", "ministerium",
-                            "office", "bureau", "service", "dienst", "commission", "kommission",
-                            "council", "board", "gremium", "committee", "ausschuss",
-                            "foundation", "stiftung", "association", "verband", "verein",
-                            "society", "gesellschaft", "organization", "organisation",
-                            "corporation", "company", "firma", "gmbh", "ltd",
-                            "group", "gruppe", "network", "netzwerk", "consortium",
-                            "museum", "library", "bibliothek", "archive", "archiv",
-                            "hospital", "klinik", "krankenhaus", "clinic",
-                            "transregio", "computing",
+                        # Two sets of keywords:
+                        # 1. SUBSTRING_ORG_KEYWORDS: Long, unique keywords that can be matched as substrings
+                        #    (safe for German compound words like "GeoForschungsZentrum")
+                        # 2. WORD_BOUNDARY_ORG_KEYWORDS: Shorter keywords that need word boundary matching
+                        #    (to avoid false positives like "Wagner" matching "ag")
+                        
+                        # Keywords long enough to safely match as substrings in compound words
+                        SUBSTRING_ORG_KEYWORDS = {
+                            # German compound-safe (6+ chars, unlikely in names)
+                            "universität", "université", "universidad", "universidade", "università", "university",
+                            "institute", "institut", "instituto", "istituto",
+                            "zentrum", "center", "centre", "centro",
+                            "forschung",  # research (German) - catches "GeoForschungsZentrum"
+                            "laboratory", "laboratorium", "laboratorio", "laboratoire",
+                            "department", "abteilung", "departamento",
+                            "ministry", "ministerium", "ministère", "ministerio",
+                            "foundation", "stiftung", "fondation", "fundación",
+                            "gesellschaft", "association", "verband", "verein",
+                            "organisation", "organization",
+                            "corporation", "company",
+                            "consortium", "konsortium",
+                            "bibliothek", "library",
+                            "krankenhaus", "hospital",
+                            "geosurvey",  # catches "Iceland GeoSurvey"
+                            "helmholtz",  # German research org
+                        }
+                        
+                        # Shorter keywords that need word boundary matching
+                        WORD_BOUNDARY_ORG_KEYWORDS = {
+                            "college", "school", "faculty", "fakultät",
+                            "agency", "agentur", "authority", "behörde",
+                            "office", "bureau", "service", "dienst",
+                            "commission", "kommission", "council", "board",
+                            "gremium", "committee", "ausschuss",
+                            "museum", "archive", "archiv",
+                            "klinik", "clinic", "division",
+                            "firma", "gmbh", "ltd",
+                            "group", "gruppe", "network", "netzwerk",
+                            "survey",  # catches geological surveys
+                            # Well-known research institution abbreviations (need word boundary)
+                            "eth",  # ETH Zürich
+                            "mit",  # Massachusetts Institute of Technology
+                            "cnrs",  # Centre national de la recherche scientifique
+                            "nasa",  # National Aeronautics and Space Administration
+                            "noaa",  # National Oceanic and Atmospheric Administration
+                            "usgs",  # United States Geological Survey
+                            "csic",  # Spanish National Research Council
+                            "csiro",  # Commonwealth Scientific and Industrial Research Organisation
+                            "rwth",  # RWTH Aachen
                         }
                         
                         def _is_organization_name(name: str) -> bool:
-                            """Check if a name contains organizational keywords as whole words."""
+                            """Check if a name contains organizational keywords."""
                             if not name:
                                 return False
                             import re
                             name_lower = name.lower()
-                            # Use word boundary matching to avoid false positives
-                            # e.g., "Wagner" should not match "ag", "Vincze" should not match "inc"
-                            for keyword in ORGANIZATION_KEYWORDS:
-                                # Match keyword as a whole word (surrounded by non-word chars or start/end)
+                            
+                            # First check substring keywords (safe for compound words)
+                            for keyword in SUBSTRING_ORG_KEYWORDS:
+                                if keyword in name_lower:
+                                    return True
+                            
+                            # Then check word-boundary keywords (need exact word match)
+                            for keyword in WORD_BOUNDARY_ORG_KEYWORDS:
                                 pattern = r'\b' + re.escape(keyword) + r'\b'
                                 if re.search(pattern, name_lower):
                                     return True
+                            
                             return False
                         
                         def _looks_like_person_name(name: str) -> bool:
