@@ -950,6 +950,7 @@ class DataCiteClient:
                         SUBSTRING_ORG_KEYWORDS = {
                             # German compound-safe (6+ chars, unlikely in names)
                             "universität", "université", "universidad", "universidade", "università", "university",
+                            "universite",  # ASCII transcription without accent (e.g., "Universite Grenoble Alpes")
                             "institute", "institut", "instituto", "istituto",
                             "zentrum", "center", "centre", "centro",
                             "forschung",  # research (German) - catches "GeoForschungsZentrum"
@@ -965,6 +966,7 @@ class DataCiteClient:
                             "krankenhaus", "hospital",
                             "geosurvey",  # catches "Iceland GeoSurvey"
                             "helmholtz",  # German research org
+                            "fraunhofer",  # Fraunhofer Society
                             # German government/geo agencies
                             "landesamt",  # Landesamt für Geologie und Bergbau
                             "regierungspräsidium",  # Regierungspräsidium Freiburg
@@ -1006,14 +1008,44 @@ class DataCiteClient:
                             # French research keywords
                             "isterre",  # Institut des Sciences de la Terre
                             "globe",  # Institut de physique du globe
+                            # Nordic/Scandinavian institutions
+                            "norsar",  # Norwegian Seismic Array
+                            "nve",  # Norges vassdrags- og energidirektorat (Norwegian Water Resources and Energy Directorate)
+                            "dmi",  # Danish Meteorological Institute
+                            "smhi",  # Swedish Meteorological and Hydrological Institute
+                            # Other research institutions
+                            "arditi",  # Agência Regional para o Desenvolvimento da Investigação, Tecnologia e Inovação
+                            "fccn",  # Fundação para Computação Científica Nacional
+                            "fct",  # Fundação para a Ciência e Tecnologia
+                            # Funding/grant keywords
+                            "fellowship",  # Marie Curie Fellowship, etc.
+                            "grant",  # Research grants
+                            "fund",  # Various funds
+                            "award",  # Awards
+                            # Team/staff/group identifiers (organizational entities)
+                            "staff",  # ISG Staff, Support Staff
+                            "team",  # WSM Team, DIGIS Team, Science Team
+                            "authorities",  # Ebro Water Authorities
+                            "isg",  # International Service of Geodynamics
+                            "platform",  # Spanish Geothermal Technology Platform
                         }
                         
                         def _is_organization_name(name: str) -> bool:
-                            """Check if a name contains organizational keywords."""
+                            """Check if a name contains organizational keywords, URLs, or email addresses."""
                             if not name:
                                 return False
                             import re
                             name_lower = name.lower()
+                            
+                            # URLs are always organizational (websites, project pages, etc.)
+                            if name_lower.startswith(('http://', 'https://', 'www.')):
+                                return True
+                            
+                            # Email addresses are always organizational (contact addresses)
+                            if '@' in name and '.' in name:
+                                # Simple email pattern check
+                                if re.search(r'[\w.-]+@[\w.-]+\.[a-z]{2,}', name_lower):
+                                    return True
                             
                             # First check substring keywords (safe for compound words)
                             for keyword in SUBSTRING_ORG_KEYWORDS:
