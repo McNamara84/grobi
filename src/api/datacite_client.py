@@ -976,6 +976,20 @@ class DataCiteClient:
                             "geowissenschaften", "geosciences",  # Institut für Geowissenschaften
                             "erdbebenstation",  # Erdbebenstation Bensberg
                             "fachbereich",  # Fachbereich (academic department)
+                            # Observatories, research facilities
+                            "observatory",  # Goma Volcano Observatory, INGV-Osservatorio
+                            "osservatorio",  # Italian observatories
+                            "observatoire",  # French observatories
+                            "observatorium",  # German observatories
+                            "synchrotron",  # ESRF, PETRA III, etc.
+                            "röntgenstrahlungsquelle",  # X-ray source PETRA III
+                            "meteorolog",  # Meteorological services (catches Meteorologie, Meteorology, etc.)
+                            "klimatolog",  # Climatology services
+                            "hochschule",  # German universities of applied sciences
+                            "zentralanstalt",  # ZAMG - Zentralanstalt für Meteorologie und Geodynamik
+                            "géothermie", "geothermie",  # Geothermal companies (és-Géothermie)
+                            "geomanagement",  # ECW Geomanagement BV
+                            "transregio",  # CRC/Transregio 32
                         }
                         
                         # Shorter keywords that need word boundary matching
@@ -1028,6 +1042,26 @@ class DataCiteClient:
                             "authorities",  # Ebro Water Authorities
                             "isg",  # International Service of Geodynamics
                             "platform",  # Spanish Geothermal Technology Platform
+                            # Additional institution abbreviations from validation
+                            "awi",  # Alfred Wegener Institut
+                            "bmkg",  # Badan Meteorologi, Klimatologi, dan Geofisika (Indonesian)
+                            "ingv",  # Istituto Nazionale di Geofisica e Vulcanologia
+                            "ipma",  # Instituto Português do Mar e da Atmosfera
+                            "hbo",  # Hochschule Bochum
+                            "zamg",  # Zentralanstalt für Meteorologie und Geodynamik
+                            "eseo",  # European Student Earth Orbiter
+                            "afad",  # Disaster and Emergency Management Presidency (Turkey)
+                            "desy",  # Deutsches Elektronen-Synchrotron
+                            "enbw",  # Energie Baden-Württemberg AG
+                            "ecw",  # ECW Geomanagement BV
+                            "esg",  # és-Géothermie
+                            "cnr",  # Consiglio Nazionale delle Ricerche (Italian)
+                            "esrf",  # European Synchrotron Radiation Facility
+                            "gvo",  # Goma Volcano Observatory
+                            "petra",  # PETRA III synchrotron
+                            "imaa",  # Institute of Methodologies for Environmental Analysis
+                            "crc",  # Collaborative Research Centre
+                            "radar",  # RADAR4KIT, radar facilities
                         }
                         
                         def _is_organization_name(name: str) -> bool:
@@ -1078,10 +1112,12 @@ class DataCiteClient:
                         
                         # Extract name identifier FIRST - needed for nameType determination
                         # ORCID is ONLY given to persons, so having an ORCID proves it's a person
+                        # ROR is ONLY given to organizations, so having a ROR proves it's an organization
                         name_identifier = ""
                         name_identifier_scheme = ""
                         scheme_uri = ""
                         has_orcid = False
+                        has_ror = False
                         
                         name_identifiers = contributor.get("nameIdentifiers", [])
                         for identifier in name_identifiers:
@@ -1092,12 +1128,18 @@ class DataCiteClient:
                                 name_identifier_scheme = identifier.get("nameIdentifierScheme", "")
                                 scheme_uri = identifier.get("schemeUri", "")
                                 break
+                            elif scheme.upper() == "ROR":
+                                has_ror = True
+                                name_identifier = identifier.get("nameIdentifier", "")
+                                name_identifier_scheme = identifier.get("nameIdentifierScheme", "")
+                                scheme_uri = identifier.get("schemeUri", "")
+                                # Don't break - continue checking for ORCID which has higher priority
                         
-                        # If no ORCID, check for ROR or ISNI
+                        # If no ORCID or ROR, check for ISNI
                         if not name_identifier:
                             for identifier in name_identifiers:
                                 scheme = identifier.get("nameIdentifierScheme", "")
-                                if scheme.upper() in ["ROR", "ISNI"]:
+                                if scheme.upper() == "ISNI":
                                     name_identifier = identifier.get("nameIdentifier", "")
                                     name_identifier_scheme = identifier.get("nameIdentifierScheme", "")
                                     scheme_uri = identifier.get("schemeUri", "")
@@ -1109,11 +1151,12 @@ class DataCiteClient:
                         
                         # Determine nameType with clear priority:
                         # 1. ORCID present → ALWAYS Personal (ORCID is only for persons, this is a hard fact)
-                        # 2. API provides nameType → TRUST IT (don't override DataCite's data)
-                        # 3. Organizational contributor types (and no API nameType) → Organizational
-                        # 4. Personal contributor types (and no API nameType, name doesn't look like org) → Personal
-                        # 5. Name looks like organization (and no API nameType) → Organizational
-                        # 6. Fallback: infer from givenName/familyName presence
+                        # 2. ROR present → ALWAYS Organizational (ROR is only for organizations, this is a hard fact)
+                        # 3. Name contains org keywords → Organizational (override API nameType)
+                        # 4. API provides nameType → TRUST IT (don't override DataCite's data)
+                        # 5. Organizational contributor types (and no API nameType) → Organizational
+                        # 6. Personal contributor types (and no API nameType, name doesn't look like org) → Personal
+                        # 7. Fallback: infer from givenName/familyName presence
                         
                         if has_orcid:
                             # ORCID is ONLY given to persons - this overrides everything including API data
@@ -1122,6 +1165,16 @@ class DataCiteClient:
                                 if name_type:
                                     logger.warning(f"Overriding nameType '{name_type}' to 'Personal' for '{contributor_name}' (has ORCID)")
                                 name_type = "Personal"
+                        elif has_ror:
+                            # ROR is ONLY given to organizations - this overrides everything including API data
+                            # because ROR (Research Organization Registry) is a hard fact that cannot be wrong
+                            if name_type != "Organizational":
+                                if name_type:
+                                    logger.warning(f"Overriding nameType '{name_type}' to 'Organizational' for '{contributor_name}' (has ROR)")
+                                name_type = "Organizational"
+                            # Clear given/family name for organizations (they shouldn't have them)
+                            given_name = ""
+                            family_name = ""
                         elif name_looks_like_org:
                             # Name contains CLEAR organizational keywords (University, Institut, etc.)
                             # This overrides even API nameType because DataCite often incorrectly
