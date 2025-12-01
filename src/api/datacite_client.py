@@ -912,14 +912,13 @@ class DataCiteClient:
                             logger.debug(f"Using default contributorType 'Other' for '{contributor_name}'")
                         
                         # ContributorTypes that are ALWAYS organizations (never persons)
+                        # Note: "Sponsor", "Funder", "ResearchGroup" are NOT here because they can be persons too!
+                        # (e.g., an individual person can be a sponsor or funder)
                         ORGANIZATIONAL_CONTRIBUTOR_TYPES = {
                             "HostingInstitution",
                             "DistributionCenter",
                             "RegistrationAgency",
                             "RegistrationAuthority",
-                            "ResearchGroup",
-                            "Sponsor",
-                            "Funder",
                         }
                         
                         # ContributorTypes that are ALWAYS persons (never organizations)
@@ -1023,46 +1022,47 @@ class DataCiteClient:
                         name_looks_like_org = _is_organization_name(contributor_name)
                         
                         # Determine nameType with clear priority:
-                        # 1. ORCID present → ALWAYS Personal (ORCID is only for persons)
-                        # 2. Organizational contributor types → Organizational
-                        # 3. Personal contributor types (if name doesn't look like org) → Personal
-                        # 4. Name looks like organization → Organizational
-                        # 5. Fallback: infer from givenName/familyName presence
+                        # 1. ORCID present → ALWAYS Personal (ORCID is only for persons, this is a hard fact)
+                        # 2. API provides nameType → TRUST IT (don't override DataCite's data)
+                        # 3. Organizational contributor types (and no API nameType) → Organizational
+                        # 4. Personal contributor types (and no API nameType, name doesn't look like org) → Personal
+                        # 5. Name looks like organization (and no API nameType) → Organizational
+                        # 6. Fallback: infer from givenName/familyName presence
                         
                         if has_orcid:
-                            # ORCID is ONLY given to persons - this overrides everything
+                            # ORCID is ONLY given to persons - this overrides everything including API data
+                            # because ORCID is a hard fact that cannot be wrong
                             if name_type != "Personal":
                                 if name_type:
                                     logger.warning(f"Overriding nameType '{name_type}' to 'Personal' for '{contributor_name}' (has ORCID)")
                                 name_type = "Personal"
+                        elif name_type:
+                            # API provides nameType - TRUST IT, don't override
+                            # This respects DataCite's data even if it seems wrong
+                            # (e.g., "Universidad..." marked as Personal is a DataCite error, not ours to fix)
+                            pass
                         elif contributor_type in ORGANIZATIONAL_CONTRIBUTOR_TYPES:
-                            # These roles are ALWAYS organizations - override any incorrect nameType
-                            if name_type != "Organizational":
-                                if name_type:
-                                    logger.warning(f"Overriding incorrect nameType '{name_type}' to 'Organizational' for '{contributor_name}' (contributorType={contributor_type})")
-                                name_type = "Organizational"
-                                # Clear given/family name for organizations (they shouldn't have them)
-                                given_name = ""
-                                family_name = ""
+                            # These roles are ALWAYS organizations - set nameType
+                            name_type = "Organizational"
+                            logger.debug(f"Setting nameType 'Organizational' for '{contributor_name}' (contributorType={contributor_type})")
+                            # Clear given/family name for organizations (they shouldn't have them)
+                            given_name = ""
+                            family_name = ""
                         elif contributor_type in PERSONAL_CONTRIBUTOR_TYPES and not name_looks_like_org:
-                            # These roles are ALWAYS persons - override any incorrect nameType
+                            # These roles are ALWAYS persons - set nameType
                             # BUT only if the name doesn't look like an organization
-                            if name_type != "Personal":
-                                if name_type:
-                                    logger.warning(f"Overriding incorrect nameType '{name_type}' to 'Personal' for '{contributor_name}' (contributorType={contributor_type})")
-                                name_type = "Personal"
+                            name_type = "Personal"
+                            logger.debug(f"Setting nameType 'Personal' for '{contributor_name}' (contributorType={contributor_type})")
                         elif name_looks_like_org:
                             # Name contains organizational keywords - treat as organization
-                            if name_type != "Organizational":
-                                if name_type:
-                                    logger.warning(f"Overriding nameType '{name_type}' to 'Organizational' for '{contributor_name}' (name contains org keywords)")
-                                name_type = "Organizational"
-                                # Clear given/family name for organizations (they shouldn't have them)
-                                given_name = ""
-                                family_name = ""
-                        elif not name_type:
+                            name_type = "Organizational"
+                            logger.debug(f"Setting nameType 'Organizational' for '{contributor_name}' (name contains org keywords)")
+                            # Clear given/family name for organizations (they shouldn't have them)
+                            given_name = ""
+                            family_name = ""
+                        else:
                             # For ambiguous contributorTypes (e.g., "Other", "RelatedPerson"), 
-                            # infer from multiple signals
+                            # No API nameType and no clear signals - infer from multiple signals
                             if given_name or family_name:
                                 # Has structured name parts - definitely a person
                                 name_type = "Personal"
