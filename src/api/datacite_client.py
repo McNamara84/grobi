@@ -1355,8 +1355,6 @@ class DataCiteClient:
             List of 14-tuples with Email, Website, Position enriched from database
             for ContactPerson contributors.
         """
-        import logging
-        logger = logging.getLogger(__name__)
         
         enriched_data = []
         
