@@ -1062,6 +1062,18 @@ class DataCiteClient:
                             "imaa",  # Institute of Methodologies for Environmental Analysis
                             "crc",  # Collaborative Research Centre
                             "radar",  # RADAR4KIT, radar facilities
+                            # Project/Program identifiers
+                            "project",  # X0-Deep Fault Drilling Project, MEET Project, etc.
+                            "programme",  # EU programmes
+                            "program",  # US spelling
+                            "sfb",  # Sonderforschungsbereich (German collaborative research centre)
+                            "minas",  # 5E-MINAS project
+                            # Institute acronyms (from validation)
+                            "caiag",  # Central-Asian Institute of Applied Geosciences
+                            "geopribor",  # Russian geophysical instrument manufacturer
+                            "dekorp",  # Deutsches Kontinentales Reflexionsseismisches Programm
+                            "ilge",  # Infrastructure for Large-scale Ground-based E-science
+                            "tna",  # Transnational Access (EU programs)
                         }
                         
                         def _is_organization_name(name: str) -> bool:
