@@ -205,9 +205,10 @@ class TestValidateContributorsMatch:
         )
         
         client = DataCiteClient("TIB.GFZ", "password")
+        # CSV contributors must match by name (case-insensitive)
         csv_contributors = [
-            {"name": "Person 1 Updated"},
-            {"name": "Person 2 Updated"}
+            {"name": "Person 1"},
+            {"name": "Person 2"}
         ]
         
         is_valid, message = client.validate_contributors_match(
@@ -219,8 +220,8 @@ class TestValidateContributorsMatch:
         assert "2 Contributors validiert" in message
     
     @responses.activate
-    def test_mismatched_contributor_count(self):
-        """Test validation fails when contributor counts don't match."""
+    def test_partial_update_allowed(self):
+        """Test validation passes for partial updates (fewer CSV contributors)."""
         responses.add(
             responses.GET,
             "https://api.datacite.org/dois/10.5880/gfz.test.001",
@@ -239,7 +240,40 @@ class TestValidateContributorsMatch:
         )
         
         client = DataCiteClient("TIB.GFZ", "password")
-        csv_contributors = [{"name": "Only One"}]  # Only 1, but DataCite has 2
+        # Only update Person 1, leave Person 2 unchanged (partial update)
+        csv_contributors = [{"name": "Person 1"}]
+        
+        is_valid, message = client.validate_contributors_match(
+            "10.5880/gfz.test.001", 
+            csv_contributors
+        )
+        
+        assert is_valid is True
+        assert "partielles Update" in message
+    
+    @responses.activate
+    def test_unmatched_contributor_fails(self):
+        """Test validation fails when CSV contributor not found in DataCite."""
+        responses.add(
+            responses.GET,
+            "https://api.datacite.org/dois/10.5880/gfz.test.001",
+            json={
+                "data": {
+                    "id": "10.5880/gfz.test.001",
+                    "attributes": {
+                        "contributors": [
+                            {"name": "Person 1"},
+                            {"name": "Person 2"}
+                        ]
+                    }
+                }
+            },
+            status=200
+        )
+        
+        client = DataCiteClient("TIB.GFZ", "password")
+        # Unknown person not in DataCite
+        csv_contributors = [{"name": "Unknown Person"}]
         
         is_valid, message = client.validate_contributors_match(
             "10.5880/gfz.test.001", 
@@ -247,7 +281,7 @@ class TestValidateContributorsMatch:
         )
         
         assert is_valid is False
-        assert "Anzahl der Contributors stimmt nicht überein" in message
+        assert "nicht in DataCite gefunden" in message
     
     @responses.activate
     def test_doi_not_found(self):
@@ -289,12 +323,13 @@ class TestUpdateDOIContributors:
                 "id": "10.5880/gfz.test.001",
                 "attributes": {
                     "contributors": [
-                        {"name": "Old Name", "contributorType": "ContactPerson"}
+                        {"name": "Müller, Hans", "contributorType": "ContactPerson"}
                     ]
                 }
             }
         }
         
+        # New contributor must match by name for partial update to work
         new_contributors = [
             {
                 "name": "Müller, Hans",
@@ -315,7 +350,7 @@ class TestUpdateDOIContributors:
         )
         
         assert success is True
-        assert "erfolgreich aktualisiert" in message
+        assert "aktualisiert" in message
     
     @responses.activate
     def test_preserves_affiliations(self):
@@ -390,7 +425,8 @@ class TestUpdateDOIContributors:
         
         client = DataCiteClient("TIB.GFZ", "password")
         
-        current_metadata = {"data": {"attributes": {"contributors": [{}]}}}
+        # Name must match for partial update
+        current_metadata = {"data": {"attributes": {"contributors": [{"name": "Person"}]}}}
         new_contributors = [
             {"name": "Person", "contributorTypes": "ContactPerson, DataManager, Researcher"}
         ]

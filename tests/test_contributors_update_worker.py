@@ -82,8 +82,8 @@ class TestContributorsUpdateWorkerInit:
 class TestContributorChangeDetection:
     """Tests for contributor change detection methods."""
     
-    def test_detect_changes_count_mismatch(self, sample_csv):
-        """Test change detection with different contributor counts."""
+    def test_detect_changes_partial_update(self, sample_csv):
+        """Test change detection with partial update (fewer CSV contributors)."""
         worker = ContributorsUpdateWorker(
             username='TIB.GFZ',
             password='secret',
@@ -94,23 +94,25 @@ class TestContributorChangeDetection:
             'data': {
                 'attributes': {
                     'contributors': [
-                        {'name': 'Single Contributor', 'contributorType': 'Researcher'}
+                        {'name': 'First', 'contributorType': 'Researcher'},
+                        {'name': 'Second', 'contributorType': 'DataManager'}
                     ]
                 }
             }
         }
         
+        # Only update First (partial update)
         csv_contributors = [
-            {'name': 'First', 'contributorTypes': ['Researcher']},
-            {'name': 'Second', 'contributorTypes': ['DataManager']}
+            {'name': 'First', 'contributorTypes': ['ContactPerson'], 'email': 'test@example.com'}
         ]
         
         has_changes, description = worker._detect_contributor_changes(
             current_metadata, csv_contributors
         )
         
+        # Should detect ContributorType change and email DB field
         assert has_changes is True
-        assert 'Contributor-Anzahl unterschiedlich' in description
+        assert 'ContributorType' in description or 'E-Mail' in description
     
     def test_detect_changes_no_contributors(self, sample_csv):
         """Test when no contributors exist in both."""
@@ -131,8 +133,8 @@ class TestContributorChangeDetection:
         assert has_changes is False
         assert 'Keine Contributors' in description
     
-    def test_detect_changes_name_changed(self, sample_csv):
-        """Test detection of name change."""
+    def test_detect_changes_unmatched_contributor(self, sample_csv):
+        """Test detection when CSV contributor not found in DataCite."""
         worker = ContributorsUpdateWorker(
             username='TIB.GFZ',
             password='secret',
@@ -143,14 +145,14 @@ class TestContributorChangeDetection:
             'data': {
                 'attributes': {
                     'contributors': [
-                        {'name': 'Old Name', 'contributorType': 'Researcher', 'nameType': 'Personal'}
+                        {'name': 'Existing Person', 'contributorType': 'Researcher', 'nameType': 'Personal'}
                     ]
                 }
             }
         }
         
         csv_contributors = [
-            {'name': 'New Name', 'nameType': 'Personal', 'contributorTypes': ['Researcher']}
+            {'name': 'Unknown Person', 'nameType': 'Personal', 'contributorTypes': ['Researcher']}
         ]
         
         has_changes, description = worker._detect_contributor_changes(
@@ -158,7 +160,7 @@ class TestContributorChangeDetection:
         )
         
         assert has_changes is True
-        assert 'Name geändert' in description
+        assert 'nicht in DataCite gefunden' in description
     
     def test_detect_changes_contributor_type_changed(self, sample_csv):
         """Test detection of ContributorType change."""

@@ -85,9 +85,12 @@ class ContributorsUpdateWorker(QObject):
         """
         Compare current DataCite metadata with CSV data to detect changes.
         
+        Supports PARTIAL UPDATES: Each CSV contributor is matched to a DataCite
+        contributor by name or ORCID. Only matched contributors are compared.
+        
         Args:
             current_metadata: Full metadata dictionary from DataCite API
-            csv_contributors: Contributor list from CSV (in CSV order)
+            csv_contributors: Contributor list from CSV (can be fewer than DataCite)
         
         Returns:
             Tuple[bool, str]: (has_changes, change_description)
@@ -100,70 +103,41 @@ class ContributorsUpdateWorker(QObject):
             logger.error(f"Error extracting contributors from metadata: {e}")
             return True, "Metadaten-Struktur ungültig (Update erforderlich)"
         
-        # Count mismatch → Always update
-        if len(current_contributors) != len(csv_contributors):
-            return True, f"Contributor-Anzahl unterschiedlich (aktuell: {len(current_contributors)}, CSV: {len(csv_contributors)})"
-        
-        # No contributors in both → No changes
+        # No contributors in DataCite
         if len(current_contributors) == 0:
-            return False, "Keine Contributors vorhanden"
+            if len(csv_contributors) == 0:
+                return False, "Keine Contributors vorhanden"
+            else:
+                return True, f"CSV enthält {len(csv_contributors)} Contributors, DataCite hat keine"
         
-        # Field-by-field comparison
+        # Match CSV contributors to DataCite contributors and compare
         changes = []
-        for i, (current, csv_contrib) in enumerate(zip(current_contributors, csv_contributors), 1):
-            # Compare name
-            current_name = current.get("name", "")
-            csv_name = csv_contrib.get("name", "")
-            if current_name != csv_name:
-                changes.append(f"Contributor {i}: Name geändert")
-            
-            # Compare nameType
-            current_type = current.get("nameType", "Personal")
-            csv_type = csv_contrib.get("nameType", "Personal")
-            if current_type != csv_type:
-                changes.append(f"Contributor {i}: NameType geändert")
-            
-            # Compare given/family names (only for Personal)
-            if csv_type == "Personal":
-                current_given = current.get("givenName", "")
-                csv_given = csv_contrib.get("givenName", "")
-                if current_given != csv_given:
-                    changes.append(f"Contributor {i}: GivenName geändert")
-                
-                current_family = current.get("familyName", "")
-                csv_family = csv_contrib.get("familyName", "")
-                if current_family != csv_family:
-                    changes.append(f"Contributor {i}: FamilyName geändert")
-            
-            # Compare ContributorType (only first type for DataCite)
-            # DataCite only stores one contributorType per contributor
-            current_contrib_type = current.get("contributorType", "")
-            csv_contrib_types = csv_contrib.get("contributorTypes", [])
-            csv_first_type = csv_contrib_types[0] if csv_contrib_types else ""
-            if current_contrib_type != csv_first_type:
-                changes.append(f"Contributor {i}: ContributorType geändert")
-            
-            # Compare ORCID (normalized)
-            current_orcid = self._extract_orcid(current)
+        for csv_contrib in csv_contributors:
+            csv_name = csv_contrib.get("name", "").strip()
             csv_orcid = self._normalize_orcid(csv_contrib.get("nameIdentifier", ""))
-            if current_orcid != csv_orcid:
-                changes.append(f"Contributor {i}: ORCID geändert")
             
-            # Compare DB-only fields (Email, Website, Position)
-            # These are not in DataCite, but we still need to detect changes for DB updates
-            # Note: current_metadata from DataCite won't have these fields, so we mark as
-            # "potential DB change" if CSV has non-empty values for ContactPerson
-            csv_email = csv_contrib.get("email", "")
-            csv_website = csv_contrib.get("website", "")
-            csv_position = csv_contrib.get("position", "")
+            # Find matching DataCite contributor
+            matched_dc = None
+            for dc_contrib in current_contributors:
+                dc_name = dc_contrib.get("name", "").strip()
+                dc_orcid = self._extract_orcid(dc_contrib)
+                
+                # Match by ORCID (if both have one) or by name
+                if csv_orcid and dc_orcid and csv_orcid == dc_orcid:
+                    matched_dc = dc_contrib
+                    break
+                elif csv_name.lower() == dc_name.lower():
+                    matched_dc = dc_contrib
+                    break
             
-            # For DB-only fields, we can't compare with DataCite metadata
-            # Instead, we'll always consider it a change if DB fields are present
-            # The actual comparison will be done during DB update
-            if csv_email or csv_website or csv_position:
-                # Mark that DB fields exist - actual change detection happens in DB layer
-                # We add this as a "DB change" flag rather than a comparison
-                pass  # DB changes are handled separately in _detect_db_changes
+            if matched_dc is None:
+                # No match found - this should have been caught in validation
+                changes.append(f"{csv_name}: nicht in DataCite gefunden")
+                continue
+            
+            # Compare matched contributor fields
+            contrib_changes = self._compare_contributor_fields(csv_contrib, matched_dc, csv_name)
+            changes.extend(contrib_changes)
         
         # Check for DB-only field changes (separate from DataCite changes)
         db_changes = self._detect_db_field_changes(csv_contributors)
@@ -177,6 +151,56 @@ class ContributorsUpdateWorker(QObject):
             return True, change_desc
         else:
             return False, "Keine Änderungen in Contributor-Metadaten"
+    
+    def _compare_contributor_fields(self, csv_contrib: dict, dc_contrib: dict, name: str) -> list:
+        """
+        Compare fields of a single CSV contributor with its matched DataCite contributor.
+        
+        Args:
+            csv_contrib: Contributor data from CSV
+            dc_contrib: Matched contributor from DataCite
+            name: Display name for change messages
+            
+        Returns:
+            List of change descriptions
+        """
+        changes = []
+        short_name = name[:20] + "..." if len(name) > 20 else name
+        
+        # Compare nameType
+        csv_type = csv_contrib.get("nameType", "Personal")
+        dc_type = dc_contrib.get("nameType", "Personal")
+        if csv_type != dc_type:
+            changes.append(f"{short_name}: NameType geändert")
+        
+        # Compare given/family names (only for Personal)
+        if csv_type == "Personal":
+            csv_given = csv_contrib.get("givenName", "")
+            dc_given = dc_contrib.get("givenName", "")
+            if csv_given != dc_given:
+                changes.append(f"{short_name}: GivenName geändert")
+            
+            csv_family = csv_contrib.get("familyName", "")
+            dc_family = dc_contrib.get("familyName", "")
+            if csv_family != dc_family:
+                changes.append(f"{short_name}: FamilyName geändert")
+        
+        # Compare ContributorType (only first type for DataCite)
+        dc_contrib_type = dc_contrib.get("contributorType", "")
+        csv_contrib_types = csv_contrib.get("contributorTypes", [])
+        if isinstance(csv_contrib_types, str):
+            csv_contrib_types = [t.strip() for t in csv_contrib_types.split(",") if t.strip()]
+        csv_first_type = csv_contrib_types[0] if csv_contrib_types else ""
+        if dc_contrib_type != csv_first_type:
+            changes.append(f"{short_name}: ContributorType geändert")
+        
+        # Compare ORCID (normalized)
+        dc_orcid = self._extract_orcid(dc_contrib)
+        csv_orcid = self._normalize_orcid(csv_contrib.get("nameIdentifier", ""))
+        if dc_orcid != csv_orcid:
+            changes.append(f"{short_name}: ORCID geändert")
+        
+        return changes
     
     def _detect_db_field_changes(self, csv_contributors: list) -> list:
         """
@@ -194,18 +218,21 @@ class ContributorsUpdateWorker(QObject):
         """
         db_changes = []
         
-        for i, contrib in enumerate(csv_contributors, 1):
+        for contrib in csv_contributors:
+            csv_name = contrib.get("name", "")
+            short_name = csv_name[:15] + "..." if len(csv_name) > 15 else csv_name
+            
             csv_email = contrib.get("email", "")
             csv_website = contrib.get("website", "")
             csv_position = contrib.get("position", "")
             
             # If any DB-only field has a value, mark as potential DB change
             if csv_email:
-                db_changes.append(f"Contributor {i}: E-Mail (DB)")
+                db_changes.append(f"{short_name}: E-Mail (DB)")
             if csv_website:
-                db_changes.append(f"Contributor {i}: Website (DB)")
+                db_changes.append(f"{short_name}: Website (DB)")
             if csv_position:
-                db_changes.append(f"Contributor {i}: Position (DB)")
+                db_changes.append(f"{short_name}: Position (DB)")
         
         return db_changes
     

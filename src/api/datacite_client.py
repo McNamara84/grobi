@@ -1474,11 +1474,11 @@ class DataCiteClient:
 
     def validate_contributors_match(self, doi: str, csv_contributors: List[Dict[str, Any]]) -> Tuple[bool, str]:
         """
-        Validate that CSV contributors match the current DataCite metadata.
+        Validate that CSV contributors can be matched to current DataCite metadata.
         
         This is the "dry run" validation that checks:
-        - Same number of contributors
-        - Contributors exist in DataCite
+        - Each CSV contributor can be matched to a DataCite contributor (by name or ORCID)
+        - Supports partial updates (CSV can contain fewer contributors than DataCite)
         
         Args:
             doi: The DOI identifier
@@ -1508,21 +1508,83 @@ class DataCiteClient:
             logger.error(f"Error extracting contributors from metadata: {e}")
             return False, f"Ungültige Metadatenstruktur für DOI {doi}"
         
-        # Check if contributor counts match
-        if len(current_contributors) != len(csv_contributors):
+        # If no contributors in DataCite, CSV must also be empty
+        if len(current_contributors) == 0:
+            if len(csv_contributors) == 0:
+                logger.info(f"DOI {doi} has no contributors in DataCite or CSV")
+                return True, f"DOI {doi}: Keine Contributors vorhanden"
+            else:
+                return False, (
+                    f"DOI {doi}: DataCite hat keine Contributors, aber CSV enthält {len(csv_contributors)}. "
+                    f"Contributors können nicht hinzugefügt werden."
+                )
+        
+        # CSV cannot have more contributors than DataCite (no adding allowed)
+        if len(csv_contributors) > len(current_contributors):
             return False, (
-                f"DOI {doi}: Anzahl der Contributors stimmt nicht überein "
-                f"(DataCite: {len(current_contributors)}, CSV: {len(csv_contributors)}). "
-                f"Contributors dürfen nicht hinzugefügt oder entfernt werden."
+                f"DOI {doi}: CSV enthält mehr Contributors ({len(csv_contributors)}) als DataCite ({len(current_contributors)}). "
+                f"Contributors können nicht hinzugefügt werden."
             )
         
-        # If no contributors in both, that's valid (though unusual)
-        if len(current_contributors) == 0:
-            logger.info(f"DOI {doi} has no contributors in DataCite or CSV")
-            return True, f"DOI {doi}: Keine Contributors vorhanden"
+        # Match each CSV contributor to a DataCite contributor
+        unmatched_csv = []
+        for csv_contrib in csv_contributors:
+            csv_name = csv_contrib.get("name", "").strip()
+            csv_orcid = self._normalize_orcid_for_match(csv_contrib.get("nameIdentifier", ""))
+            
+            matched = False
+            for dc_contrib in current_contributors:
+                dc_name = dc_contrib.get("name", "").strip()
+                dc_orcid = self._extract_orcid_for_match(dc_contrib)
+                
+                # Match by ORCID (if both have one) or by name
+                if csv_orcid and dc_orcid and csv_orcid == dc_orcid:
+                    matched = True
+                    break
+                elif csv_name.lower() == dc_name.lower():
+                    matched = True
+                    break
+            
+            if not matched:
+                unmatched_csv.append(csv_name or "(unbekannt)")
+        
+        if unmatched_csv:
+            return False, (
+                f"DOI {doi}: Folgende Contributors aus CSV wurden nicht in DataCite gefunden: "
+                f"{', '.join(unmatched_csv[:3])}{'...' if len(unmatched_csv) > 3 else ''}. "
+                f"Nur existierende Contributors können aktualisiert werden."
+            )
+        
+        # Partial update info
+        if len(csv_contributors) < len(current_contributors):
+            logger.info(
+                f"DOI {doi}: Partial update - {len(csv_contributors)} of {len(current_contributors)} "
+                f"contributors will be updated"
+            )
+            return True, (
+                f"DOI {doi}: {len(csv_contributors)} von {len(current_contributors)} Contributors "
+                f"werden aktualisiert (partielles Update)"
+            )
         
         logger.info(f"DOI {doi}: Validation passed ({len(current_contributors)} contributors)")
         return True, f"DOI {doi}: {len(current_contributors)} Contributors validiert"
+    
+    def _normalize_orcid_for_match(self, orcid: str) -> str:
+        """Normalize ORCID for matching (extract ID only)."""
+        if not orcid:
+            return ""
+        orcid = orcid.strip()
+        if "orcid.org/" in orcid:
+            return orcid.split("orcid.org/")[-1]
+        return orcid
+    
+    def _extract_orcid_for_match(self, contributor: dict) -> str:
+        """Extract and normalize ORCID from DataCite contributor."""
+        identifiers = contributor.get("nameIdentifiers", [])
+        for identifier in identifiers:
+            if identifier.get("nameIdentifierScheme", "").upper() == "ORCID":
+                return self._normalize_orcid_for_match(identifier.get("nameIdentifier", ""))
+        return ""
     
     def update_doi_contributors(
         self, 
@@ -1533,15 +1595,17 @@ class DataCiteClient:
         """
         Update contributor metadata for a specific DOI.
         
-        This method preserves ALL existing metadata and only updates the contributors array.
-        It follows the pattern: GET current metadata → Replace contributors → PUT full metadata.
+        This method supports PARTIAL UPDATES: Only contributors that match (by name or ORCID)
+        are updated. Unmatched contributors in DataCite are preserved unchanged.
+        
+        It follows the pattern: GET current metadata → Match & merge contributors → PUT full metadata.
         
         Note: Email/Website/Position are NOT sent to DataCite (only stored in local DB).
         Affiliations are preserved from current metadata and not modified.
         
         Args:
             doi: The DOI identifier
-            new_contributors: List of contributor dictionaries with updated data
+            new_contributors: List of contributor dictionaries with updated data (from CSV)
             current_metadata: Full current metadata from get_doi_metadata()
             
         Returns:
@@ -1556,60 +1620,45 @@ class DataCiteClient:
         
         logger.info(f"Updating contributors for DOI {doi}")
         
-        # Get current contributors to preserve affiliations
+        # Get current contributors
         try:
             current_contributors = current_metadata.get("data", {}).get("attributes", {}).get("contributors", [])
         except (KeyError, AttributeError):
             current_contributors = []
         
-        # Build new contributors array from CSV data
+        # Build updated contributors array with partial update support
+        # Start with current contributors and update those that match CSV entries
         updated_contributors = []
-        for i, contributor_data in enumerate(new_contributors):
-            contributor_obj = {
-                "name": contributor_data.get("name", ""),
-                "nameType": contributor_data.get("nameType", "Personal")
-            }
+        updated_count = 0
+        
+        for i, dc_contrib in enumerate(current_contributors):
+            dc_name = dc_contrib.get("name", "").strip()
+            dc_orcid = self._extract_orcid_for_match(dc_contrib)
             
-            # Add contributorType (required for contributors)
-            # Handle comma-separated contributor types - use first one for DataCite
-            contributor_types = contributor_data.get("contributorTypes", "")
-            if contributor_types:
-                # Take first type for DataCite (DataCite only supports one type per contributor entry)
-                first_type = contributor_types.split(",")[0].strip()
-                if first_type in self.VALID_CONTRIBUTOR_TYPES:
-                    contributor_obj["contributorType"] = first_type
-                else:
-                    contributor_obj["contributorType"] = "Other"
-            else:
-                contributor_obj["contributorType"] = "Other"
-            
-            # Add given/family names if present (only for Personal contributors)
-            given_name = contributor_data.get("givenName", "")
-            family_name = contributor_data.get("familyName", "")
-            
-            if contributor_obj["nameType"] == "Personal":
-                if given_name:
-                    contributor_obj["givenName"] = given_name
-                if family_name:
-                    contributor_obj["familyName"] = family_name
-            
-            # Add name identifier if present
-            name_identifier = contributor_data.get("nameIdentifier", "")
-            if name_identifier:
-                name_identifier_scheme = contributor_data.get("nameIdentifierScheme", "ORCID")
-                scheme_uri = contributor_data.get("schemeUri", "https://orcid.org")
+            # Try to find matching CSV contributor
+            matched_csv = None
+            for csv_contrib in new_contributors:
+                csv_name = csv_contrib.get("name", "").strip()
+                csv_orcid = self._normalize_orcid_for_match(csv_contrib.get("nameIdentifier", ""))
                 
-                contributor_obj["nameIdentifiers"] = [{
-                    "nameIdentifier": name_identifier,
-                    "nameIdentifierScheme": name_identifier_scheme,
-                    "schemeUri": scheme_uri
-                }]
+                # Match by ORCID (if both have one) or by name
+                if csv_orcid and dc_orcid and csv_orcid == dc_orcid:
+                    matched_csv = csv_contrib
+                    break
+                elif csv_name.lower() == dc_name.lower():
+                    matched_csv = csv_contrib
+                    break
             
-            # Preserve affiliations from current metadata if available
-            if i < len(current_contributors) and "affiliation" in current_contributors[i]:
-                contributor_obj["affiliation"] = current_contributors[i]["affiliation"]
-            
-            updated_contributors.append(contributor_obj)
+            if matched_csv:
+                # Update this contributor with CSV data
+                contributor_obj = self._build_contributor_object(matched_csv, dc_contrib)
+                updated_contributors.append(contributor_obj)
+                updated_count += 1
+                logger.debug(f"Updated contributor {i}: {dc_name}")
+            else:
+                # Keep original contributor unchanged
+                updated_contributors.append(dc_contrib)
+                logger.debug(f"Kept contributor {i} unchanged: {dc_name}")
         
         # Create payload preserving all existing metadata
         try:
@@ -1642,8 +1691,8 @@ class DataCiteClient:
             
             # Handle different response codes
             if response.status_code == 200:
-                logger.info(f"Successfully updated contributors for DOI {doi}")
-                return True, f"DOI {doi}: {len(updated_contributors)} Contributors erfolgreich aktualisiert"
+                logger.info(f"Successfully updated {updated_count} contributors for DOI {doi}")
+                return True, f"DOI {doi}: {updated_count} von {len(current_contributors)} Contributors aktualisiert"
             
             elif response.status_code == 401:
                 error_msg = f"Authentifizierung fehlgeschlagen für DOI {doi}"
@@ -1690,6 +1739,75 @@ class DataCiteClient:
             error_msg = f"Netzwerkfehler bei DOI {doi}: {str(e)}"
             logger.error(f"Request exception during update: {e}")
             raise NetworkError(error_msg)
+    
+    def _build_contributor_object(
+        self, 
+        csv_contrib: Dict[str, Any], 
+        dc_contrib: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Build a contributor object for DataCite API from CSV data.
+        
+        Preserves affiliations from the original DataCite contributor.
+        
+        Args:
+            csv_contrib: Contributor data from CSV
+            dc_contrib: Original contributor from DataCite (for preserving affiliations)
+            
+        Returns:
+            Contributor dict ready for DataCite API
+        """
+        contributor_obj = {
+            "name": csv_contrib.get("name", ""),
+            "nameType": csv_contrib.get("nameType", "Personal")
+        }
+        
+        # Add contributorType (required for contributors)
+        # Handle contributor types - can be a list or comma-separated string
+        contributor_types = csv_contrib.get("contributorTypes", [])
+        if contributor_types:
+            # CSV parser returns a list, but handle string for safety
+            if isinstance(contributor_types, str):
+                first_type = contributor_types.split(",")[0].strip()
+            else:
+                # It's a list - take the first element
+                first_type = contributor_types[0] if contributor_types else "Other"
+            
+            if first_type in self.VALID_CONTRIBUTOR_TYPES:
+                contributor_obj["contributorType"] = first_type
+            else:
+                contributor_obj["contributorType"] = "Other"
+        else:
+            contributor_obj["contributorType"] = "Other"
+        
+        # Add given/family names if present (only for Personal contributors)
+        given_name = csv_contrib.get("givenName", "")
+        family_name = csv_contrib.get("familyName", "")
+        
+        if contributor_obj["nameType"] == "Personal":
+            if given_name:
+                contributor_obj["givenName"] = given_name
+            if family_name:
+                contributor_obj["familyName"] = family_name
+        
+        # Add name identifier if present
+        name_identifier = csv_contrib.get("nameIdentifier", "")
+        if name_identifier:
+            name_identifier_scheme = csv_contrib.get("nameIdentifierScheme", "ORCID")
+            scheme_uri = csv_contrib.get("schemeUri", "https://orcid.org")
+            
+            contributor_obj["nameIdentifiers"] = [{
+                "nameIdentifier": name_identifier,
+                "nameIdentifierScheme": name_identifier_scheme,
+                "schemeUri": scheme_uri
+            }]
+        
+        # Preserve affiliations from original DataCite contributor
+        if "affiliation" in dc_contrib:
+            contributor_obj["affiliation"] = dc_contrib["affiliation"]
+        
+        return contributor_obj
+    
     # =========================================================================
     # Publisher Methods (DataCite Schema 4.6)
     # =========================================================================
