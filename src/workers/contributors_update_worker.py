@@ -148,15 +148,66 @@ class ContributorsUpdateWorker(QObject):
             csv_orcid = self._normalize_orcid(csv_contrib.get("nameIdentifier", ""))
             if current_orcid != csv_orcid:
                 changes.append(f"Contributor {i}: ORCID geändert")
+            
+            # Compare DB-only fields (Email, Website, Position)
+            # These are not in DataCite, but we still need to detect changes for DB updates
+            # Note: current_metadata from DataCite won't have these fields, so we mark as
+            # "potential DB change" if CSV has non-empty values for ContactPerson
+            csv_email = csv_contrib.get("email", "")
+            csv_website = csv_contrib.get("website", "")
+            csv_position = csv_contrib.get("position", "")
+            
+            # For DB-only fields, we can't compare with DataCite metadata
+            # Instead, we'll always consider it a change if DB fields are present
+            # The actual comparison will be done during DB update
+            if csv_email or csv_website or csv_position:
+                # Mark that DB fields exist - actual change detection happens in DB layer
+                # We add this as a "DB change" flag rather than a comparison
+                pass  # DB changes are handled separately in _detect_db_changes
         
-        if changes:
-            # Return first 3 changes, indicate if more exist
-            change_desc = "; ".join(changes[:3])
-            if len(changes) > 3:
-                change_desc += f" (+ {len(changes) - 3} weitere)"
+        # Check for DB-only field changes (separate from DataCite changes)
+        db_changes = self._detect_db_field_changes(csv_contributors)
+        
+        if changes or db_changes:
+            # Combine DataCite and DB changes
+            all_changes = changes + db_changes
+            change_desc = "; ".join(all_changes[:3])
+            if len(all_changes) > 3:
+                change_desc += f" (+ {len(all_changes) - 3} weitere)"
             return True, change_desc
         else:
             return False, "Keine Änderungen in Contributor-Metadaten"
+    
+    def _detect_db_field_changes(self, csv_contributors: list) -> list:
+        """
+        Detect if CSV contains DB-only fields (Email, Website, Position) that need updating.
+        
+        Since these fields are not in DataCite, we can't compare with current values.
+        We mark them as potential changes if they have non-empty values.
+        The actual comparison with DB values happens in the database layer.
+        
+        Args:
+            csv_contributors: List of contributor dicts from CSV
+            
+        Returns:
+            List of change descriptions for DB-only fields
+        """
+        db_changes = []
+        
+        for i, contrib in enumerate(csv_contributors, 1):
+            csv_email = contrib.get("email", "")
+            csv_website = contrib.get("website", "")
+            csv_position = contrib.get("position", "")
+            
+            # If any DB-only field has a value, mark as potential DB change
+            if csv_email:
+                db_changes.append(f"Contributor {i}: E-Mail (DB)")
+            if csv_website:
+                db_changes.append(f"Contributor {i}: Website (DB)")
+            if csv_position:
+                db_changes.append(f"Contributor {i}: Position (DB)")
+        
+        return db_changes
     
     def _normalize_orcid(self, orcid: str) -> str:
         """
