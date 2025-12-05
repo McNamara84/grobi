@@ -17,10 +17,11 @@ from src.ui.save_credentials_dialog import SaveCredentialsDialog
 from src.ui.about_dialog import AboutDialog
 from src.ui.theme_manager import ThemeManager, Theme
 from src.api.datacite_client import DataCiteClient, DataCiteAPIError, AuthenticationError, NetworkError
-from src.utils.csv_exporter import export_dois_to_csv, export_dois_with_creators_to_csv, export_dois_with_publisher_to_csv, CSVExportError
+from src.utils.csv_exporter import export_dois_to_csv, export_dois_with_creators_to_csv, export_dois_with_publisher_to_csv, export_dois_with_contributors_to_csv, CSVExportError
 from src.workers.update_worker import UpdateWorker
 from src.workers.authors_update_worker import AuthorsUpdateWorker
 from src.workers.publisher_update_worker import PublisherUpdateWorker
+from src.workers.contributors_update_worker import ContributorsUpdateWorker
 
 
 logger = logging.getLogger(__name__)
@@ -200,6 +201,101 @@ class DOIPublisherFetchWorker(QObject):
             self.error.emit(f"Unerwarteter Fehler: {str(e)}")
 
 
+class DOIContributorFetchWorker(QObject):
+    """Worker for fetching DOIs with contributor information in a separate thread."""
+    
+    # Signals
+    progress = Signal(str)  # Progress message
+    finished = Signal(list, str)  # List of contributor tuples and username
+    error = Signal(str)  # Error message
+    request_save_credentials = Signal(str, str, str)  # username, password, api_type
+    
+    def __init__(self, username, password, use_test_api, credentials_are_new=False):
+        """
+        Initialize the worker.
+        
+        Args:
+            username: DataCite username
+            password: DataCite password
+            use_test_api: Whether to use test API
+            credentials_are_new: Whether these are newly entered credentials (not from saved account)
+        """
+        super().__init__()
+        self.username = username
+        self.password = password
+        self.use_test_api = use_test_api
+        self.credentials_are_new = credentials_are_new
+    
+    def run(self):
+        """Fetch DOIs with contributor information from DataCite API."""
+        try:
+            self.progress.emit("Verbindung zur DataCite API wird hergestellt...")
+            
+            client = DataCiteClient(
+                self.username,
+                self.password,
+                self.use_test_api
+            )
+            
+            self.progress.emit("DOIs und Contributors werden abgerufen...")
+            contributor_data = client.fetch_all_dois_with_contributors()
+            
+            # If credentials are new and API call was successful, offer to save them
+            if self.credentials_are_new and contributor_data:
+                api_type = "test" if self.use_test_api else "production"
+                self.request_save_credentials.emit(self.username, self.password, api_type)
+            
+            # Try to enrich with database data if DB is enabled and credentials are saved
+            if contributor_data:
+                try:
+                    from PySide6.QtCore import QSettings
+                    from src.utils.credential_manager import load_db_credentials
+                    from src.db.sumariopmd_client import SumarioPMDClient
+                    
+                    settings = QSettings("GFZ", "GROBI")
+                    db_enabled = settings.value("database/enabled", False, type=bool)
+                    
+                    if db_enabled:
+                        db_creds = load_db_credentials()
+                        if db_creds:
+                            self.progress.emit("ContactInfo aus Datenbank wird abgerufen...")
+                            
+                            db_client = SumarioPMDClient(
+                                host=db_creds['host'],
+                                username=db_creds['username'],
+                                password=db_creds['password'],
+                                database=db_creds['database']
+                            )
+                            
+                            contributor_data = DataCiteClient.enrich_contributors_with_db_data(
+                                contributor_data, db_client
+                            )
+                            
+                            self.progress.emit("ContactInfo erfolgreich hinzugefügt")
+                        else:
+                            self.progress.emit("[INFO] Keine DB-Zugangsdaten gespeichert - ContactInfo nicht verfügbar")
+                    else:
+                        self.progress.emit("[INFO] Datenbank-Synchronisation deaktiviert - ContactInfo nicht verfügbar")
+                        
+                except Exception as db_error:
+                    # Log but don't fail - continue without DB enrichment
+                    self.progress.emit(f"[WARNUNG] ContactInfo konnte nicht geladen werden: {str(db_error)}")
+            
+            # Count unique DOIs for better user feedback
+            unique_dois = len(set(row[0] for row in contributor_data))
+            self.progress.emit(f"[OK] {unique_dois} DOIs mit {len(contributor_data)} Contributors erfolgreich abgerufen")
+            self.finished.emit(contributor_data, self.username)
+            
+        except AuthenticationError as e:
+            self.error.emit(str(e))
+        except NetworkError as e:
+            self.error.emit(str(e))
+        except DataCiteAPIError as e:
+            self.error.emit(str(e))
+        except Exception as e:
+            self.error.emit(f"Unerwarteter Fehler: {str(e)}")
+
+
 class MainWindow(QMainWindow):
     """Main application window."""
     
@@ -237,6 +333,14 @@ class MainWindow(QMainWindow):
         # Thread and worker for publisher update
         self.publisher_update_thread = None
         self.publisher_update_worker = None
+        
+        # Thread and worker for DOI contributor fetch
+        self.contributor_thread = None
+        self.contributor_worker = None
+        
+        # Thread and worker for contributors update
+        self.contributors_update_thread = None
+        self.contributors_update_worker = None
         
         # Track current username for CSV detection
         self._current_username = None
@@ -409,6 +513,30 @@ class MainWindow(QMainWindow):
         publisher_group.setLayout(publisher_layout)
         layout.addWidget(publisher_group)
         
+        # GroupBox 4: Contributors Metadata
+        contributors_group = QGroupBox("🤝 Contributors-Metadaten")
+        contributors_layout = QVBoxLayout()
+        contributors_layout.setSpacing(10)
+        
+        # Status label for contributors
+        self.contributors_status_label = QLabel("⚪ Keine CSV-Datei gefunden")
+        contributors_layout.addWidget(self.contributors_status_label)
+        
+        # Buttons for contributors workflow
+        self.load_contributors_button = QPushButton("📥 DOIs und Contributors exportieren")
+        self.load_contributors_button.setMinimumHeight(40)
+        self.load_contributors_button.clicked.connect(self._on_load_contributors_clicked)
+        contributors_layout.addWidget(self.load_contributors_button)
+        
+        self.update_contributors_button = QPushButton("🖊️ Contributors aktualisieren")
+        self.update_contributors_button.setMinimumHeight(40)
+        self.update_contributors_button.setEnabled(False)  # Initially disabled
+        self.update_contributors_button.clicked.connect(self._on_update_contributors_clicked)
+        contributors_layout.addWidget(self.update_contributors_button)
+        
+        contributors_group.setLayout(contributors_layout)
+        layout.addWidget(contributors_group)
+        
         # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
@@ -507,11 +635,16 @@ class MainWindow(QMainWindow):
         publisher_csv_found = False
         publisher_csv_name = None
         
+        # Check for contributors CSV
+        contributors_csv_found = False
+        contributors_csv_name = None
+        
         # If we have a username, check for specific files
         if self._current_username:
             urls_csv_path = output_dir / f"{self._current_username}_urls.csv"
             authors_csv_path = output_dir / f"{self._current_username}_authors.csv"
             publisher_csv_path = output_dir / f"{self._current_username}_publishers.csv"
+            contributors_csv_path = output_dir / f"{self._current_username}_contributors.csv"
             
             if urls_csv_path.exists():
                 urls_csv_found = True
@@ -524,11 +657,16 @@ class MainWindow(QMainWindow):
             if publisher_csv_path.exists():
                 publisher_csv_found = True
                 publisher_csv_name = publisher_csv_path.name
+            
+            if contributors_csv_path.exists():
+                contributors_csv_found = True
+                contributors_csv_name = contributors_csv_path.name
         else:
-            # Check for any *_urls.csv, *_authors.csv and *_publishers.csv files
+            # Check for any *_urls.csv, *_authors.csv and *_publishers.csv filesntributors.csv files
             urls_files = list(output_dir.glob("*_urls.csv"))
             authors_files = list(output_dir.glob("*_authors.csv"))
             publisher_files = list(output_dir.glob("*_publishers.csv"))
+            contributors_files = list(output_dir.glob("*_contributors.csv"))
             
             if urls_files:
                 urls_csv_found = True
@@ -541,6 +679,10 @@ class MainWindow(QMainWindow):
             if publisher_files:
                 publisher_csv_found = True
                 publisher_csv_name = publisher_files[0].name
+            
+            if contributors_files:
+                contributors_csv_found = True
+                contributors_csv_name = contributors_files[0].name
         
         # Update URLs status
         if urls_csv_found:
@@ -565,6 +707,14 @@ class MainWindow(QMainWindow):
         else:
             self.publisher_status_label.setText("⚪ Keine CSV-Datei gefunden")
             self.update_publisher_button.setEnabled(False)
+        
+        # Update contributors status
+        if contributors_csv_found:
+            self.contributors_status_label.setText(f"🟢 CSV bereit: {contributors_csv_name}")
+            self.update_contributors_button.setEnabled(True)
+        else:
+            self.contributors_status_label.setText("⚪ Keine CSV-Datei gefunden")
+            self.update_contributors_button.setEnabled(False)
     
     def _log(self, message):
         """
@@ -586,9 +736,11 @@ class MainWindow(QMainWindow):
         self.load_button.setEnabled(enabled)
         self.load_authors_button.setEnabled(enabled)
         self.load_publisher_button.setEnabled(enabled)
+        self.load_contributors_button.setEnabled(enabled)
         self.update_button.setEnabled(enabled)
         self.update_authors_button.setEnabled(enabled)
         self.update_publisher_button.setEnabled(enabled)
+        self.update_contributors_button.setEnabled(enabled)
     
     def _format_error_list(self, items: list, max_items: int = 10, bullet: str = "") -> str:
         """
@@ -2156,6 +2308,509 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._log(f"[WARNUNG] Log-Datei konnte nicht erstellt werden: {str(e)}")
     
+    # ==================== CONTRIBUTORS METHODS ====================
+    
+    def _on_load_contributors_clicked(self):
+        """Handle load contributors button click."""
+        # Show credentials dialog
+        dialog = CredentialsDialog(self)
+        credentials = dialog.get_credentials()
+        
+        if credentials is None:
+            self._log("Vorgang abgebrochen.")
+            return
+        
+        username, password, csv_path, use_test_api = credentials
+        # csv_path is None in export mode, we don't need it here
+        
+        # Check if user selected new credentials or loaded saved account
+        credentials_are_new = dialog.is_new_credentials()
+        
+        api_type = "Test-API" if use_test_api else "Produktions-API"
+        self._log(f"Starte Contributors-Abruf für Benutzer '{username}' ({api_type})...")
+        
+        # Disable buttons and show progress
+        self._set_buttons_enabled(False)
+        self.progress_bar.setVisible(True)
+        
+        # Create worker and thread
+        self.contributor_worker = DOIContributorFetchWorker(username, password, use_test_api, credentials_are_new)
+        self.contributor_thread = QThread()
+        self.contributor_worker.moveToThread(self.contributor_thread)
+        
+        # Connect signals
+        self.contributor_thread.started.connect(self.contributor_worker.run)
+        self.contributor_worker.progress.connect(self._log)
+        self.contributor_worker.finished.connect(self._on_contributor_fetch_finished)
+        self.contributor_worker.error.connect(self._on_contributor_fetch_error)
+        self.contributor_worker.request_save_credentials.connect(self._on_request_save_credentials)
+        
+        # Clean up after worker finishes or errors
+        self.contributor_worker.finished.connect(self.contributor_worker.deleteLater)
+        self.contributor_worker.error.connect(self.contributor_worker.deleteLater)
+        self.contributor_worker.finished.connect(self.contributor_thread.quit)
+        self.contributor_worker.error.connect(self.contributor_thread.quit)
+        
+        # Clean up thread when it finishes
+        self.contributor_thread.finished.connect(self.contributor_thread.deleteLater)
+        self.contributor_thread.finished.connect(self._cleanup_contributor_thread)
+        
+        # Start the thread
+        self.contributor_thread.start()
+    
+    def _on_contributor_fetch_finished(self, contributor_data, username):
+        """
+        Handle successful contributor fetch.
+        
+        Args:
+            contributor_data: List of contributor tuples (DOI, Contributor Name, Name Type, etc.)
+            username: DataCite username
+        """
+        if not contributor_data:
+            self._log("[WARNUNG] Keine DOIs mit Contributors gefunden.")
+            QMessageBox.information(
+                self,
+                "Keine Contributors",
+                f"Für den Benutzer '{username}' wurden keine DOIs mit Contributors gefunden."
+            )
+            return
+        
+        # Export to CSV
+        try:
+            output_dir = os.getcwd()
+            filepath = export_dois_with_contributors_to_csv(contributor_data, username, output_dir)
+            
+            # Count unique DOIs
+            unique_dois = len(set(row[0] for row in contributor_data))
+            
+            self._log(f"[OK] CSV-Datei erfolgreich erstellt: {filepath}")
+            
+            # Update username and check CSV files
+            self._current_username = username
+            self._check_csv_files()
+            
+            QMessageBox.information(
+                self,
+                "Erfolg",
+                f"{unique_dois} DOIs mit {len(contributor_data)} Contributors wurden erfolgreich exportiert.\n\n"
+                f"Datei: {Path(filepath).name}\n"
+                f"Verzeichnis: {output_dir}"
+            )
+            
+        except CSVExportError as e:
+            self._log(f"[FEHLER] Fehler beim CSV-Export: {str(e)}")
+            QMessageBox.critical(
+                self,
+                "Fehler beim Export",
+                f"Die CSV-Datei konnte nicht erstellt werden:\n\n{str(e)}"
+            )
+    
+    def _on_contributor_fetch_error(self, error_message):
+        """
+        Handle contributor fetch error.
+        
+        Args:
+            error_message: Error message
+        """
+        self._log(f"[FEHLER] {error_message}")
+        
+        QMessageBox.critical(
+            self,
+            "Fehler",
+            f"Beim Abrufen der Contributors ist ein Fehler aufgetreten:\n\n{error_message}"
+        )
+    
+    def _cleanup_contributor_thread(self):
+        """Clean up contributor thread and worker after completion."""
+        self.progress_bar.setVisible(False)
+        self._set_buttons_enabled(True)
+        
+        # Reset references (objects are deleted via deleteLater)
+        self.contributor_thread = None
+        self.contributor_worker = None
+        
+        self._log("Bereit für nächsten Vorgang.")
+    
+    def _on_update_contributors_clicked(self):
+        """Handle update contributors button click."""
+        # Show credentials dialog in update_contributors mode
+        dialog = CredentialsDialog(self, mode="update_contributors")
+        credentials = dialog.get_credentials()
+        
+        if credentials is None:
+            self._log("Contributors-Update abgebrochen.")
+            return
+        
+        username, password, csv_path, use_test_api = credentials
+        
+        # Check if user selected new credentials or loaded saved account
+        credentials_are_new = dialog.is_new_credentials()
+        
+        # Store credentials for second worker (actual update)
+        self._contributors_update_username = username
+        self._contributors_update_password = password
+        self._contributors_update_csv_path = csv_path
+        self._contributors_update_use_test_api = use_test_api
+        self._contributors_update_credentials_are_new = credentials_are_new
+        
+        api_type = "Test-API" if use_test_api else "Produktions-API"
+        self._log(f"Starte Contributors-Update für Benutzer '{username}' ({api_type})...")
+        self._log(f"CSV-Datei: {Path(csv_path).name}")
+        
+        # Disable buttons and show progress
+        self._set_buttons_enabled(False)
+        self.progress_bar.setVisible(True)
+        
+        # Create worker and thread for DRY RUN
+        self.contributors_update_worker = ContributorsUpdateWorker(
+            username, password, csv_path, use_test_api, dry_run_only=True, credentials_are_new=False
+        )
+        self.contributors_update_thread = QThread()
+        self.contributors_update_worker.moveToThread(self.contributors_update_thread)
+        
+        # Connect signals
+        self.contributors_update_thread.started.connect(self.contributors_update_worker.run)
+        self.contributors_update_worker.progress_update.connect(self._on_contributors_update_progress)
+        self.contributors_update_worker.validation_update.connect(self._on_validation_update)
+        self.contributors_update_worker.dry_run_complete.connect(self._on_contributors_dry_run_complete)
+        self.contributors_update_worker.finished.connect(self._on_contributors_update_finished)
+        self.contributors_update_worker.error_occurred.connect(self._on_contributors_update_error)
+        
+        # Clean up after worker finishes
+        self.contributors_update_worker.finished.connect(self.contributors_update_worker.deleteLater)
+        self.contributors_update_worker.finished.connect(self.contributors_update_thread.quit)
+        
+        # Clean up thread when it finishes
+        self.contributors_update_thread.finished.connect(self.contributors_update_thread.deleteLater)
+        self.contributors_update_thread.finished.connect(self._cleanup_contributors_update_thread)
+        
+        # Start the thread
+        self.contributors_update_thread.start()
+    
+    def _on_contributors_update_progress(self, current, total, message):
+        """
+        Handle contributors update progress signal.
+        
+        Args:
+            current: Current DOI number
+            total: Total number of DOIs
+            message: Progress message
+        """
+        self._log(message)
+        
+        # Update progress bar if we have valid numbers
+        if total > 0:
+            self.progress_bar.setMaximum(total)
+            self.progress_bar.setValue(current)
+    
+    def _on_contributors_dry_run_complete(self, valid_count, invalid_count, validation_results):
+        """
+        Handle contributors dry run validation completion.
+        
+        Args:
+            valid_count: Number of valid DOIs
+            invalid_count: Number of invalid DOIs
+            validation_results: List of validation result dicts
+        """
+        total = valid_count + invalid_count
+        
+        self._log("=" * 60)
+        self._log(f"Dry Run abgeschlossen: {valid_count}/{total} validiert")
+        self._log("=" * 60)
+        
+        # Show validation errors if any
+        if invalid_count > 0:
+            self._log(f"\n[WARNUNG] {invalid_count} DOI(s) sind ungültig:")
+            for result in validation_results:
+                if not result['valid']:
+                    self._log(f"  - {result['doi']}: {result['message']}")
+        
+        # Show dry run results dialog
+        if total == 0:
+            QMessageBox.warning(
+                self,
+                "Keine DOIs gefunden",
+                "Die CSV-Datei enthielt keine DOIs zum Validieren."
+            )
+            return
+        
+        if invalid_count > 0:
+            # Show errors and ask if user wants to continue (show first 10 errors)
+            invalid_results = [r for r in validation_results if not r['valid']]
+            error_items = [f"{r['doi']}: {r['message']}" for r in invalid_results[:10]]
+            error_details = self._format_error_list(error_items, max_items=10, bullet="•")
+            if len(invalid_results) > 10:
+                error_details += f"\n... und {len(invalid_results) - 10} weitere Fehler"
+            
+            reply = QMessageBox.question(
+                self,
+                "Validierung abgeschlossen mit Fehlern",
+                f"Dry Run Ergebnisse:\n\n"
+                f"✓ Gültig: {valid_count}\n"
+                f"✗ Ungültig: {invalid_count}\n\n"
+                f"Erste Fehler:\n{error_details}\n\n"
+                f"Möchtest du nur die {valid_count} gültigen DOIs aktualisieren?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                self._start_actual_contributors_update()
+            else:
+                self._log("Contributors-Update abgebrochen.")
+        else:
+            # All valid - ask for confirmation
+            reply = QMessageBox.question(
+                self,
+                "Validierung erfolgreich",
+                f"Alle {valid_count} DOIs wurden erfolgreich validiert.\n\n"
+                f"Möchtest du jetzt die Contributors-Metadaten bei DataCite aktualisieren?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                self._start_actual_contributors_update()
+            else:
+                self._log("Contributors-Update abgebrochen.")
+    
+    def _start_actual_contributors_update(self):
+        """Start the actual contributors update process (not dry run)."""
+        self._log("\n" + "=" * 60)
+        self._log("Starte ECHTES Update der Contributors-Metadaten...")
+        self._log("=" * 60)
+        
+        # Get credentials from stored instance variables (not from worker which may be deleted)
+        username = self._contributors_update_username
+        password = self._contributors_update_password
+        csv_path = self._contributors_update_csv_path
+        use_test_api = self._contributors_update_use_test_api
+        credentials_are_new = self._contributors_update_credentials_are_new
+        
+        # Disable buttons again
+        self._set_buttons_enabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setMaximum(0)  # Indeterminate
+        
+        # Create new worker with dry_run_only=False
+        self.contributors_update_worker = ContributorsUpdateWorker(
+            username, password, csv_path, use_test_api, dry_run_only=False, credentials_are_new=credentials_are_new
+        )
+        self.contributors_update_thread = QThread()
+        self.contributors_update_worker.moveToThread(self.contributors_update_thread)
+        
+        # Connect signals (no dry_run_complete this time)
+        self.contributors_update_thread.started.connect(self.contributors_update_worker.run)
+        self.contributors_update_worker.progress_update.connect(self._on_contributors_update_progress)
+        self.contributors_update_worker.validation_update.connect(self._on_validation_update)
+        self.contributors_update_worker.database_update.connect(self._on_database_update)
+        self.contributors_update_worker.datacite_update.connect(self._on_datacite_update)
+        self.contributors_update_worker.doi_updated.connect(self._on_contributor_doi_updated)
+        self.contributors_update_worker.finished.connect(self._on_contributors_update_finished)
+        self.contributors_update_worker.error_occurred.connect(self._on_contributors_update_error)
+        self.contributors_update_worker.request_save_credentials.connect(self._on_request_save_credentials)
+        
+        # Clean up after worker finishes
+        self.contributors_update_worker.finished.connect(self.contributors_update_worker.deleteLater)
+        self.contributors_update_worker.finished.connect(self.contributors_update_thread.quit)
+        
+        # Clean up thread when it finishes
+        self.contributors_update_thread.finished.connect(self.contributors_update_thread.deleteLater)
+        self.contributors_update_thread.finished.connect(self._cleanup_contributors_update_thread)
+        
+        # Start the thread
+        self.contributors_update_thread.start()
+    
+    def _on_contributor_doi_updated(self, doi, success, message):
+        """
+        Handle individual DOI contributor update result.
+        
+        Args:
+            doi: DOI that was updated
+            success: Whether update was successful
+            message: Result message (may include system status)
+        """
+        # Log all updates with appropriate prefix
+        if success:
+            self._log(f"[OK] {doi}: {message}")
+        else:
+            self._log(f"[FEHLER] {doi}: {message}")
+    
+    def _on_contributors_update_finished(self, success_count, error_count, skipped_count, error_list, skipped_details):
+        """
+        Handle contributors update completion.
+        
+        Args:
+            success_count: Number of successful updates
+            error_count: Number of failed updates
+            skipped_count: Number of skipped DOIs (no changes)
+            error_list: List of error messages
+            skipped_details: List of (doi, reason) tuples for skipped DOIs
+        """
+        total = success_count + error_count + skipped_count
+        
+        self._log("=" * 60)
+        self._log(f"Contributors-Update abgeschlossen: {success_count} OK, {skipped_count} übersprungen, {error_count} Fehler")
+        self._log("=" * 60)
+        
+        if total == 0:
+            QMessageBox.warning(
+                self,
+                "Keine DOIs verarbeitet",
+                "Es wurden keine DOIs verarbeitet."
+            )
+        elif error_count == 0 and skipped_count == 0:
+            QMessageBox.information(
+                self,
+                "Update erfolgreich",
+                f"Alle {success_count} DOIs wurden erfolgreich aktualisiert!"
+            )
+        elif error_count == 0:
+            # Some skipped, none failed
+            QMessageBox.information(
+                self,
+                "Update abgeschlossen",
+                f"✅ Erfolgreich aktualisiert: {success_count}\n"
+                f"⏭️ Übersprungen (keine Änderungen): {skipped_count}\n\n"
+                f"Effizienz: {skipped_count} unnötige API-Calls vermieden!"
+            )
+        else:
+            error_details = self._format_error_list(error_list, max_items=10)
+            
+            QMessageBox.warning(
+                self,
+                "Update abgeschlossen mit Fehlern",
+                f"✅ Erfolgreich: {success_count}\n"
+                f"⏭️ Übersprungen (keine Änderungen): {skipped_count}\n"
+                f"❌ Fehlgeschlagen: {error_count}\n\n"
+                f"Erste Fehler:\n{error_details}"
+            )
+        
+        # Create log file for actual updates
+        if total > 0:
+            self._create_contributors_update_log(success_count, skipped_count, error_count, error_list, skipped_details)
+    
+    def _on_contributors_update_error(self, error_message):
+        """
+        Handle critical contributors update error.
+        
+        Args:
+            error_message: Error message
+        """
+        self._log(f"[KRITISCHER FEHLER] {error_message}")
+        
+        QMessageBox.critical(
+            self,
+            "Contributors-Update Fehler",
+            f"Ein kritischer Fehler ist aufgetreten:\n\n{error_message}"
+        )
+    
+    def _cleanup_contributors_update_thread(self):
+        """Clean up contributors update thread and worker after completion."""
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setMaximum(0)  # Reset to indeterminate
+        self._set_buttons_enabled(True)
+        
+        # Reset references (objects are deleted via deleteLater)
+        self.contributors_update_thread = None
+        self.contributors_update_worker = None
+        
+        self._log("Bereit für nächsten Vorgang.")
+    
+    def _create_contributors_update_log(self, success_count, skipped_count, error_count, error_list, skipped_details):
+        """
+        Create a log file with contributors update results.
+        
+        Args:
+            success_count: Number of successful updates
+            skipped_count: Number of skipped DOIs (no changes)
+            error_count: Number of failed updates
+            error_list: List of error messages
+            skipped_details: List of (doi, reason) tuples for skipped DOIs
+        """
+        try:
+            # Check if database sync is enabled
+            settings = QSettings("GFZ", "GROBI")
+            db_enabled = settings.value("database/enabled", False, type=bool)
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_filename = f"contributors_update_log_{timestamp}.txt"
+            log_path = Path(os.getcwd()) / log_filename
+            
+            total = success_count + skipped_count + error_count
+            efficiency_gain = (skipped_count / total * 100) if total > 0 else 0
+            
+            with open(log_path, 'w', encoding='utf-8') as f:
+                f.write("=" * 70 + "\n")
+                f.write("GROBI - Contributors-Metadaten Update Log\n")
+                f.write("=" * 70 + "\n")
+                f.write(f"Datum: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Datenbank-Synchronisation: {'Aktiviert' if db_enabled else 'Deaktiviert'}\n")
+                f.write("\n")
+                f.write("ZUSAMMENFASSUNG:\n")
+                f.write(f"  Gesamt: {total} DOIs\n")
+                f.write(f"  Erfolgreich aktualisiert: {success_count}\n")
+                f.write(f"  Übersprungen (keine Änderungen): {skipped_count}\n")
+                f.write(f"  Fehlgeschlagen: {error_count}\n")
+                f.write("\n")
+                f.write("EFFIZIENZ:\n")
+                f.write(f"  API-Calls vermieden: {skipped_count}/{total} ({efficiency_gain:.1f}%)\n")
+                f.write(f"  Nur DOIs mit tatsächlichen Änderungen wurden aktualisiert\n")
+                
+                if db_enabled:
+                    # Count inconsistency warnings
+                    inconsistencies = [e for e in error_list if "INKONSISTENZ" in e]
+                    if inconsistencies:
+                        f.write(f"\n")
+                        f.write(f"  ⚠️ KRITISCHE INKONSISTENZEN: {len(inconsistencies)}\n")
+                        f.write(f"     (Datenbank erfolgreich, DataCite fehlgeschlagen)\n")
+                
+                f.write("\n")
+                
+                # Detailed list of skipped DOIs
+                if skipped_details:
+                    f.write("=" * 70 + "\n")
+                    f.write("ÜBERSPRUNGENE DOIs (keine Änderungen):\n")
+                    f.write("=" * 70 + "\n")
+                    for doi, reason in skipped_details:
+                        f.write(f"  - {doi}\n")
+                        f.write(f"    Grund: {reason}\n")
+                    f.write("\n")
+                
+                if error_list:
+                    f.write("=" * 70 + "\n")
+                    f.write("FEHLER:\n")
+                    f.write("=" * 70 + "\n")
+                    for error in error_list:
+                        f.write(f"  - {error}\n")
+                else:
+                    f.write("Keine Fehler aufgetreten.\n")
+                
+                if db_enabled:
+                    f.write("\n")
+                    f.write("=" * 70 + "\n")
+                    f.write("DATABASE-FIRST UPDATE PATTERN:\n")
+                    f.write("=" * 70 + "\n")
+                    f.write("1. Datenbank wird ZUERST aktualisiert (mit ROLLBACK bei Fehlern)\n")
+                    f.write("2. DataCite wird DANACH aktualisiert (nur wenn DB erfolgreich)\n")
+                    f.write("3. Bei DataCite-Fehlern erfolgt automatischer Retry\n")
+                    f.write("\n")
+                    f.write("HINWEIS: Falls INKONSISTENZEN auftraten, müssen diese manuell\n")
+                    f.write("         korrigiert werden (Datenbank committed, DataCite failed).\n")
+                    f.write("\n")
+                    f.write("CONTRIBUTORS-BESONDERHEITEN:\n")
+                    f.write("- Mehrere ContributorTypes pro Contributor werden unterstützt\n")
+                    f.write("- Email/Website/Position nur für ContactPerson in DB gespeichert\n")
+                    f.write("- DataCite erhält nur den ersten ContributorType\n")
+                
+                f.write("\n")
+                f.write("=" * 70 + "\n")
+            
+            self._log(f"[OK] Log-Datei erstellt: {log_filename}")
+            
+        except Exception as e:
+            self._log(f"[WARNUNG] Log-Datei konnte nicht erstellt werden: {str(e)}")
+    
     def closeEvent(self, event):
         """
         Handle window close event.
@@ -2198,5 +2853,19 @@ class MainWindow(QMainWindow):
                 self.publisher_update_worker.stop()
             self.publisher_update_thread.quit()
             self.publisher_update_thread.wait(3000)  # Wait max 3 seconds
+        
+        # If contributor thread is running, wait for it to finish
+        if self.contributor_thread is not None and self.contributor_thread.isRunning():
+            self._log("Warte auf Abschluss des Contributors-Abrufs...")
+            self.contributor_thread.quit()
+            self.contributor_thread.wait(3000)  # Wait max 3 seconds
+        
+        # If contributors update thread is running, stop worker and wait for it to finish
+        if self.contributors_update_thread is not None and self.contributors_update_thread.isRunning():
+            self._log("Warte auf Abschluss des Contributors-Updates...")
+            if self.contributors_update_worker is not None:
+                self.contributors_update_worker.stop()
+            self.contributors_update_thread.quit()
+            self.contributors_update_thread.wait(3000)  # Wait max 3 seconds
         
         event.accept()

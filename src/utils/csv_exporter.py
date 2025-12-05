@@ -304,6 +304,113 @@ def export_dois_with_publisher_to_csv(
         raise CSVExportError(error_msg)
 
 
+def export_dois_with_contributors_to_csv(
+    data: List[Tuple[str, str, str, str, str, str, str, str, str, str, str, str, str, str]],
+    username: str,
+    output_dir: str = None
+) -> str:
+    """
+    Export DOIs with contributor information to a CSV file.
+    
+    One row per contributor, so DOIs with multiple contributors will appear multiple times.
+    Contributors can have multiple ContributorTypes (comma-separated).
+    ContactInfo (Email, Website, Position) is only populated for ContactPerson type (DB only).
+    
+    Args:
+        data: List of tuples containing:
+              (DOI, Contributor Name, Name Type, Given Name, Family Name,
+               Name Identifier, Name Identifier Scheme, Scheme URI,
+               Contributor Types, Affiliation, Affiliation Identifier,
+               Email, Website, Position)
+        username: DataCite username (used for filename)
+        output_dir: Directory where CSV should be saved.
+                   If None, uses current working directory.
+    
+    Returns:
+        Path to the created CSV file
+        
+    Raises:
+        CSVExportError: If export fails due to permissions, disk space, etc.
+    """
+    if output_dir is None:
+        output_dir = os.getcwd()
+    
+    # Sanitize username for filename (remove problematic characters)
+    safe_username = "".join(c if c.isalnum() or c in ".-_" else "_" for c in username)
+    filename = f"{safe_username}_contributors.csv"
+    filepath = Path(output_dir) / filename
+    
+    logger.info(f"Exporting {len(data)} contributor entries to {filepath}")
+    
+    # Check if directory exists and is writable
+    try:
+        output_path = Path(output_dir)
+        if not output_path.exists():
+            output_path.mkdir(parents=True, exist_ok=True)
+            logger.debug(f"Created output directory: {output_dir}")
+        
+        # Test write permissions
+        if not os.access(output_dir, os.W_OK):
+            error_msg = f"Keine Schreibrechte für Verzeichnis: {output_dir}"
+            logger.error(error_msg)
+            raise CSVExportError(error_msg)
+            
+    except PermissionError as e:
+        error_msg = f"Keine Berechtigung zum Erstellen des Verzeichnisses: {output_dir}"
+        logger.error(f"Permission error: {e}")
+        raise CSVExportError(error_msg)
+    except OSError as e:
+        error_msg = f"Fehler beim Erstellen des Verzeichnisses: {str(e)}"
+        logger.error(f"OS error: {e}")
+        raise CSVExportError(error_msg)
+    
+    # Write CSV file
+    try:
+        with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            
+            # Write header (14 columns)
+            writer.writerow([
+                'DOI',
+                'Contributor Name',
+                'Name Type',
+                'Given Name',
+                'Family Name',
+                'Name Identifier',
+                'Name Identifier Scheme',
+                'Scheme URI',
+                'Contributor Types',
+                'Affiliation',
+                'Affiliation Identifier',
+                'Email',
+                'Website',
+                'Position'
+            ])
+            
+            # Write data rows
+            for row in data:
+                writer.writerow(row)
+        
+        logger.info(f"Successfully exported {len(data)} contributor entries to {filepath}")
+        return str(filepath)
+        
+    except PermissionError as e:
+        error_msg = f"Keine Berechtigung zum Schreiben der Datei: {filepath}"
+        logger.error(f"Permission error writing file: {e}")
+        raise CSVExportError(error_msg)
+    
+    except OSError as e:
+        # This could be disk full, invalid path, etc.
+        error_msg = f"Die CSV-Datei konnte nicht gespeichert werden: {str(e)}"
+        logger.error(f"OS error writing file: {e}")
+        raise CSVExportError(error_msg)
+    
+    except Exception as e:
+        error_msg = f"Unerwarteter Fehler beim Speichern der CSV-Datei: {str(e)}"
+        logger.error(f"Unexpected error: {e}")
+        raise CSVExportError(error_msg)
+
+
 def validate_csv_format(filepath: str) -> bool:
     """
     Validate that a CSV file has the correct format.
