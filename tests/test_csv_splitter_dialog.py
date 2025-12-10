@@ -122,6 +122,7 @@ class TestCSVSplitterDialog:
         # Mock QThread to prevent actual threading
         with patch('src.ui.csv_splitter_dialog.QThread') as mock_thread_class:
             mock_thread = MagicMock()
+            mock_thread.isRunning.return_value = False  # Thread is not running
             mock_thread_class.return_value = mock_thread
             
             with patch('src.ui.csv_splitter_dialog.CSVSplitterWorker') as mock_worker_class:
@@ -139,6 +140,9 @@ class TestCSVSplitterDialog:
                 
                 # Verify thread was created and started
                 assert mock_thread.start.call_count == 1
+                
+                # Clean up: ensure dialog.thread is set to None to prevent closeEvent issues
+                dialog.thread = None
     
     def test_ui_disabled_during_processing(self, dialog, qtbot, tmp_path):
         """Test that UI controls are disabled during processing."""
@@ -162,6 +166,9 @@ class TestCSVSplitterDialog:
                 assert dialog.prefix_spinbox.isEnabled() is False
                 # Verify setVisible(True) was called
                 mock_set_visible.assert_called_with(True)
+                
+                # Clean up: ensure dialog.thread is None to prevent closeEvent issues
+                dialog.thread = None
     
     def test_on_progress_updates_log(self, dialog, qtbot):
         """Test that progress updates are logged."""
