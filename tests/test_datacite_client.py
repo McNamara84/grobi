@@ -211,7 +211,7 @@ class TestFetchAllDOIs:
     
     @responses.activate
     def test_request_parameters(self, client):
-        """Test that correct parameters are sent to API."""
+        """Test that correct parameters are sent to API (cursor-based pagination)."""
         responses.add(
             responses.GET,
             "https://api.datacite.org/dois",
@@ -226,7 +226,8 @@ class TestFetchAllDOIs:
         request = responses.calls[0].request
         assert "client-id=TIB.GFZ" in request.url
         assert "page%5Bsize%5D=100" in request.url or "page[size]=100" in request.url
-        assert "page%5Bnumber%5D=1" in request.url or "page[number]=1" in request.url
+        # Cursor-based pagination uses page[cursor]=1 instead of page[number]=1
+        assert "page%5Bcursor%5D=1" in request.url or "page[cursor]=1" in request.url
     
     @responses.activate
     def test_test_api_endpoint(self, test_client):
