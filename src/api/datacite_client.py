@@ -50,12 +50,9 @@ class DataCiteClient:
         
         logger.info(f"DataCite client initialized for {'TEST' if use_test_api else 'PRODUCTION'} API")
     
-    def fetch_all_dois(self, creator_filter: Optional[str] = None) -> List[Tuple[str, str]]:
+    def fetch_all_dois(self) -> List[Tuple[str, str]]:
         """
         Fetch all DOIs registered by this client from DataCite API.
-        
-        Args:
-            creator_filter: Optional creator name to filter by (e.g., "Smith, John")
         
         Returns:
             List of tuples containing (DOI, Landing Page URL)
@@ -68,12 +65,11 @@ class DataCiteClient:
         all_dois = []
         page_number = 1
         
-        filter_msg = f" with creator filter '{creator_filter}'" if creator_filter else ""
-        logger.info(f"Starting to fetch DOIs for client: {self.username}{filter_msg}")
+        logger.info(f"Starting to fetch DOIs for client: {self.username}")
         
         while True:
             try:
-                dois, has_more = self._fetch_page(page_number, creator_filter)
+                dois, has_more = self._fetch_page(page_number)
                 all_dois.extend(dois)
                 
                 logger.info(f"Fetched page {page_number}: {len(dois)} DOIs (Total: {len(all_dois)})")
@@ -153,123 +149,12 @@ class DataCiteClient:
         logger.info(f"Successfully fetched {len(all_creator_data)} creator entries in total")
         return all_creator_data
     
-    def fetch_all_creators(self) -> List[str]:
-        """
-        Fetch all unique creator names for this client from DataCite API.
-        Used to populate filter dropdown.
-        
-        Returns:
-            Sorted list of unique creator names
-            
-        Raises:
-            AuthenticationError: If credentials are invalid
-            NetworkError: If connection to API fails
-            DataCiteAPIError: For other API errors
-        """
-        creators_set = set()
-        page_number = 1
-        
-        logger.info(f"Starting to fetch creator names for client: {self.username}")
-        
-        while True:
-            try:
-                url = f"{self.base_url}/dois"
-                params = {
-                    "client-id": self.username,
-                    "page[size]": self.PAGE_SIZE,
-                    "page[number]": page_number,
-                    "fields[dois]": "creators"  # Only fetch creators field for efficiency
-                }
-                
-                response = requests.get(
-                    url,
-                    auth=self.auth,
-                    params=params,
-                    timeout=self.TIMEOUT,
-                    headers={"Accept": "application/vnd.api+json"}
-                )
-                
-                if response.status_code == 401:
-                    error_msg = "Anmeldung fehlgeschlagen. Bitte überprüfe deinen Benutzernamen und dein Passwort."
-                    logger.error(f"Authentication failed for user: {self.username}")
-                    raise AuthenticationError(error_msg)
-                
-                if response.status_code == 429:
-                    error_msg = "Zu viele Anfragen. Bitte warte einen Moment und versuche es erneut."
-                    logger.error("Rate limit exceeded")
-                    raise DataCiteAPIError(error_msg)
-                
-                if response.status_code != 200:
-                    error_msg = f"DataCite API Fehler (HTTP {response.status_code}): {response.text}"
-                    logger.error(f"API error: {response.status_code} - {response.text}")
-                    raise DataCiteAPIError(error_msg)
-                
-                try:
-                    data = response.json()
-                except ValueError as e:
-                    error_msg = "Ungültige Antwort von der DataCite API (kein gültiges JSON)."
-                    logger.error(f"Invalid JSON response: {e}")
-                    raise DataCiteAPIError(error_msg)
-                
-                # Extract creator names
-                if "data" in data and isinstance(data["data"], list):
-                    for item in data["data"]:
-                        try:
-                            creators = item.get("attributes", {}).get("creators", [])
-                            if creators and isinstance(creators, list):
-                                for creator in creators:
-                                    creator_name = creator.get("name")
-                                    if creator_name:
-                                        creators_set.add(creator_name)
-                        except (KeyError, AttributeError, TypeError) as e:
-                            logger.warning(f"Error parsing creators for DOI {item.get('id', 'unknown')}: {e}")
-                            continue
-                
-                logger.info(f"Fetched page {page_number}: {len(creators_set)} unique creators so far")
-                
-                # Check if there are more pages
-                has_more = False
-                if "links" in data and "next" in data["links"]:
-                    has_more = True
-                
-                if "meta" in data:
-                    meta = data["meta"]
-                    page = meta.get("page", page_number)
-                    total_pages = meta.get("totalPages", 1)
-                    if page < total_pages:
-                        has_more = True
-                
-                if not has_more:
-                    break
-                
-                page_number += 1
-                
-            except requests.exceptions.Timeout:
-                error_msg = "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut."
-                logger.error(f"Timeout on page {page_number}")
-                raise DataCiteAPIError(error_msg)
-            
-            except requests.exceptions.ConnectionError as e:
-                error_msg = "Verbindung zur DataCite API fehlgeschlagen. Bitte überprüfe deine Internetverbindung."
-                logger.error(f"Connection error: {e}")
-                raise NetworkError(error_msg)
-            
-            except requests.exceptions.RequestException as e:
-                error_msg = f"Netzwerkfehler bei der Kommunikation mit DataCite: {str(e)}"
-                logger.error(f"Request exception: {e}")
-                raise NetworkError(error_msg)
-        
-        creator_list = sorted(list(creators_set))
-        logger.info(f"Successfully fetched {len(creator_list)} unique creator names")
-        return creator_list
-    
-    def _fetch_page(self, page_number: int, creator_filter: Optional[str] = None) -> Tuple[List[Tuple[str, str]], bool]:
+    def _fetch_page(self, page_number: int) -> Tuple[List[Tuple[str, str]], bool]:
         """
         Fetch a single page of DOIs from the API.
         
         Args:
             page_number: Page number to fetch (1-indexed)
-            creator_filter: Optional creator name to filter by
             
         Returns:
             Tuple of (list of DOI tuples, has_more_pages boolean)
@@ -284,11 +169,6 @@ class DataCiteClient:
             "page[size]": self.PAGE_SIZE,
             "page[number]": page_number
         }
-        
-        # Add creator filter if provided
-        if creator_filter:
-            # Use exact match search with quotes for precise filtering
-            params["query"] = f'creators.name:"{creator_filter}"'
         
         logger.debug(f"Requesting: {url} with params: {params}")
         
