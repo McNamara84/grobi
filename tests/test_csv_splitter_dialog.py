@@ -11,10 +11,15 @@ from src.ui.csv_splitter_dialog import CSVSplitterDialog
 
 @pytest.fixture
 def dialog(qtbot):
-    """Create dialog instance."""
+    """Create dialog instance and ensure cleanup after test."""
     dlg = CSVSplitterDialog()
     qtbot.addWidget(dlg)
-    return dlg
+    
+    yield dlg
+    
+    # Cleanup: Ensure thread is None to prevent closeEvent blocking during teardown
+    dlg.thread = None
+    dlg.worker = None
 
 
 class TestCSVSplitterDialog:
@@ -250,6 +255,9 @@ class TestCSVSplitterDialog:
             # Verify close was prevented
             assert event.isAccepted() is False
             assert mock_warning.call_count == 1
+        
+        # Clean up: reset thread to None to prevent teardown issues
+        dialog.thread = None
     
     def test_close_event_when_idle(self, dialog, qtbot):
         """Test that dialog can be closed when idle."""
