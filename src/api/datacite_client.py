@@ -172,6 +172,8 @@ class DataCiteClient:
             logger.debug(f"Requesting next page: {url}")
         else:
             # First page: use cursor=1
+            # Note: DataCite API explicitly requires page[cursor]=1 for the first page
+            # See: https://support.datacite.org/docs/pagination (Method 2: Cursor)
             url = f"{self.base_url}/dois"
             params = {
                 "client-id": self.username,
@@ -262,6 +264,8 @@ class DataCiteClient:
             logger.debug(f"Requesting next page with creators: {url}")
         else:
             # First page: use cursor=1
+            # Note: DataCite API explicitly requires page[cursor]=1 for the first page
+            # See: https://support.datacite.org/docs/pagination (Method 2: Cursor)
             url = f"{self.base_url}/dois"
             params = {
                 "client-id": self.username,
@@ -843,6 +847,8 @@ class DataCiteClient:
             logger.debug(f"Requesting next page with contributors: {url}")
         else:
             # First page: use cursor=1
+            # Note: DataCite API explicitly requires page[cursor]=1 for the first page
+            # See: https://support.datacite.org/docs/pagination (Method 2: Cursor)
             url = f"{self.base_url}/dois"
             params = {
                 "client-id": self.username,
@@ -1882,6 +1888,8 @@ class DataCiteClient:
             logger.debug(f"Requesting next page with publisher: {url}")
         else:
             # First page: use cursor=1
+            # Note: DataCite API explicitly requires page[cursor]=1 for the first page
+            # See: https://support.datacite.org/docs/pagination (Method 2: Cursor)
             url = f"{self.base_url}/dois"
             params = {
                 "client-id": self.username,
