@@ -2,21 +2,11 @@
 
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch
-from PySide6.QtCore import QThread
+from unittest.mock import Mock, patch, MagicMock
+from PySide6.QtCore import QThread, QCoreApplication
 
 from src.workers.csv_splitter_worker import CSVSplitterWorker
 from src.utils.csv_splitter import CSVSplitError
-
-
-@pytest.fixture
-def qapp(qtbot):
-    """Provide QApplication instance."""
-    from PySide6.QtWidgets import QApplication
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
 
 
 class TestCSVSplitterWorker:
@@ -33,7 +23,7 @@ class TestCSVSplitterWorker:
         assert worker.output_dir == output_dir
         assert worker.prefix_level == 2
     
-    def test_worker_successful_split(self, qapp, tmp_path):
+    def test_worker_successful_split(self, qtbot, tmp_path):
         """Test successful CSV splitting."""
         # Create test CSV
         input_file = tmp_path / "test.csv"
@@ -56,7 +46,7 @@ class TestCSVSplitterWorker:
         worker.finished.connect(finished_mock)
         worker.error.connect(error_mock)
         
-        # Run worker
+        # Run worker directly (not in thread)
         worker.run()
         
         # Verify success
@@ -68,7 +58,7 @@ class TestCSVSplitterWorker:
         assert total_rows == 2
         assert len(prefix_counts) == 1
     
-    def test_worker_error_handling(self, qapp, tmp_path):
+    def test_worker_error_handling(self, qtbot, tmp_path):
         """Test worker error handling for nonexistent file."""
         input_file = tmp_path / "nonexistent.csv"
         output_dir = tmp_path / "output"
@@ -84,7 +74,7 @@ class TestCSVSplitterWorker:
         worker.finished.connect(finished_mock)
         worker.error.connect(error_mock)
         
-        # Run worker
+        # Run worker directly (not in thread)
         worker.run()
         
         # Verify error
@@ -95,7 +85,7 @@ class TestCSVSplitterWorker:
         error_message = error_mock.call_args[0][0]
         assert "Eingabedatei nicht gefunden" in error_message
     
-    def test_worker_progress_updates(self, qapp, tmp_path):
+    def test_worker_progress_updates(self, qtbot, tmp_path):
         """Test that worker emits progress updates."""
         # Create test CSV
         input_file = tmp_path / "test.csv"
@@ -112,7 +102,7 @@ class TestCSVSplitterWorker:
         progress_mock = Mock()
         worker.progress.connect(progress_mock)
         
-        # Run worker
+        # Run worker directly (not in thread)
         worker.run()
         
         # Verify progress updates were emitted
@@ -123,7 +113,7 @@ class TestCSVSplitterWorker:
         assert any("Starte CSV-Splitting" in msg for msg in progress_messages)
         assert any("[OK]" in msg for msg in progress_messages)
     
-    def test_worker_with_invalid_csv_format(self, qapp, tmp_path):
+    def test_worker_with_invalid_csv_format(self, qtbot, tmp_path):
         """Test worker handling of invalid CSV format."""
         # Create invalid CSV (no DOI column)
         input_file = tmp_path / "test.csv"
@@ -143,7 +133,7 @@ class TestCSVSplitterWorker:
         worker.error.connect(error_mock)
         worker.finished.connect(finished_mock)
         
-        # Run worker
+        # Run worker directly (not in thread)
         worker.run()
         
         # Verify error
@@ -153,7 +143,7 @@ class TestCSVSplitterWorker:
         error_message = error_mock.call_args[0][0]
         assert "DOI" in error_message
     
-    def test_worker_with_different_prefix_levels(self, qapp, tmp_path):
+    def test_worker_with_different_prefix_levels(self, qtbot, tmp_path):
         """Test worker with different prefix levels."""
         # Create test CSV
         input_file = tmp_path / "test.csv"
@@ -171,13 +161,14 @@ class TestCSVSplitterWorker:
         finished_mock = Mock()
         worker.finished.connect(finished_mock)
         
+        # Run worker directly (not in thread)
         worker.run()
         
         total_rows, prefix_counts = finished_mock.call_args[0]
         assert total_rows == 2
         assert len(prefix_counts) == 1  # All grouped under 10.5880
     
-    def test_worker_exception_handling(self, qapp, tmp_path):
+    def test_worker_exception_handling(self, qtbot, tmp_path):
         """Test worker handling of unexpected exceptions."""
         input_file = tmp_path / "test.csv"
         input_file.write_text("DOI,URL\n10.5880/test,http://example.com\n")
@@ -192,6 +183,7 @@ class TestCSVSplitterWorker:
         with patch('src.workers.csv_splitter_worker.split_csv_by_doi_prefix') as mock_split:
             mock_split.side_effect = RuntimeError("Unexpected error")
             
+            # Run worker directly (not in thread)
             worker.run()
             
             # Should emit error signal
