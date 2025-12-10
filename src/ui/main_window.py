@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox
+    QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox, QComboBox
 )
 from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt, QSettings
 from PySide6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices, QPixmap
@@ -36,7 +36,7 @@ class DOIFetchWorker(QObject):
     error = Signal(str)  # Error message
     request_save_credentials = Signal(str, str, str)  # username, password, api_type
     
-    def __init__(self, username, password, use_test_api, credentials_are_new=False):
+    def __init__(self, username, password, use_test_api, credentials_are_new=False, creator_filter=None):
         """
         Initialize the worker.
         
@@ -45,12 +45,14 @@ class DOIFetchWorker(QObject):
             password: DataCite password
             use_test_api: Whether to use test API
             credentials_are_new: Whether these are newly entered credentials (not from saved account)
+            creator_filter: Optional creator name to filter DOIs by
         """
         super().__init__()
         self.username = username
         self.password = password
         self.use_test_api = use_test_api
         self.credentials_are_new = credentials_are_new
+        self.creator_filter = creator_filter
     
     def run(self):
         """Fetch DOIs from DataCite API."""
@@ -63,8 +65,9 @@ class DOIFetchWorker(QObject):
                 self.use_test_api
             )
             
-            self.progress.emit("DOIs werden abgerufen...")
-            dois = client.fetch_all_dois()
+            filter_msg = f" (gefiltert nach: {self.creator_filter})" if self.creator_filter else ""
+            self.progress.emit(f"DOIs werden abgerufen{filter_msg}...")
+            dois = client.fetch_all_dois(self.creator_filter)
             
             # If credentials are new and API call was successful, offer to save them
             if self.credentials_are_new and dois:
@@ -73,6 +76,54 @@ class DOIFetchWorker(QObject):
             
             self.progress.emit(f"[OK] {len(dois)} DOIs erfolgreich abgerufen")
             self.finished.emit(dois, self.username)
+            
+        except AuthenticationError as e:
+            self.error.emit(str(e))
+        except NetworkError as e:
+            self.error.emit(str(e))
+        except DataCiteAPIError as e:
+            self.error.emit(str(e))
+        except Exception as e:
+            self.error.emit(f"Unerwarteter Fehler: {str(e)}")
+
+
+class CreatorListFetchWorker(QObject):
+    """Worker for fetching list of unique creator names in a separate thread."""
+    
+    # Signals
+    progress = Signal(str)  # Progress message
+    finished = Signal(list)  # List of creator names
+    error = Signal(str)  # Error message
+    
+    def __init__(self, username, password, use_test_api):
+        """
+        Initialize the worker.
+        
+        Args:
+            username: DataCite username
+            password: DataCite password
+            use_test_api: Whether to use test API
+        """
+        super().__init__()
+        self.username = username
+        self.password = password
+        self.use_test_api = use_test_api
+    
+    def run(self):
+        """Fetch unique creator names from DataCite API."""
+        try:
+            self.progress.emit("Lade Creator-Namen...")
+            
+            client = DataCiteClient(
+                self.username,
+                self.password,
+                self.use_test_api
+            )
+            
+            creators = client.fetch_all_creators()
+            
+            self.progress.emit(f"[OK] {len(creators)} eindeutige Creator-Namen geladen")
+            self.finished.emit(creators)
             
         except AuthenticationError as e:
             self.error.emit(str(e))
@@ -314,6 +365,10 @@ class MainWindow(QMainWindow):
         self.thread = None
         self.worker = None
         
+        # Thread and worker for creator list fetch
+        self.creator_list_thread = None
+        self.creator_list_worker = None
+        
         # Thread and worker for DOI creator fetch
         self.creator_thread = None
         self.creator_worker = None
@@ -449,6 +504,25 @@ class MainWindow(QMainWindow):
         # Status label for URLs
         self.urls_status_label = QLabel("⚪ Keine CSV-Datei gefunden")
         urls_layout.addWidget(self.urls_status_label)
+        
+        # Creator filter dropdown
+        filter_layout = QHBoxLayout()
+        filter_label = QLabel("🔍 Filter nach Creator:")
+        filter_layout.addWidget(filter_label)
+        
+        self.creator_filter_combo = QComboBox()
+        self.creator_filter_combo.addItem("Alle Creators (kein Filter)", None)
+        self.creator_filter_combo.setMinimumWidth(300)
+        self.creator_filter_combo.setEnabled(False)  # Disabled until creators are loaded
+        filter_layout.addWidget(self.creator_filter_combo, 1)
+        
+        # Button to load creators
+        self.load_creators_button = QPushButton("📋 Creators laden")
+        self.load_creators_button.setMaximumWidth(150)
+        self.load_creators_button.clicked.connect(self._on_load_creators_clicked)
+        filter_layout.addWidget(self.load_creators_button)
+        
+        urls_layout.addLayout(filter_layout)
         
         # Buttons for URLs workflow
         self.load_button = QPushButton("📥 DOIs und URLs exportieren")
@@ -897,8 +971,11 @@ class MainWindow(QMainWindow):
         self.update_publisher_button.setEnabled(False)
         self.progress_bar.setVisible(True)
         
+        # Get selected creator filter (if any)
+        creator_filter = self.creator_filter_combo.currentData()
+        
         # Create worker and thread
-        self.worker = DOIFetchWorker(username, password, use_test_api, credentials_are_new)
+        self.worker = DOIFetchWorker(username, password, use_test_api, credentials_are_new, creator_filter)
         self.thread = QThread()
         self.worker.moveToThread(self.thread)
         
@@ -965,6 +1042,98 @@ class MainWindow(QMainWindow):
                 "CSV-Export Fehler",
                 f"Die CSV-Datei konnte nicht erstellt werden:\n\n{str(e)}"
             )
+    
+    def _on_load_creators_clicked(self):
+        """Handle load creators button click."""
+        # Show credentials dialog
+        dialog = CredentialsDialog(self)
+        credentials = dialog.get_credentials()
+        
+        if credentials is None:
+            self._log("Vorgang abgebrochen.")
+            return
+        
+        username, password, csv_path, use_test_api = credentials
+        
+        api_type = "Test-API" if use_test_api else "Produktions-API"
+        self._log(f"Lade Creator-Liste für Benutzer '{username}' ({api_type})...")
+        
+        # Disable buttons and show progress
+        self.load_creators_button.setEnabled(False)
+        self.creator_filter_combo.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        
+        # Create worker and thread
+        self.creator_list_worker = CreatorListFetchWorker(username, password, use_test_api)
+        self.creator_list_thread = QThread()
+        self.creator_list_worker.moveToThread(self.creator_list_thread)
+        
+        # Connect signals
+        self.creator_list_thread.started.connect(self.creator_list_worker.run)
+        self.creator_list_worker.progress.connect(self._log)
+        self.creator_list_worker.finished.connect(self._on_creators_loaded)
+        self.creator_list_worker.error.connect(self._on_creators_load_error)
+        
+        # Clean up after worker finishes or errors
+        self.creator_list_worker.finished.connect(self.creator_list_worker.deleteLater)
+        self.creator_list_worker.error.connect(self.creator_list_worker.deleteLater)
+        self.creator_list_worker.finished.connect(self.creator_list_thread.quit)
+        self.creator_list_worker.error.connect(self.creator_list_thread.quit)
+        
+        # Clean up thread when it finishes
+        self.creator_list_thread.finished.connect(self.creator_list_thread.deleteLater)
+        
+        # Start the thread
+        self.creator_list_thread.start()
+    
+    def _on_creators_loaded(self, creators):
+        """
+        Handle successfully loaded creators.
+        
+        Args:
+            creators: List of creator names
+        """
+        self._log(f"Creator-Liste erfolgreich geladen: {len(creators)} Einträge")
+        
+        # Populate dropdown
+        self.creator_filter_combo.clear()
+        self.creator_filter_combo.addItem("Alle Creators (kein Filter)", None)
+        
+        for creator in creators:
+            self.creator_filter_combo.addItem(creator, creator)
+        
+        # Enable dropdown
+        self.creator_filter_combo.setEnabled(True)
+        
+        # Re-enable button and hide progress
+        self.load_creators_button.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        
+        QMessageBox.information(
+            self,
+            "Erfolg",
+            f"{len(creators)} Creator-Namen wurden geladen.\n\n"
+            "Sie können nun einen Creator auswählen um die DOI-Liste zu filtern."
+        )
+    
+    def _on_creators_load_error(self, error_message):
+        """
+        Handle error loading creators.
+        
+        Args:
+            error_message: Error message string
+        """
+        self._log(f"[FEHLER] {error_message}")
+        
+        # Re-enable button and hide progress
+        self.load_creators_button.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        
+        QMessageBox.critical(
+            self,
+            "Fehler beim Laden der Creator-Liste",
+            f"Die Creator-Namen konnten nicht geladen werden:\n\n{error_message}"
+        )
     
     def _on_fetch_error(self, error_message):
         """
