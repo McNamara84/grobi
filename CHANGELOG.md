@@ -5,7 +5,148 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - Unreleased
+## [0.5.0] - 2025-12-10
+
+### Added
+- 👥 **Contributors Management** (#14): Export and update contributor metadata
+  - **CSV Export**: Export all contributors (non-Creator roles) with metadata
+    - Supports all 21 DataCite ContributorTypes (ContactPerson, DataCollector, DataCurator, etc.)
+    - Multiple roles per contributor in comma-separated format
+    - Contact information enrichment (email, website, position) from database for ContactPerson role
+    - Intelligent name-based matching for contact info across all resourceagents
+    - CSV format: 12 columns including DOI, name, identifiers, contributor types, contact info
+  - **CSV Import & Update**: Bulk update contributors via CSV
+    - Partial update support: Match contributors by name or ORCID
+    - Change detection: Skip unchanged contributors (DB-only fields + DataCite fields)
+    - Database-First Pattern: Update internal DB before DataCite API
+    - Transactional updates with ROLLBACK on failure
+    - Contact info updates (email, website, position) only in database
+    - Affiliation preservation (not exported/imported)
+  - **Advanced Name Type Inference**: Smart detection of Personal vs Organizational contributors
+    - ORCID presence = definitive proof of Personal nameType
+    - ROR identifier = definitive proof of Organizational nameType
+    - Organization keyword detection (150+ keywords: University, Institute, Team, Laboratory, etc.)
+    - Heuristic person name detection (comma format, title patterns)
+    - ContributorType-based inference (e.g., ResearchGroup → always Organizational)
+    - Override logic: Warn when correcting inconsistent DataCite nameType
+    - URL/Email detection as organizational indicators
+  - **Comprehensive Tests**: 50+ new tests with realistic production data
+    - NameType inference tests with edge cases and internationalization
+    - Integration tests with pagination and field extraction
+    - Real-world contributor update scenarios
+    - Partial update and matching logic tests
+    - DB-only field change detection tests
+  - **UI Integration**: New "Contributors" GroupBox in main window
+    - Export button: Fetch and export contributors to CSV
+    - Update button: Import and update from CSV with validation
+    - Database enrichment: Automatic contact info fetching if DB sync enabled
+    - CredentialsDialog extended with 'update_contributors' mode
+- **Shared Publisher Parsing Utility**: Centralized parsing logic
+  - `src/utils/publisher_parser.py`: Extract publisherIdentifier and publisherIdentifierScheme
+  - Used by DataCite client and publisher update worker for consistency
+  - Robust handling of missing or empty publisher identifiers
+
+### Changed
+- **Language Code Validation**: Extended to support BCP 47 codes up to 11 characters
+- **CSV Exporter**: Improved handling of empty publisherIdentifier fields
+- **Button Management**: Refactored with `_set_buttons_enabled()` helper method
+- **Error Display**: Extracted `_format_error_list()` for consistent error formatting
+- **Publisher Update Logic**: Better handling of DOIs missing in database
+  - "DOI not found in DB" treated as warning, not fatal error
+  - Clearer inconsistency tracking (DB updated but DataCite failed)
+- **DataCite API Validation**: Real metadata fetch for availability check
+  - Explicit authentication and network error handling in PublisherUpdateWorker
+- **Credentials Flag**: Fixed `credentials_are_new` parameter passing in publisher updates
+
+### Technical Details
+- **Contributors Implementation**:
+  - `src/api/datacite_client.py`: +7 methods for contributors (fetch, validate, update, enrich)
+  - `src/db/sumariopmd_client.py`: +5 methods for contributors and contact info
+  - `src/utils/csv_parser.py`: New `parse_contributors_update_csv()` method
+  - `src/utils/csv_exporter.py`: New `export_dois_with_contributors_to_csv()` function
+  - `src/workers/contributors_update_worker.py`: New worker (850+ lines) with change detection
+  - `src/ui/main_window.py`: New DOIContributorFetchWorker + UI integration
+- **NameType Inference Logic**:
+  - Priority: ORCID (Personal) → ROR (Organizational) → API nameType → Keywords → Heuristics
+  - Organization keyword sets: Long keywords (substring match) + short keywords (word boundary)
+  - Person name patterns: Comma format detection, title presence checks
+  - Logging: Debug logs for all inference decisions + warnings for overrides
+- **Partial Update Matching**:
+  - Matching by name (normalized) or ORCID identifier
+  - Allows updating subset of contributors without full list
+  - Preserves affiliations from existing metadata
+  - Clears DB-only fields (email/website/position) if not in CSV
+- **Test Coverage**: +50 tests (391 → 441 tests)
+  - NameType inference: 28 edge cases (real-world data)
+  - Integration: Pagination, field extraction, API mocking
+  - Contributor updates: Change detection, partial updates, matching
+  - DB-only field changes: Detection and description logic
+  - Overall coverage: 78% maintained
+- **Database Operations**:
+  - Transaction scope: DELETE non-Creator roles → INSERT new contributors → INSERT roles → INSERT contactinfo
+  - Contact info matching: Multiple key formats (lastname/firstname, full name, "Lastname, Firstname")
+  - All contact info fetched for resource (not just ContactPerson role)
+  - ROLLBACK on any database error during transaction
+
+## [0.4.0] - 2025-12-03
+
+### Added
+- 📄 **Publisher Metadata Management** (#13): Export and update publisher information
+  - **CSV Export**: Export DOIs with publisher metadata
+    - Publisher name (required)
+    - Publisher language (ISO 639-1 code, optional)
+    - Publisher identifier (e.g., ROR, ISNI, Crossref Funder ID, optional)
+    - Publisher identifier scheme (e.g., ROR, ISNI, optional)
+    - CSV format: 5 columns (DOI, Publisher, Language, Identifier, Scheme)
+  - **CSV Import & Update**: Bulk update publisher metadata via CSV
+    - Change detection: Skip DOIs with unchanged publisher metadata
+    - Database-First Pattern: Update internal DB before DataCite API (if DB sync enabled)
+    - Transactional updates with ROLLBACK on failure
+    - Validation: DOI format, language codes (2-11 chars for BCP 47), publisher identifier schemes
+    - Dry run: Validate all entries before applying updates
+  - **UI Integration**: New "Publisher" GroupBox in main window
+    - Export button: Fetch and export publishers to CSV
+    - Update button: Import and update from CSV with validation
+    - CredentialsDialog extended with 'update_publisher' mode
+  - **Comprehensive Tests**: 30+ new tests
+    - CSV export and parsing tests
+    - DataCite client publisher methods tests
+    - PublisherUpdateWorker tests (dry run, update, change detection)
+    - API error handling and validation tests
+- **Publisher Parsing Utility**: Centralized logic for parsing publisher identifiers
+  - `src/utils/publisher_parser.py`: Extract scheme and ID from identifiers
+  - Used by DataCite client and update worker for consistency
+
+### Changed
+- **Database Update Error Handling**: Improved publisher update logic
+  - DOIs not found in database treated as warnings, not fatal errors
+  - Better tracking of actual database modifications
+  - Clearer inconsistency detection (DB updated but DataCite failed)
+- **Language Code Validation**: Extended to support longer BCP 47 tags (up to 11 characters)
+- **CSV Publisher Export**: Better handling of missing publisher identifiers
+  - Warning only shown when exactly 6 columns present (indicating identifier columns exist)
+- **DataCite API Validation**: Enhanced availability check
+  - Performs real metadata fetch during validation phase
+  - Explicit handling of authentication and network errors
+
+### Technical Details
+- **Publisher Implementation**:
+  - `src/api/datacite_client.py`: +3 methods (fetch, validate, update)
+  - `src/db/sumariopmd_client.py`: +2 methods (fetch, update)
+  - `src/utils/csv_parser.py`: New `parse_publisher_update_csv()` method
+  - `src/utils/csv_exporter.py`: New `export_dois_with_publisher_to_csv()` function
+  - `src/workers/publisher_update_worker.py`: New worker (600+ lines) with change detection
+  - `src/ui/main_window.py`: New DOIPublisherFetchWorker + UI integration
+- **Test Coverage**: +30 tests (391 → 421 tests)
+  - CSV export/parsing: Valid/invalid formats, language codes, schemes
+  - DataCite client: Publisher fetch, update, validation
+  - Worker: Dry run, update logic, change detection, skipped details
+  - Overall coverage: 78% maintained
+- **Database Schema**:
+  - Publisher stored in `resource` table (column: `publisher`)
+  - Single field, no separate tables
+
+## [0.3.0] - 2025-11-23
 
 ### Added
 - 🚀 **Smart Change Detection** (#12): "Diff-Before-Update" optimization for bulk operations

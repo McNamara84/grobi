@@ -1,7 +1,7 @@
 """Version information for GROBI."""
 
-__version__ = "0.3.0"
-__version_info__ = (0, 3, 0)
+__version__ = "0.5.0"
+__version_info__ = (0, 5, 0)
 
 # Release information
 __author__ = "Holger Ehrmann"
