@@ -53,6 +53,7 @@ class DataCiteClient:
     def fetch_all_dois(self) -> List[Tuple[str, str]]:
         """
         Fetch all DOIs registered by this client from DataCite API.
+        Uses cursor-based pagination to retrieve all records without limitation.
         
         Returns:
             List of tuples containing (DOI, Landing Page URL)
@@ -63,25 +64,25 @@ class DataCiteClient:
             DataCiteAPIError: For other API errors
         """
         all_dois = []
-        page_number = 1
+        next_url = None  # Start with None to use initial cursor
+        page_count = 0
         
-        logger.info(f"Starting to fetch DOIs for client: {self.username}")
+        logger.info(f"Starting to fetch DOIs for client: {self.username} (using cursor pagination)")
         
         while True:
             try:
-                dois, has_more = self._fetch_page(page_number)
+                page_count += 1
+                dois, next_url = self._fetch_page(next_url)
                 all_dois.extend(dois)
                 
-                logger.info(f"Fetched page {page_number}: {len(dois)} DOIs (Total: {len(all_dois)})")
+                logger.info(f"Fetched page {page_count}: {len(dois)} DOIs (Total: {len(all_dois)})")
                 
-                if not has_more:
+                if not next_url:
                     break
-                    
-                page_number += 1
                 
             except requests.exceptions.Timeout:
                 error_msg = "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut."
-                logger.error(f"Timeout on page {page_number}")
+                logger.error(f"Timeout on page {page_count}")
                 raise DataCiteAPIError(error_msg)
             
             except requests.exceptions.ConnectionError as e:
@@ -100,6 +101,7 @@ class DataCiteClient:
     def fetch_all_dois_with_creators(self) -> List[Tuple[str, str, str, str, str, str, str, str]]:
         """
         Fetch all DOIs with creator information from DataCite API.
+        Uses cursor-based pagination to retrieve all records without limitation.
         
         Returns one row per creator, so a DOI with multiple creators will appear multiple times.
         Only ORCID identifiers are included; other identifier schemes are ignored.
@@ -115,25 +117,25 @@ class DataCiteClient:
             DataCiteAPIError: For other API errors
         """
         all_creator_data = []
-        page_number = 1
+        next_url = None  # Start with None to use initial cursor
+        page_count = 0
         
-        logger.info(f"Starting to fetch DOIs with creators for client: {self.username}")
+        logger.info(f"Starting to fetch DOIs with creators for client: {self.username} (using cursor pagination)")
         
         while True:
             try:
-                creator_data, has_more = self._fetch_page_with_creators(page_number)
+                page_count += 1
+                creator_data, next_url = self._fetch_page_with_creators(next_url)
                 all_creator_data.extend(creator_data)
                 
-                logger.info(f"Fetched page {page_number}: {len(creator_data)} creator entries (Total: {len(all_creator_data)})")
+                logger.info(f"Fetched page {page_count}: {len(creator_data)} creator entries (Total: {len(all_creator_data)})")
                 
-                if not has_more:
+                if not next_url:
                     break
-                    
-                page_number += 1
                 
             except requests.exceptions.Timeout:
                 error_msg = "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut."
-                logger.error(f"Timeout on page {page_number}")
+                logger.error(f"Timeout on page {page_count}")
                 raise DataCiteAPIError(error_msg)
             
             except requests.exceptions.ConnectionError as e:
@@ -149,28 +151,34 @@ class DataCiteClient:
         logger.info(f"Successfully fetched {len(all_creator_data)} creator entries in total")
         return all_creator_data
     
-    def _fetch_page(self, page_number: int) -> Tuple[List[Tuple[str, str]], bool]:
+    def _fetch_page(self, next_url: Optional[str] = None) -> Tuple[List[Tuple[str, str]], Optional[str]]:
         """
-        Fetch a single page of DOIs from the API.
+        Fetch a single page of DOIs from the API using cursor-based pagination.
         
         Args:
-            page_number: Page number to fetch (1-indexed)
+            next_url: Full URL for next page (from previous response), or None for first page
             
         Returns:
-            Tuple of (list of DOI tuples, has_more_pages boolean)
+            Tuple of (list of DOI tuples, next_url for pagination or None if no more pages)
             
         Raises:
             AuthenticationError: If credentials are invalid
             DataCiteAPIError: For other API errors
         """
-        url = f"{self.base_url}/dois"
-        params = {
-            "client-id": self.username,
-            "page[size]": self.PAGE_SIZE,
-            "page[number]": page_number
-        }
-        
-        logger.debug(f"Requesting: {url} with params: {params}")
+        if next_url:
+            # Use the complete next URL from the API response
+            url = next_url
+            params = None
+            logger.debug(f"Requesting next page: {url}")
+        else:
+            # First page: use cursor=1
+            url = f"{self.base_url}/dois"
+            params = {
+                "client-id": self.username,
+                "page[size]": self.PAGE_SIZE,
+                "page[cursor]": 1
+            }
+            logger.debug(f"Requesting first page: {url} with params: {params}")
         
         response = requests.get(
             url,
@@ -223,31 +231,23 @@ class DataCiteClient:
                     logger.warning(f"Error parsing DOI entry: {e}")
                     continue
         
-        # Check if there are more pages
-        has_more = False
+        # Extract next page URL from response
+        next_page_url = None
         if "links" in data and "next" in data["links"]:
-            has_more = True
+            next_page_url = data["links"]["next"]
+            logger.debug(f"Next page URL: {next_page_url}")
         
-        # Alternative: Check meta information
-        if "meta" in data:
-            meta = data["meta"]
-            page = meta.get("page", page_number)
-            total_pages = meta.get("totalPages", 1)
-            
-            if page < total_pages:
-                has_more = True
-        
-        return dois, has_more
+        return dois, next_page_url
     
-    def _fetch_page_with_creators(self, page_number: int) -> Tuple[List[Tuple[str, str, str, str, str, str, str, str]], bool]:
+    def _fetch_page_with_creators(self, next_url: Optional[str] = None) -> Tuple[List[Tuple[str, str, str, str, str, str, str, str]], Optional[str]]:
         """
-        Fetch a single page of DOIs with creator information from the API.
+        Fetch a single page of DOIs with creator information from the API using cursor-based pagination.
         
         Args:
-            page_number: Page number to fetch (1-indexed)
+            next_url: Full URL for next page (from previous response), or None for first page
             
         Returns:
-            Tuple of (list of creator tuples, has_more_pages boolean)
+            Tuple of (list of creator tuples, next_url for pagination or None if no more pages)
             Each tuple contains: (DOI, Creator Name, Name Type, Given Name, Family Name,
                                  Name Identifier, Name Identifier Scheme, Scheme URI)
             
@@ -255,14 +255,20 @@ class DataCiteClient:
             AuthenticationError: If credentials are invalid
             DataCiteAPIError: For other API errors
         """
-        url = f"{self.base_url}/dois"
-        params = {
-            "client-id": self.username,
-            "page[size]": self.PAGE_SIZE,
-            "page[number]": page_number
-        }
-        
-        logger.debug(f"Requesting creators from: {url} with params: {params}")
+        if next_url:
+            # Use the complete next URL from the API response
+            url = next_url
+            params = None
+            logger.debug(f"Requesting next page with creators: {url}")
+        else:
+            # First page: use cursor=1
+            url = f"{self.base_url}/dois"
+            params = {
+                "client-id": self.username,
+                "page[size]": self.PAGE_SIZE,
+                "page[cursor]": 1
+            }
+            logger.debug(f"Requesting first page with creators: {url} with params: {params}")
         
         response = requests.get(
             url,
@@ -354,21 +360,13 @@ class DataCiteClient:
                     logger.warning(f"Error parsing creator data for DOI {item.get('id', 'unknown')}: {e}")
                     continue
         
-        # Check if there are more pages
-        has_more = False
+        # Extract next page URL from response
+        next_page_url = None
         if "links" in data and "next" in data["links"]:
-            has_more = True
+            next_page_url = data["links"]["next"]
+            logger.debug(f"Next page URL: {next_page_url}")
         
-        # Alternative: Check meta information
-        if "meta" in data:
-            meta = data["meta"]
-            page = meta.get("page", page_number)
-            total_pages = meta.get("totalPages", 1)
-            
-            if page < total_pages:
-                has_more = True
-        
-        return creator_entries, has_more
+        return creator_entries, next_page_url
     
     def update_doi_url(self, doi: str, new_url: str) -> Tuple[bool, str]:
         """
@@ -762,6 +760,7 @@ class DataCiteClient:
     def fetch_all_dois_with_contributors(self) -> List[Tuple[str, str, str, str, str, str, str, str, str, str, str, str, str, str]]:
         """
         Fetch all DOIs with contributor information from DataCite API.
+        Uses cursor-based pagination to retrieve all records without limitation.
         
         Returns one row per contributor, so a DOI with multiple contributors will appear multiple times.
         Each contributor may have multiple contributorTypes, which are returned as comma-separated list.
@@ -783,25 +782,25 @@ class DataCiteClient:
             DataCiteAPIError: For other API errors
         """
         all_contributor_data = []
-        page_number = 1
+        next_url = None  # Start with None to use initial cursor
+        page_count = 0
         
-        logger.info(f"Starting to fetch DOIs with contributors for client: {self.username}")
+        logger.info(f"Starting to fetch DOIs with contributors for client: {self.username} (using cursor pagination)")
         
         while True:
             try:
-                contributor_data, has_more = self._fetch_page_with_contributors(page_number)
+                page_count += 1
+                contributor_data, next_url = self._fetch_page_with_contributors(next_url)
                 all_contributor_data.extend(contributor_data)
                 
-                logger.info(f"Fetched page {page_number}: {len(contributor_data)} contributor entries (Total: {len(all_contributor_data)})")
+                logger.info(f"Fetched page {page_count}: {len(contributor_data)} contributor entries (Total: {len(all_contributor_data)})")
                 
-                if not has_more:
+                if not next_url:
                     break
-                    
-                page_number += 1
                 
             except requests.exceptions.Timeout:
                 error_msg = "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut."
-                logger.error(f"Timeout on page {page_number}")
+                logger.error(f"Timeout on page {page_count}")
                 raise DataCiteAPIError(error_msg)
             
             except requests.exceptions.ConnectionError as e:
@@ -817,15 +816,15 @@ class DataCiteClient:
         logger.info(f"Successfully fetched {len(all_contributor_data)} contributor entries in total")
         return all_contributor_data
     
-    def _fetch_page_with_contributors(self, page_number: int) -> Tuple[List[Tuple[str, str, str, str, str, str, str, str, str, str, str, str, str, str]], bool]:
+    def _fetch_page_with_contributors(self, next_url: Optional[str] = None) -> Tuple[List[Tuple[str, str, str, str, str, str, str, str, str, str, str, str, str, str]], Optional[str]]:
         """
-        Fetch a single page of DOIs with contributor information from the API.
+        Fetch a single page of DOIs with contributor information from the API using cursor-based pagination.
         
         Args:
-            page_number: Page number to fetch (1-indexed)
+            next_url: Full URL for next page (from previous response), or None for first page
             
         Returns:
-            Tuple of (list of contributor tuples, has_more_pages boolean)
+            Tuple of (list of contributor tuples, next_url for pagination or None if no more pages)
             Each tuple contains 14 fields:
             (DOI, Contributor Name, Name Type, Given Name, Family Name,
              Name Identifier, Name Identifier Scheme, Scheme URI, Contributor Types,
@@ -837,14 +836,20 @@ class DataCiteClient:
             AuthenticationError: If credentials are invalid
             DataCiteAPIError: For other API errors
         """
-        url = f"{self.base_url}/dois"
-        params = {
-            "client-id": self.username,
-            "page[size]": self.PAGE_SIZE,
-            "page[number]": page_number
-        }
-        
-        logger.debug(f"Requesting contributors from: {url} with params: {params}")
+        if next_url:
+            # Use the complete next URL from the API response
+            url = next_url
+            params = None
+            logger.debug(f"Requesting next page with contributors: {url}")
+        else:
+            # First page: use cursor=1
+            url = f"{self.base_url}/dois"
+            params = {
+                "client-id": self.username,
+                "page[size]": self.PAGE_SIZE,
+                "page[cursor]": 1
+            }
+            logger.debug(f"Requesting first page with contributors: {url} with params: {params}")
         
         response = requests.get(
             url,
@@ -1319,21 +1324,13 @@ class DataCiteClient:
                     logger.warning(f"Error parsing contributor data for DOI {item.get('id', 'unknown')}: {e}")
                     continue
         
-        # Check if there are more pages
-        has_more = False
+        # Extract next page URL from response
+        next_page_url = None
         if "links" in data and "next" in data["links"]:
-            has_more = True
+            next_page_url = data["links"]["next"]
+            logger.debug(f"Next page URL: {next_page_url}")
         
-        # Alternative: Check meta information
-        if "meta" in data:
-            meta = data["meta"]
-            page = meta.get("page", page_number)
-            total_pages = meta.get("totalPages", 1)
-            
-            if page < total_pages:
-                has_more = True
-        
-        return contributor_entries, has_more
+        return contributor_entries, next_page_url
     
     @staticmethod
     def enrich_contributors_with_db_data(
@@ -1813,6 +1810,7 @@ class DataCiteClient:
     def fetch_all_dois_with_publisher(self) -> List[Tuple[str, str, str, str, str, str]]:
         """
         Fetch all DOIs with publisher information from DataCite API.
+        Uses cursor-based pagination to retrieve all records without limitation.
         
         Returns one row per DOI (each DOI has exactly one publisher).
         
@@ -1827,25 +1825,25 @@ class DataCiteClient:
             DataCiteAPIError: For other API errors
         """
         all_publisher_data = []
-        page_number = 1
+        next_url = None  # Start with None to use initial cursor
+        page_count = 0
         
-        logger.info(f"Starting to fetch DOIs with publisher for client: {self.username}")
+        logger.info(f"Starting to fetch DOIs with publisher for client: {self.username} (using cursor pagination)")
         
         while True:
             try:
-                publisher_data, has_more = self._fetch_page_with_publisher(page_number)
+                page_count += 1
+                publisher_data, next_url = self._fetch_page_with_publisher(next_url)
                 all_publisher_data.extend(publisher_data)
                 
-                logger.info(f"Fetched page {page_number}: {len(publisher_data)} publisher entries (Total: {len(all_publisher_data)})")
+                logger.info(f"Fetched page {page_count}: {len(publisher_data)} publisher entries (Total: {len(all_publisher_data)})")
                 
-                if not has_more:
+                if not next_url:
                     break
-                    
-                page_number += 1
                 
             except requests.exceptions.Timeout:
                 error_msg = "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut."
-                logger.error(f"Timeout on page {page_number}")
+                logger.error(f"Timeout on page {page_count}")
                 raise DataCiteAPIError(error_msg)
             
             except requests.exceptions.ConnectionError as e:
@@ -1861,15 +1859,15 @@ class DataCiteClient:
         logger.info(f"Successfully fetched {len(all_publisher_data)} publisher entries in total")
         return all_publisher_data
     
-    def _fetch_page_with_publisher(self, page_number: int) -> Tuple[List[Tuple[str, str, str, str, str, str]], bool]:
+    def _fetch_page_with_publisher(self, next_url: Optional[str] = None) -> Tuple[List[Tuple[str, str, str, str, str, str]], Optional[str]]:
         """
-        Fetch a single page of DOIs with publisher information from the API.
+        Fetch a single page of DOIs with publisher information from the API using cursor-based pagination.
         
         Args:
-            page_number: Page number to fetch (1-indexed)
+            next_url: Full URL for next page (from previous response), or None for first page
             
         Returns:
-            Tuple of (list of publisher tuples, has_more_pages boolean)
+            Tuple of (list of publisher tuples, next_url for pagination or None if no more pages)
             Each tuple contains: (DOI, Publisher Name, Publisher Identifier,
                                  Publisher Identifier Scheme, Scheme URI, Language)
             
@@ -1877,14 +1875,20 @@ class DataCiteClient:
             AuthenticationError: If credentials are invalid
             DataCiteAPIError: For other API errors
         """
-        url = f"{self.base_url}/dois"
-        params = {
-            "client-id": self.username,
-            "page[size]": self.PAGE_SIZE,
-            "page[number]": page_number
-        }
-        
-        logger.debug(f"Requesting publisher data from: {url} with params: {params}")
+        if next_url:
+            # Use the complete next URL from the API response
+            url = next_url
+            params = None
+            logger.debug(f"Requesting next page with publisher: {url}")
+        else:
+            # First page: use cursor=1
+            url = f"{self.base_url}/dois"
+            params = {
+                "client-id": self.username,
+                "page[size]": self.PAGE_SIZE,
+                "page[cursor]": 1
+            }
+            logger.debug(f"Requesting first page with publisher: {url} with params: {params}")
         
         response = requests.get(
             url,
@@ -1961,21 +1965,13 @@ class DataCiteClient:
                     logger.warning(f"Error parsing publisher data for DOI {item.get('id', 'unknown')}: {e}")
                     continue
         
-        # Check if there are more pages
-        has_more = False
+        # Extract next page URL from response
+        next_page_url = None
         if "links" in data and "next" in data["links"]:
-            has_more = True
+            next_page_url = data["links"]["next"]
+            logger.debug(f"Next page URL: {next_page_url}")
         
-        # Alternative: Check meta information
-        if "meta" in data:
-            meta = data["meta"]
-            page = meta.get("page", page_number)
-            total_pages = meta.get("totalPages", 1)
-            
-            if page < total_pages:
-                has_more = True
-        
-        return publisher_entries, has_more
+        return publisher_entries, next_page_url
     
     def update_doi_publisher(
         self, 
