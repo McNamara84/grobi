@@ -15,6 +15,7 @@ from PySide6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices,
 from src.ui.credentials_dialog import CredentialsDialog
 from src.ui.save_credentials_dialog import SaveCredentialsDialog
 from src.ui.about_dialog import AboutDialog
+from src.ui.csv_splitter_dialog import CSVSplitterDialog
 from src.ui.theme_manager import ThemeManager, Theme
 from src.api.datacite_client import DataCiteClient, DataCiteAPIError, AuthenticationError, NetworkError
 from src.utils.csv_exporter import export_dois_to_csv, export_dois_with_creators_to_csv, export_dois_with_publisher_to_csv, export_dois_with_contributors_to_csv, CSVExportError
@@ -358,6 +359,14 @@ class MainWindow(QMainWindow):
     def _setup_menubar(self):
         """Set up menu bar."""
         menubar = self.menuBar()
+        
+        # Werkzeuge-Menü
+        tools_menu = menubar.addMenu("Werkzeuge")
+        
+        csv_splitter_action = QAction("📂 CSV-Datei aufsplitten...", self)
+        csv_splitter_action.setShortcut("Ctrl+Shift+S")
+        csv_splitter_action.triggered.connect(self._open_csv_splitter)
+        tools_menu.addAction(csv_splitter_action)
         
         # Einstellungen-Menü
         settings_menu = menubar.addMenu("Einstellungen")
@@ -765,6 +774,20 @@ class MainWindow(QMainWindow):
             result += f"\n... und {len(items) - max_items} weitere Fehler"
         
         return result
+    
+    def _open_csv_splitter(self):
+        """Open CSV splitter dialog."""
+        try:
+            dialog = CSVSplitterDialog(self)
+            dialog.exec()
+            logger.info("CSV Splitter dialog closed")
+        except Exception as e:
+            logger.error(f"Error opening CSV splitter dialog: {e}")
+            QMessageBox.warning(
+                self,
+                "Fehler",
+                f"Der CSV-Splitter-Dialog konnte nicht geöffnet werden:\n\n{str(e)}"
+            )
     
     def _open_settings_dialog(self):
         """Open settings dialog."""
