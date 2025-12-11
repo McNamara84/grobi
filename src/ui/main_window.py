@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox
 )
 from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt, QSettings
-from PySide6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices, QPixmap
+from PySide6.QtGui import QFont, QIcon, QAction, QDesktopServices, QPixmap, QGuiApplication
 
 from src.ui.credentials_dialog import CredentialsDialog
 from src.ui.save_credentials_dialog import SaveCredentialsDialog
@@ -26,6 +26,12 @@ from src.workers.contributors_update_worker import ContributorsUpdateWorker
 
 
 logger = logging.getLogger(__name__)
+
+# Window size constants
+DEFAULT_WINDOW_WIDTH = 800
+MINIMUM_WINDOW_HEIGHT = 600
+SCREEN_HEIGHT_RATIO = 0.95
+FALLBACK_WINDOW_HEIGHT = 900
 
 
 class DOIFetchWorker(QObject):
@@ -304,7 +310,17 @@ class MainWindow(QMainWindow):
         """Initialize the main window."""
         super().__init__()
         self.setWindowTitle("GROBI - GFZ Data Services Tool")
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(DEFAULT_WINDOW_WIDTH, MINIMUM_WINDOW_HEIGHT)
+        
+        # Set initial window size to maximize height
+        screen_obj = QGuiApplication.primaryScreen()
+        if screen_obj is not None:
+            screen = screen_obj.availableGeometry()
+            window_height = int(screen.height() * SCREEN_HEIGHT_RATIO)
+            self.resize(DEFAULT_WINDOW_WIDTH, window_height)
+        else:
+            # Fallback to a reasonable default size if screen detection fails
+            self.resize(DEFAULT_WINDOW_WIDTH, FALLBACK_WINDOW_HEIGHT)
         
         # Set window icon
         icon_path = Path(__file__).parent / "GROBI-Logo.ico"
