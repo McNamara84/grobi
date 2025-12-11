@@ -562,6 +562,20 @@ class MainWindow(QMainWindow):
         contributors_group.setLayout(contributors_layout)
         layout.addWidget(contributors_group)
         
+        # GroupBox 5: Download URLs
+        downloads_group = QGroupBox("📦 Download-URLs")
+        downloads_layout = QVBoxLayout()
+        downloads_layout.setSpacing(10)
+        
+        # Buttons for download URLs workflow
+        self.export_download_urls_btn = QPushButton("📥 DOIs und Download-URLs exportieren")
+        self.export_download_urls_btn.setMinimumHeight(40)
+        self.export_download_urls_btn.clicked.connect(self._on_export_download_urls_clicked)
+        downloads_layout.addWidget(self.export_download_urls_btn)
+        
+        downloads_group.setLayout(downloads_layout)
+        layout.addWidget(downloads_group)
+        
         # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
@@ -2851,6 +2865,144 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._log(f"[WARNUNG] Log-Datei konnte nicht erstellt werden: {str(e)}")
     
+    # ==================== DOWNLOAD URLs METHODS ====================
+    
+    def _on_export_download_urls_clicked(self):
+        """Handle export download URLs button click."""
+        # Check if database is configured
+        settings = QSettings("GFZ", "GROBI")
+        db_enabled = settings.value("database/enabled", False, type=bool)
+        
+        if not db_enabled:
+            QMessageBox.warning(
+                self,
+                "Datenbank nicht konfiguriert",
+                "Die Datenbank-Verbindung ist nicht aktiviert.\n\n"
+                "Bitte konfiguriere die Datenbank-Verbindung in den Einstellungen "
+                "(Einstellungen → Datenbank-Verbindung)."
+            )
+            return
+        
+        # Load DB credentials
+        from src.utils.credential_manager import load_db_credentials
+        
+        db_creds = load_db_credentials()
+        if not db_creds:
+            QMessageBox.warning(
+                self,
+                "Keine DB-Credentials",
+                "Keine Datenbank-Zugangsdaten gespeichert.\n\n"
+                "Bitte konfiguriere die Datenbank in den Einstellungen."
+            )
+            return
+        
+        # Start worker
+        self._start_download_url_fetch(db_creds)
+    
+    def _start_download_url_fetch(self, db_creds: dict):
+        """Start worker to fetch DOIs with download URLs from database."""
+        self._log("Starte Download-URL Export...")
+        
+        # Import worker
+        from src.workers.download_url_fetch_worker import DownloadURLFetchWorker
+        
+        # Create worker
+        self.download_url_worker = DownloadURLFetchWorker(
+            db_host=db_creds['host'],
+            db_name=db_creds['database'],
+            db_user=db_creds['username'],
+            db_password=db_creds['password']
+        )
+        
+        # Connect signals
+        self.download_url_worker.progress.connect(self._log)
+        self.download_url_worker.finished.connect(self._on_download_urls_fetched)
+        self.download_url_worker.error.connect(self._on_download_urls_error)
+        
+        # Create thread
+        self.download_url_thread = QThread()
+        self.download_url_worker.moveToThread(self.download_url_thread)
+        
+        # Connect thread signals
+        self.download_url_thread.started.connect(self.download_url_worker.run)
+        self.download_url_worker.finished.connect(self.download_url_thread.quit)
+        self.download_url_worker.error.connect(self.download_url_thread.quit)
+        
+        # Clean up after worker finishes or errors
+        self.download_url_worker.finished.connect(self.download_url_worker.deleteLater)
+        self.download_url_worker.error.connect(self.download_url_worker.deleteLater)
+        
+        # Clean up thread when it finishes
+        self.download_url_thread.finished.connect(self.download_url_thread.deleteLater)
+        self.download_url_thread.finished.connect(self._cleanup_download_url_worker)
+        
+        # Start thread
+        self.download_url_thread.start()
+        
+        # Disable button during fetch
+        self.export_download_urls_btn.setEnabled(False)
+        self.progress_bar.setVisible(True)
+    
+    def _on_download_urls_fetched(self, dois_files):
+        """Called when DOIs with download URLs have been fetched."""
+        from PySide6.QtWidgets import QFileDialog
+        from src.utils.csv_exporter import export_dois_download_urls
+        
+        self._log(f"[OK] {len(dois_files)} Datei-Einträge abgerufen")
+        
+        # Use current username if available, otherwise use generic name
+        if self._current_username:
+            default_filename = f"{self._current_username}_download_urls.csv"
+        else:
+            default_filename = "download_urls.csv"
+        
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "CSV-Datei speichern",
+            default_filename,
+            "CSV Files (*.csv)"
+        )
+        
+        if filepath:
+            try:
+                export_dois_download_urls(dois_files, filepath)
+                
+                # Count unique DOIs
+                unique_dois = len(set(doi for doi, _, _, _, _, _ in dois_files))
+                
+                self._log(f"[OK] CSV-Datei gespeichert: {filepath}")
+                QMessageBox.information(
+                    self,
+                    "Export erfolgreich",
+                    f"DOIs und Download-URLs wurden exportiert:\n\n"
+                    f"Datei: {Path(filepath).name}\n"
+                    f"DOIs: {unique_dois}\n"
+                    f"Dateien: {len(dois_files)}"
+                )
+            except Exception as e:
+                self._log(f"[FEHLER] CSV-Export fehlgeschlagen: {e}")
+                QMessageBox.critical(
+                    self,
+                    "Fehler",
+                    f"CSV-Export fehlgeschlagen:\n{e}"
+                )
+    
+    def _on_download_urls_error(self, error_msg: str):
+        """Called when fetch failed."""
+        self._log(f"[FEHLER] {error_msg}")
+        QMessageBox.critical(self, "Fehler", error_msg)
+    
+    def _cleanup_download_url_worker(self):
+        """Clean up worker and thread."""
+        self.progress_bar.setVisible(False)
+        self.export_download_urls_btn.setEnabled(True)
+        
+        # Reset references (objects are deleted via deleteLater)
+        self.download_url_thread = None
+        self.download_url_worker = None
+        
+        self._log("Bereit für nächsten Vorgang.")
+    
     def closeEvent(self, event):
         """
         Handle window close event.
@@ -2907,5 +3059,11 @@ class MainWindow(QMainWindow):
                 self.contributors_update_worker.stop()
             self.contributors_update_thread.quit()
             self.contributors_update_thread.wait(3000)  # Wait max 3 seconds
+        
+        # If download URL thread is running, wait for it to finish
+        if hasattr(self, 'download_url_thread') and self.download_url_thread is not None and self.download_url_thread.isRunning():
+            self._log("Warte auf Abschluss des Download-URL Exports...")
+            self.download_url_thread.quit()
+            self.download_url_thread.wait(3000)  # Wait max 3 seconds
         
         event.accept()

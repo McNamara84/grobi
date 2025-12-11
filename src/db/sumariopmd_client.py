@@ -1002,3 +1002,100 @@ class SumarioPMDClient:
         except pymysql.Error as e:
             logger.error(f"Database error fetching contributor roles: {e}")
             raise DatabaseError(f"Failed to fetch contributor roles: {e}") from e
+    
+    # =========================================================================
+    # File/Download-URL Methods
+    # =========================================================================
+    
+    def fetch_download_urls_for_resource(self, resource_id: int) -> List[Dict[str, Any]]:
+        """
+        Fetch download URLs from file table for a specific resource.
+        
+        Args:
+            resource_id: Resource ID from resource table
+            
+        Returns:
+            List of file dictionaries with keys:
+            - filename: str
+            - location: str (download URL)
+            - format: str (file format)
+            - size: int (file size in bytes)
+            
+        Raises:
+            DatabaseError: If query fails
+        """
+        query = """
+            SELECT 
+                filename,
+                location,
+                format,
+                size
+            FROM file
+            WHERE resource_id = %s
+            ORDER BY filename ASC
+        """
+        
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(query, (resource_id,))
+                    files = cursor.fetchall()
+                    
+                    logger.info(f"Fetched {len(files)} files for resource_id {resource_id}")
+                    return files
+                    
+        except pymysql.Error as e:
+            logger.error(f"Database error fetching files for resource_id {resource_id}: {e}")
+            raise DatabaseError(f"Failed to fetch files: {e}") from e
+    
+    def fetch_all_dois_with_downloads(self) -> List[Tuple[str, str, str, str, int]]:
+        """
+        Fetch all DOIs with their download URLs from file table.
+        
+        Returns one row per file, so a DOI with multiple files will appear multiple times.
+        
+        Returns:
+            List of tuples containing:
+            (DOI, Filename, Download_URL, Format, Size_Bytes)
+            
+        Raises:
+            DatabaseError: If query fails
+        """
+        query = """
+            SELECT 
+                r.identifier AS doi,
+                f.name AS filename,
+                f.url AS download_url,
+                f.description,
+                f.filemimetype AS format,
+                f.size
+            FROM resource r
+            INNER JOIN file f ON f.resource_id = r.id
+            ORDER BY r.identifier ASC, f.name ASC
+        """
+        
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(query)
+                    results = cursor.fetchall()
+                    
+                    # Convert to list of tuples
+                    dois_files = [
+                        (
+                            row['doi'],
+                            row['filename'],
+                            row['download_url'],
+                            row['description'],
+                            row['format'],
+                            row['size']
+                        )
+                        for row in results
+                    ]
+                    
+                    logger.info(f"Fetched {len(dois_files)} file entries from database")
+                    return dois_files
+                    
+        except pymysql.Error as e:
+            logger.error(f"Database error fetching DOIs with downloads: {e}")
+            raise DatabaseError(f"Failed to fetch DOIs with downloads: {e}") from e
