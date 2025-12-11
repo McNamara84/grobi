@@ -3,7 +3,7 @@
 import csv
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Callable
+from typing import Dict, Tuple, Optional, Callable
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
@@ -139,9 +139,17 @@ def split_csv_by_doi_prefix(
                         safe_prefix = prefix.replace('/', '_').replace('\\', '_')
                         output_file = output_dir / f"{base_filename}_{safe_prefix}.csv"
                         fh = open(output_file, 'w', encoding='utf-8-sig', newline='')
-                        writer = csv.writer(fh)
-                        writer.writerow(header)
-                        file_handles[prefix] = (fh, writer)
+                        # Add to file_handles immediately to ensure cleanup even if error occurs
+                        file_handles[prefix] = (fh, None)
+                        try:
+                            writer = csv.writer(fh)
+                            writer.writerow(header)
+                            file_handles[prefix] = (fh, writer)
+                        except Exception:
+                            # If header writing fails, ensure file is closed
+                            fh.close()
+                            del file_handles[prefix]
+                            raise
                     
                     # Write row to appropriate file
                     _, writer = file_handles[prefix]
@@ -157,9 +165,12 @@ def split_csv_by_doi_prefix(
     except Exception as e:
         raise CSVSplitError(f"Fehler beim Lesen der CSV-Datei: {str(e)}")
     finally:
-        # Close all open file handles
-        for fh, _ in file_handles.values():
-            fh.close()
+        # Close all open file handles, catching cleanup exceptions separately
+        for prefix, (fh, _) in file_handles.items():
+            try:
+                fh.close()
+            except Exception as cleanup_error:
+                logger.error(f"Fehler beim Schließen der Datei für Prefix {prefix}: {cleanup_error}")
     
     if progress_callback:
         progress_callback(f"Geschrieben: {total_rows} DOIs in {len(prefix_counts)} Dateien")

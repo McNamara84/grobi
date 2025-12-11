@@ -248,6 +248,9 @@ class TestCSVSplitterDialog:
             # Verify close was prevented
             assert event.isAccepted() is False
             assert mock_warning.call_count == 1
+        
+        # Important: Reset thread to None to prevent pytest-qt teardown hanging
+        dialog.thread = None
     
     def test_close_event_when_idle(self, dialog, qtbot):
         """Test that dialog can be closed when idle."""

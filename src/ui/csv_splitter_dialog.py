@@ -189,6 +189,15 @@ class CSVSplitterDialog(QDialog):
             QMessageBox.warning(self, "Fehler", "Bitte wählen Sie eine gültige CSV-Datei aus.")
             return
         
+        # Prevent starting a new operation if one is already running
+        if self.thread and self.thread.isRunning():
+            QMessageBox.warning(
+                self,
+                "Vorgang läuft",
+                "Ein Splitting-Vorgang läuft bereits. Bitte warten Sie, bis dieser abgeschlossen ist."
+            )
+            return
+        
         # Disable controls during processing
         self.start_button.setEnabled(False)
         self.browse_button.setEnabled(False)
