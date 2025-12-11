@@ -411,6 +411,51 @@ def export_dois_with_contributors_to_csv(
         raise CSVExportError(error_msg)
 
 
+def export_dois_download_urls(
+    dois_files: List[Tuple[str, str, str, str, int]], 
+    filepath: str
+) -> None:
+    """
+    Export DOIs with download URLs to CSV.
+    
+    Args:
+        dois_files: List of (DOI, Filename, Download_URL, Format, Size_Bytes) tuples
+        filepath: Output CSV file path
+        
+    Raises:
+        CSVExportError: If file cannot be written
+    """
+    logger.info(f"Exporting {len(dois_files)} file entries to {filepath}")
+    
+    try:
+        with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            
+            # Header
+            writer.writerow(['DOI', 'Filename', 'Download_URL', 'Format', 'Size_Bytes'])
+            
+            # Data rows
+            for doi, filename, url, format_str, size in dois_files:
+                writer.writerow([doi, filename, url, format_str, size])
+        
+        logger.info(f"Successfully exported {len(dois_files)} file entries to {filepath}")
+        
+    except PermissionError as e:
+        error_msg = f"Keine Berechtigung zum Schreiben der Datei: {filepath}"
+        logger.error(f"Permission error writing file: {e}")
+        raise CSVExportError(error_msg)
+    
+    except OSError as e:
+        error_msg = f"Die CSV-Datei konnte nicht gespeichert werden: {str(e)}"
+        logger.error(f"OS error writing file: {e}")
+        raise CSVExportError(error_msg)
+    
+    except Exception as e:
+        error_msg = f"Unerwarteter Fehler beim Speichern der CSV-Datei: {str(e)}"
+        logger.error(f"Unexpected error: {e}")
+        raise CSVExportError(error_msg)
+
+
 def validate_csv_format(filepath: str) -> bool:
     """
     Validate that a CSV file has the correct format.
