@@ -78,6 +78,22 @@ class TestExtractDOIPrefix:
         prefix3 = extract_doi_prefix(doi3, level=2)
         
         assert prefix1 == prefix2 == prefix3 == "10.5880/gfz.2011"
+    
+    def test_extract_prefix_invalid_level(self):
+        """Test error handling for invalid prefix level."""
+        doi = "10.5880/gfz.2011.100"
+        
+        # Test level < 1
+        with pytest.raises(CSVSplitError, match="Ungültiger prefix_level.*zwischen 1 und 4"):
+            extract_doi_prefix(doi, level=0)
+        
+        # Test level > 4
+        with pytest.raises(CSVSplitError, match="Ungültiger prefix_level.*zwischen 1 und 4"):
+            extract_doi_prefix(doi, level=5)
+        
+        # Test negative level
+        with pytest.raises(CSVSplitError, match="Ungültiger prefix_level.*zwischen 1 und 4"):
+            extract_doi_prefix(doi, level=-1)
 
 
 class TestSplitCSVByDOIPrefix:
@@ -344,3 +360,54 @@ class TestSplitCSVByDOIPrefix:
         expected_file = output_dir / "test_input_10.5880_gfz.2011.csv"
         assert expected_file.exists()
         assert '/' not in expected_file.name
+    
+    def test_split_empty_csv_with_header_only(self, tmp_path):
+        """Test splitting CSV with only header row (no data)."""
+        input_file = tmp_path / "test_input.csv"
+        with open(input_file, 'w', encoding='utf-8-sig', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['DOI', 'Landing_Page_URL'])
+            # No data rows
+        
+        output_dir = tmp_path / "output"
+        
+        total_rows, prefix_counts = split_csv_by_doi_prefix(
+            input_file,
+            output_dir,
+            prefix_level=2
+        )
+        
+        # Should return 0 rows and empty dict
+        assert total_rows == 0
+        assert prefix_counts == {}
+        
+        # Output directory should exist but contain no CSV files
+        assert output_dir.exists()
+        output_files = list(output_dir.glob("*.csv"))
+        assert len(output_files) == 0
+    
+    def test_split_completely_empty_csv(self, tmp_path):
+        """Test splitting completely empty CSV file (no rows at all)."""
+        input_file = tmp_path / "test_input.csv"
+        # Create empty file
+        input_file.touch()
+        
+        output_dir = tmp_path / "output"
+        
+        with pytest.raises(CSVSplitError, match="CSV-Datei ist leer"):
+            split_csv_by_doi_prefix(input_file, output_dir, prefix_level=2)
+    
+    def test_split_invalid_prefix_level(self, tmp_path):
+        """Test error handling for invalid prefix_level."""
+        input_file = tmp_path / "test_input.csv"
+        input_file.write_text("DOI,URL\n10.5880/test,http://example.com\n")
+        
+        output_dir = tmp_path / "output"
+        
+        # Test level < 1
+        with pytest.raises(CSVSplitError, match="Ungültiger prefix_level.*zwischen 1 und 4"):
+            split_csv_by_doi_prefix(input_file, output_dir, prefix_level=0)
+        
+        # Test level > 4
+        with pytest.raises(CSVSplitError, match="Ungültiger prefix_level.*zwischen 1 und 4"):
+            split_csv_by_doi_prefix(input_file, output_dir, prefix_level=5)

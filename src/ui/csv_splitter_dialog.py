@@ -229,6 +229,7 @@ class CSVSplitterDialog(QDialog):
         """Handle successful completion."""
         self.progress_bar.setRange(0, 1)
         self.progress_bar.setValue(1)
+        self.progress_bar.setVisible(False)
         
         self._log("=" * 60)
         self._log(f"✅ ERFOLGREICH: {total_rows} DOIs in {len(prefix_counts)} Dateien aufgeteilt")
@@ -266,6 +267,8 @@ class CSVSplitterDialog(QDialog):
     def _cleanup_thread(self):
         """Clean up thread and worker."""
         if self.thread:
+            if self.thread.isRunning():
+                self.thread.wait()
             self.thread.deleteLater()
             self.thread = None
         if self.worker:

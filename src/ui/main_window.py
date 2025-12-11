@@ -783,7 +783,7 @@ class MainWindow(QMainWindow):
             logger.info("CSV Splitter dialog closed")
         except Exception as e:
             logger.error(f"Error opening CSV splitter dialog: {e}")
-            QMessageBox.warning(
+            QMessageBox.critical(
                 self,
                 "Fehler",
                 f"Der CSV-Splitter-Dialog konnte nicht geöffnet werden:\n\n{str(e)}"

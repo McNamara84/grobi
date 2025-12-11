@@ -3,7 +3,7 @@
 import csv
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional, Callable
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
@@ -33,8 +33,11 @@ def extract_doi_prefix(doi: str, level: int = 2) -> str:
         DOI prefix string
     
     Raises:
-        CSVSplitError: If DOI format is invalid
+        CSVSplitError: If DOI format is invalid or prefix_level is out of range
     """
+    if not 1 <= level <= 4:
+        raise CSVSplitError(f"Ungültiger prefix_level: {level}. Muss zwischen 1 und 4 liegen.")
+    
     if not doi or '/' not in doi:
         raise CSVSplitError(f"Ungültiges DOI-Format: {doi}")
     
@@ -70,7 +73,7 @@ def split_csv_by_doi_prefix(
     input_file: Path,
     output_dir: Path,
     prefix_level: int = 2,
-    progress_callback=None
+    progress_callback: Optional[Callable[[str], None]] = None
 ) -> Tuple[int, Dict[str, int]]:
     """
     Split CSV file by DOI prefix into multiple files.
@@ -78,15 +81,18 @@ def split_csv_by_doi_prefix(
     Args:
         input_file: Path to input CSV file
         output_dir: Directory to write output files
-        prefix_level: Level of DOI prefix to use for splitting (default: 2)
+        prefix_level: Level of DOI prefix to use for splitting (1-4, default: 2)
         progress_callback: Optional callback function(message: str) for progress updates
     
     Returns:
         Tuple of (total_rows, dict mapping prefix to row count)
     
     Raises:
-        CSVSplitError: If file reading/writing fails
+        CSVSplitError: If file reading/writing fails or prefix_level is invalid
     """
+    if not 1 <= prefix_level <= 4:
+        raise CSVSplitError(f"Ungültiger prefix_level: {prefix_level}. Muss zwischen 1 und 4 liegen.")
+    
     if not input_file.exists():
         raise CSVSplitError(f"Eingabedatei nicht gefunden: {input_file}")
     
@@ -106,7 +112,10 @@ def split_csv_by_doi_prefix(
             reader = csv.reader(f)
             
             # Read header
-            header = next(reader)
+            try:
+                header = next(reader)
+            except StopIteration:
+                raise CSVSplitError("CSV-Datei ist leer (keine Zeilen vorhanden)")
             
             # Check if first column is DOI
             if not header or header[0].upper() != 'DOI':

@@ -2,9 +2,8 @@
 
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-from PySide6.QtCore import Qt, QThread
-from PySide6.QtWidgets import QPushButton
+from unittest.mock import patch, MagicMock
+from PySide6.QtCore import QThread
 
 from src.ui.csv_splitter_dialog import CSVSplitterDialog
 

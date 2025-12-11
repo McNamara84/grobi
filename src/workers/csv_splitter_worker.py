@@ -25,9 +25,16 @@ class CSVSplitterWorker(QObject):
         Args:
             input_file: Path to input CSV file
             output_dir: Directory to write output files
-            prefix_level: Level of DOI prefix to use for splitting
+            prefix_level: Level of DOI prefix to use for splitting (1-4)
+        
+        Raises:
+            ValueError: If prefix_level is not between 1 and 4
         """
         super().__init__()
+        
+        if not 1 <= prefix_level <= 4:
+            raise ValueError(f"prefix_level muss zwischen 1 und 4 liegen, erhalten: {prefix_level}")
+        
         self.input_file = input_file
         self.output_dir = output_dir
         self.prefix_level = prefix_level
