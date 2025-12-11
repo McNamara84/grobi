@@ -134,7 +134,7 @@ class TestDataCiteClientUpdate:
             )
             
             assert success is False
-            assert "Ungültige URL" in message
+            assert "Validierungsfehler" in message
             assert "valid HTTP(S) URL" in message
     
     def test_update_doi_url_validation_error_no_json(self, client):
@@ -151,8 +151,35 @@ class TestDataCiteClientUpdate:
             )
             
             assert success is False
-            assert "Ungültige URL" in message
+            assert "Validierungsfehler" in message
             assert "Invalid URL format" in message
+    
+    def test_update_doi_url_deprecated_schema_error(self, client):
+        """Test update with deprecated schema error (kernel-3)."""
+        mock_response = Mock()
+        mock_response.status_code = 422
+        mock_response.text = '{"errors":[{"source":"xml","title":"DOI 10.1594/gfz.sddb.1010: Schema http://datacite.org/schema/kernel-3 is no longer supported","uid":"10.1594/gfz.sddb.1010"}]}'
+        mock_response.json.return_value = {
+            "errors": [
+                {
+                    "source": "xml",
+                    "title": "DOI 10.1594/gfz.sddb.1010: Schema http://datacite.org/schema/kernel-3 is no longer supported",
+                    "uid": "10.1594/gfz.sddb.1010"
+                }
+            ]
+        }
+        
+        with patch('requests.put', return_value=mock_response):
+            success, message = client.update_doi_url(
+                "10.1594/gfz.sddb.1010",
+                "http://dataservices.gfz.de/SDDB/showshort.php?id=escidoc:76037"
+            )
+            
+            assert success is False
+            assert "Veraltetes DataCite-Schema" in message
+            assert "kernel-4" in message
+            assert "neu registriert werden" in message
+            assert "10.1594/gfz.sddb.1010" in message
     
     def test_update_doi_url_rate_limit(self, client):
         """Test update with rate limit error."""

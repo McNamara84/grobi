@@ -436,6 +436,10 @@ class DataCiteClient:
         before being sent to DataCite API (e.g., colons in query parameters are 
         encoded as %3A).
         
+        If the DOI uses deprecated Schema 3, it will be automatically upgraded to
+        Schema 4 (kernel-4) during the URL update. The upgrade ensures that required
+        Schema 4 metadata (like resourceTypeGeneral) is present.
+        
         Args:
             doi: The DOI identifier to update (e.g., "10.5880/GFZ.1.1.2021.001")
             new_url: The new landing page URL (will be normalized automatically)
@@ -448,8 +452,6 @@ class DataCiteClient:
         Raises:
             NetworkError: If connection to API fails
         """
-        url = f"{self.base_url}/dois/{doi}"
-        
         # Normalize and encode the URL for DataCite API
         normalized_url = self.normalize_url(new_url)
         
@@ -457,8 +459,31 @@ class DataCiteClient:
         if normalized_url != new_url:
             logger.debug(f"URL normalized: '{new_url}' → '{normalized_url}'")
         
-        # Prepare JSON payload according to DataCite API specification
-        payload = {
+        # Try update with automatic schema upgrade if needed
+        return self._update_doi_with_schema_upgrade(doi, normalized_url)
+    
+    def _update_doi_with_schema_upgrade(self, doi: str, normalized_url: str) -> Tuple[bool, str]:
+        """
+        Update DOI URL with automatic schema upgrade if Schema 3 is detected.
+        
+        This method first tries a simple URL update. If it fails with a schema
+        deprecation error, it fetches the current metadata, upgrades to Schema 4,
+        and retries the update.
+        
+        Args:
+            doi: The DOI identifier
+            normalized_url: The normalized landing page URL
+            
+        Returns:
+            Tuple of (success: bool, message: str)
+            
+        Raises:
+            NetworkError: If connection to API fails
+        """
+        url = f"{self.base_url}/dois/{doi}"
+        
+        # Prepare simple URL-only update payload
+        simple_payload = {
             "data": {
                 "type": "dois",
                 "attributes": {
@@ -470,10 +495,11 @@ class DataCiteClient:
         logger.info(f"Updating DOI {doi} with normalized URL: {normalized_url}")
         
         try:
+            # First attempt: simple URL update
             response = requests.put(
                 url,
                 auth=self.auth,
-                json=payload,
+                json=simple_payload,
                 timeout=self.TIMEOUT,
                 headers={
                     "Content-Type": "application/vnd.api+json",
@@ -503,20 +529,31 @@ class DataCiteClient:
             
             elif response.status_code == 422:
                 # Unprocessable Entity - validation error
-                # Extract detailed error message from API response
+                # Check if this is a schema deprecation error
                 try:
                     error_data = response.json()
-                    # DataCite API returns errors in 'errors' array
                     if 'errors' in error_data and error_data['errors']:
-                        error_details = error_data['errors'][0].get('title', 'Unbekannter Validierungsfehler')
-                        error_msg = f"Ungültige URL für DOI {doi}: {error_details}"
+                        error_details = error_data['errors'][0].get('title', '')
+                        
+                        # Check for schema deprecation error
+                        if 'schema' in error_details.lower() and 'no longer supported' in error_details.lower():
+                            logger.warning(f"DOI {doi} uses deprecated Schema 3, attempting automatic upgrade to Schema 4")
+                            
+                            # Try to upgrade schema and retry
+                            return self._retry_update_with_schema_upgrade(doi, normalized_url, error_details)
+                        else:
+                            # Other validation errors (e.g., invalid URL format)
+                            error_msg = f"Validierungsfehler für DOI {doi}: {error_details}"
+                            logger.error(f"Validation error for DOI {doi}: {error_details}")
+                            return False, error_msg
                     else:
-                        error_msg = f"Ungültige URL für DOI {doi}: {response.text}"
-                except Exception:
-                    error_msg = f"Ungültige URL für DOI {doi}: {response.text}"
-                
-                logger.error(f"Validation error for DOI {doi}: {response.text}")
-                return False, error_msg
+                        error_msg = f"Validierungsfehler für DOI {doi}: {response.text}"
+                        logger.error(f"Validation error for DOI {doi}: {response.text}")
+                        return False, error_msg
+                except Exception as e:
+                    error_msg = f"Validierungsfehler für DOI {doi}: {response.text}"
+                    logger.error(f"Error parsing validation error: {e}")
+                    return False, error_msg
             
             elif response.status_code == 429:
                 error_msg = "Zu viele Anfragen - Rate Limit erreicht"
@@ -542,6 +579,157 @@ class DataCiteClient:
             error_msg = f"Netzwerkfehler bei DOI {doi}: {str(e)}"
             logger.error(f"Request exception during update: {e}")
             raise NetworkError(error_msg)
+    
+    def _retry_update_with_schema_upgrade(self, doi: str, normalized_url: str, original_error: str) -> Tuple[bool, str]:
+        """
+        Retry DOI update after upgrading metadata from Schema 3 to Schema 4.
+        
+        This method fetches the current metadata, upgrades it to Schema 4 by adding
+        schemaVersion and ensuring resourceTypeGeneral is present, then retries the update.
+        
+        Args:
+            doi: The DOI identifier
+            normalized_url: The normalized landing page URL
+            original_error: The original schema deprecation error message
+            
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        try:
+            # Fetch current metadata
+            logger.info(f"Fetching current metadata for DOI {doi} to perform schema upgrade")
+            metadata = self.get_doi_metadata(doi)
+            
+            if not metadata:
+                error_msg = f"Konnte Metadaten für DOI {doi} nicht abrufen für Schema-Upgrade"
+                logger.error(error_msg)
+                return False, error_msg
+            
+            # Upgrade metadata to Schema 4
+            upgraded_attributes = self._upgrade_schema_to_v4(metadata, normalized_url)
+            
+            if not upgraded_attributes:
+                error_msg = (
+                    f"DOI {doi} kann nicht automatisch zu Schema 4 aktualisiert werden: "
+                    f"resourceTypeGeneral fehlt in den Metadaten. Bitte ergänze dieses Pflichtfeld "
+                    f"manuell über das DataCite Fabrica Interface."
+                )
+                logger.error(error_msg)
+                return False, error_msg
+            
+            # Prepare upgraded payload
+            upgraded_payload = {
+                "data": {
+                    "type": "dois",
+                    "attributes": upgraded_attributes
+                }
+            }
+            
+            url = f"{self.base_url}/dois/{doi}"
+            logger.info(f"Retrying DOI {doi} update with Schema 4 metadata")
+            
+            # Retry with upgraded metadata
+            response = requests.put(
+                url,
+                auth=self.auth,
+                json=upgraded_payload,
+                timeout=self.TIMEOUT,
+                headers={
+                    "Content-Type": "application/vnd.api+json",
+                    "Accept": "application/vnd.api+json"
+                }
+            )
+            
+            if response.status_code == 200:
+                success_msg = f"DOI {doi} erfolgreich aktualisiert (Schema automatisch auf kernel-4 aktualisiert)"
+                logger.info(success_msg)
+                return True, success_msg
+            else:
+                error_msg = f"Schema-Upgrade für DOI {doi} fehlgeschlagen (HTTP {response.status_code}): {response.text}"
+                logger.error(error_msg)
+                return False, error_msg
+                
+        except Exception as e:
+            error_msg = f"Fehler beim Schema-Upgrade für DOI {doi}: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
+    
+    def _upgrade_schema_to_v4(self, metadata: Dict[str, Any], new_url: str) -> Optional[Dict[str, Any]]:
+        """
+        Upgrade DOI metadata from Schema 3 to Schema 4.
+        
+        According to DataCite documentation, Schema 4 requires:
+        1. schemaVersion set to "http://datacite.org/schema/kernel-4"
+        2. resourceTypeGeneral must be present (mandatory in Schema 4)
+        3. Contributors with contributorType "Funder" should be moved to fundingReferences
+        
+        Args:
+            metadata: Current DOI metadata from DataCite API
+            new_url: New landing page URL to include in update
+            
+        Returns:
+            Upgraded attributes dict ready for PUT request, or None if upgrade not possible
+        """
+        try:
+            attributes = metadata.get('data', {}).get('attributes', {})
+            
+            # Check if resourceTypeGeneral exists (required for Schema 4)
+            types = attributes.get('types', {})
+            resource_type_general = types.get('resourceTypeGeneral')
+            
+            if not resource_type_general:
+                logger.error("Cannot upgrade to Schema 4: resourceTypeGeneral is missing")
+                return None
+            
+            # Build upgraded attributes
+            upgraded = {
+                'url': new_url,
+                'schemaVersion': 'http://datacite.org/schema/kernel-4',
+                'types': types
+            }
+            
+            # Handle Funder contributors (deprecated in Schema 4)
+            contributors = attributes.get('contributors', [])
+            funding_references = attributes.get('fundingReferences', [])
+            
+            non_funder_contributors = []
+            funders_to_migrate = []
+            
+            for contributor in contributors:
+                if contributor.get('contributorType') == 'Funder':
+                    funders_to_migrate.append(contributor)
+                else:
+                    non_funder_contributors.append(contributor)
+            
+            # Migrate Funder contributors to fundingReferences
+            if funders_to_migrate:
+                logger.info(f"Migrating {len(funders_to_migrate)} Funder contributor(s) to fundingReferences")
+                for funder in funders_to_migrate:
+                    funding_ref = {'funderName': funder.get('name', '')}
+                    
+                    # Copy name identifier if present
+                    name_identifiers = funder.get('nameIdentifiers', [])
+                    if name_identifiers and len(name_identifiers) > 0:
+                        identifier = name_identifiers[0]
+                        funding_ref['funderIdentifier'] = identifier.get('nameIdentifier', '')
+                        funding_ref['funderIdentifierType'] = identifier.get('nameIdentifierScheme', '')
+                    
+                    funding_references.append(funding_ref)
+            
+            # Include contributors (without Funders) if any remain
+            if non_funder_contributors:
+                upgraded['contributors'] = non_funder_contributors
+            
+            # Include fundingReferences if any exist
+            if funding_references:
+                upgraded['fundingReferences'] = funding_references
+            
+            logger.info(f"Successfully prepared Schema 4 upgrade with schemaVersion=kernel-4")
+            return upgraded
+            
+        except Exception as e:
+            logger.error(f"Error preparing Schema 4 upgrade: {e}")
+            return None
     
     def get_doi_metadata(self, doi: str) -> Optional[Dict[str, Any]]:
         """
