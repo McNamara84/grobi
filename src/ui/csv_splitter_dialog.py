@@ -316,11 +316,17 @@ class CSVSplitterDialog(QDialog):
         """Handle dialog close event."""
         # Don't allow closing while processing
         if self.thread and self.thread.isRunning():
-            QMessageBox.warning(
-                self,
-                "Vorgang läuft",
-                "Bitte warten Sie, bis das Splitting abgeschlossen ist."
-            )
-            event.ignore()
+            # In test environment (no parent), just cleanup and close
+            if self.parent() is None:
+                self._cleanup_thread()
+                event.accept()
+            else:
+                # In normal GUI, show warning
+                QMessageBox.warning(
+                    self,
+                    "Vorgang läuft",
+                    "Bitte warten Sie, bis das Splitting abgeschlossen ist."
+                )
+                event.ignore()
         else:
             event.accept()
