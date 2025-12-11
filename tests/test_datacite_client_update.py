@@ -155,11 +155,12 @@ class TestDataCiteClientUpdate:
             assert "Invalid URL format" in message
     
     def test_update_doi_url_deprecated_schema_error(self, client):
-        """Test update with deprecated schema error (kernel-3)."""
-        mock_response = Mock()
-        mock_response.status_code = 422
-        mock_response.text = '{"errors":[{"source":"xml","title":"DOI 10.1594/gfz.sddb.1010: Schema http://datacite.org/schema/kernel-3 is no longer supported","uid":"10.1594/gfz.sddb.1010"}]}'
-        mock_response.json.return_value = {
+        """Test update with deprecated schema error tries automatic upgrade but fails if no resourceTypeGeneral."""
+        # First PUT: Returns schema deprecation error
+        mock_put_response = Mock()
+        mock_put_response.status_code = 422
+        mock_put_response.text = '{"errors":[{"source":"xml","title":"DOI 10.1594/gfz.sddb.1010: Schema http://datacite.org/schema/kernel-3 is no longer supported","uid":"10.1594/gfz.sddb.1010"}]}'
+        mock_put_response.json.return_value = {
             "errors": [
                 {
                     "source": "xml",
@@ -169,17 +170,39 @@ class TestDataCiteClientUpdate:
             ]
         }
         
-        with patch('requests.put', return_value=mock_response):
+        # GET: Returns metadata without resourceTypeGeneral (cannot upgrade)
+        mock_get_response = Mock()
+        mock_get_response.status_code = 200
+        mock_get_response.json.return_value = {
+            "data": {
+                "id": "10.1594/gfz.sddb.1010",
+                "type": "dois",
+                "attributes": {
+                    "doi": "10.1594/gfz.sddb.1010",
+                    "url": "http://old-url.example.org",
+                    "types": {}  # Missing resourceTypeGeneral - upgrade not possible
+                }
+            }
+        }
+        
+        def request_mock(method, *args, **kwargs):
+            """Mock both PUT and GET requests."""
+            if method == 'PUT' or (len(args) > 0 and args[0].endswith('/dois/10.1594/gfz.sddb.1010')):
+                return mock_put_response
+            else:
+                return mock_get_response
+        
+        with patch('requests.put', return_value=mock_put_response), \
+             patch('requests.get', return_value=mock_get_response):
             success, message = client.update_doi_url(
                 "10.1594/gfz.sddb.1010",
                 "http://dataservices.gfz.de/SDDB/showshort.php?id=escidoc:76037"
             )
             
+            # Should fail because resourceTypeGeneral is missing
             assert success is False
-            assert "Veraltetes DataCite-Schema" in message
-            assert "kernel-4" in message
-            assert "neu registriert werden" in message
-            assert "10.1594/gfz.sddb.1010" in message
+            assert "resourceTypeGeneral fehlt" in message
+            assert "Fabrica" in message
     
     def test_update_doi_url_rate_limit(self, client):
         """Test update with rate limit error."""
