@@ -1064,13 +1064,14 @@ class SumarioPMDClient:
         query = """
             SELECT 
                 r.identifier AS doi,
-                f.filename,
-                f.location AS download_url,
-                f.format,
+                f.name AS filename,
+                f.url AS download_url,
+                f.description,
+                f.filemimetype AS format,
                 f.size
             FROM resource r
             INNER JOIN file f ON f.resource_id = r.id
-            ORDER BY r.identifier ASC, f.filename ASC
+            ORDER BY r.identifier ASC, f.name ASC
         """
         
         try:
@@ -1085,6 +1086,7 @@ class SumarioPMDClient:
                             row['doi'],
                             row['filename'],
                             row['download_url'],
+                            row['description'],
                             row['format'],
                             row['size']
                         )

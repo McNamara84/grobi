@@ -412,14 +412,14 @@ def export_dois_with_contributors_to_csv(
 
 
 def export_dois_download_urls(
-    dois_files: List[Tuple[str, str, str, str, int]], 
+    dois_files: List[Tuple[str, str, str, str, str, int]], 
     filepath: str
 ) -> None:
     """
     Export DOIs with download URLs to CSV.
     
     Args:
-        dois_files: List of (DOI, Filename, Download_URL, Format, Size_Bytes) tuples
+        dois_files: List of (DOI, Filename, Download_URL, Description, Format, Size_Bytes) tuples
         filepath: Output CSV file path
         
     Raises:
@@ -432,11 +432,11 @@ def export_dois_download_urls(
             writer = csv.writer(csvfile)
             
             # Header
-            writer.writerow(['DOI', 'Filename', 'Download_URL', 'Format', 'Size_Bytes'])
+            writer.writerow(['DOI', 'Filename', 'Download_URL', 'Description', 'Format', 'Size_Bytes'])
             
             # Data rows
-            for doi, filename, url, format_str, size in dois_files:
-                writer.writerow([doi, filename, url, format_str, size])
+            for doi, filename, url, description, format_str, size in dois_files:
+                writer.writerow([doi, filename, url, description, format_str, size])
         
         logger.info(f"Successfully exported {len(dois_files)} file entries to {filepath}")
         
