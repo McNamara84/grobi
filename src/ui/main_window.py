@@ -781,7 +781,7 @@ class MainWindow(QMainWindow):
             dialog = CSVSplitterDialog(self)
             dialog.exec()
             logger.info("CSV Splitter dialog closed")
-            dialog.deleteLater()
+            # Note: deleteLater() not needed - modal dialog will be garbage collected
         except Exception as e:
             logger.error(f"Error opening CSV splitter dialog: {e}")
             QMessageBox.warning(

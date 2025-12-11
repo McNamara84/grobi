@@ -14,6 +14,9 @@ from src.workers.csv_splitter_worker import CSVSplitterWorker
 
 logger = logging.getLogger(__name__)
 
+# Thread cleanup timeout in milliseconds - generous value for large CSV files
+THREAD_CLEANUP_TIMEOUT_MS = 30000  # 30 seconds
+
 # Log formatting constant
 LOG_SEPARATOR = "=" * 60
 
@@ -289,9 +292,11 @@ class CSVSplitterDialog(QDialog):
         if self.thread:
             if self.thread.isRunning():
                 # Wait with timeout to prevent UI freeze if thread doesn't terminate
-                # 30 seconds allows for large CSV files with many file handles to close
-                if not self.thread.wait(30000):  # 30 seconds timeout
-                    logger.warning("CSV Splitter thread did not terminate within 30 seconds")
+                if not self.thread.wait(THREAD_CLEANUP_TIMEOUT_MS):
+                    logger.warning(
+                        f"CSV Splitter thread did not terminate within "
+                        f"{THREAD_CLEANUP_TIMEOUT_MS/1000:.0f} seconds"
+                    )
             self.thread.deleteLater()
             self.thread = None
         if self.worker:

@@ -58,7 +58,7 @@ class CSVSplitterWorker(QObject):
             self.error.emit(str(e))
         except Exception as e:
             logger.exception("Unexpected error in CSV splitter worker")
-            self.error.emit(f"Unerwarteter Fehler: {str(e)}")
+            self.error.emit(f"Unerwarteter Fehler ({type(e).__name__}): {str(e)}")
     
     def _on_progress(self, message: str):
         """Forward progress messages."""

@@ -22,6 +22,26 @@ class CSVSplitError(Exception):
     pass
 
 
+def _sanitize_filename(prefix: str) -> str:
+    r"""Sanitize DOI prefix for use in filename across all platforms.
+    
+    Replaces characters that are problematic on Windows, macOS, or Linux.
+    This includes: \ / : * ? " < > | and control characters.
+    
+    Args:
+        prefix: DOI prefix to sanitize
+        
+    Returns:
+        Sanitized string safe for use in filenames on all platforms
+    """
+    # Characters forbidden on Windows (most restrictive)
+    forbidden_chars = ['\\', '/', ':', '*', '?', '"', '<', '>', '|']
+    sanitized = prefix
+    for char in forbidden_chars:
+        sanitized = sanitized.replace(char, '_')
+    return sanitized
+
+
 def extract_doi_prefix(doi: str, level: int = 2) -> str:
     """
     Extract DOI prefix up to specified level.
@@ -104,6 +124,11 @@ def split_csv_by_doi_prefix(
         written incrementally as they are processed. These partial files may contain
         incomplete data but can be useful for debugging or recovery. They should be
         manually removed or overwritten by re-running the operation.
+        
+        **Warning**: If the output directory already contains files with the same
+        base filename pattern (e.g., from a previous run), these files will be
+        silently overwritten. Consider using a different output directory or
+        manually cleaning existing files before running the operation.
     """
     if not 1 <= prefix_level <= 4:
         raise CSVSplitError(f"Ungültiger prefix_level: {prefix_level}. Muss zwischen 1 und 4 liegen.")
@@ -154,7 +179,7 @@ def split_csv_by_doi_prefix(
                     
                     # Open new file if this is the first row for this prefix
                     if prefix not in file_handles:
-                        safe_prefix = prefix.replace('/', '_').replace('\\', '_')
+                        safe_prefix = _sanitize_filename(prefix)
                         sanitized_prefixes[prefix] = safe_prefix  # Cache for later use
                         output_file = output_dir / f"{base_filename}_{safe_prefix}.csv"
                         fh = open(output_file, 'w', encoding='utf-8-sig', newline='')
@@ -182,7 +207,7 @@ def split_csv_by_doi_prefix(
                     continue
     
     except Exception as e:
-        raise CSVSplitError(f"Fehler beim Lesen der CSV-Datei: {str(e)}")
+        raise CSVSplitError(f"Fehler beim Lesen der CSV-Datei: {str(e)}") from e
     finally:
         # Close all open file handles, catching cleanup exceptions separately
         for prefix, fh in file_handles.items():
@@ -210,7 +235,7 @@ def split_csv_by_doi_prefix(
         if progress_callback:
             progress_callback(skip_msg)
     else:
-        skip_msg = "✓ Alle Zeilen erfolgreich verarbeitet"
+        skip_msg = "Alle Zeilen erfolgreich verarbeitet"
         logger.info(skip_msg)
         if progress_callback:
             progress_callback(f"✓ {skip_msg}")
