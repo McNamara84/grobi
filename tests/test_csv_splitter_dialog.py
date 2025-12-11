@@ -305,8 +305,10 @@ class TestCSVSplitterDialog:
         # Simulate processing state
         mock_thread = MagicMock()
         mock_thread.isRunning.return_value = True
-        mock_thread.wait = MagicMock(return_value=True)
         dialog.thread = mock_thread
+        
+        mock_worker = MagicMock()
+        dialog.worker = mock_worker
         
         # Create a mock event
         from PySide6.QtGui import QCloseEvent
@@ -314,12 +316,13 @@ class TestCSVSplitterDialog:
         
         dialog.closeEvent(event)
         
-        # In test environment, close is allowed and thread is cleaned up
+        # In test environment, close is allowed and worker stop is requested
         assert event.isAccepted() is True
-        assert mock_thread.wait.call_count == 1
+        # Worker stop should be called for graceful shutdown
+        assert mock_worker.stop.call_count == 1
         
-        # Thread should be set to None after cleanup
-        assert dialog.thread is None
+        # Thread is NOT set to None - cleanup happens via thread.finished signal later
+        assert dialog.thread is not None
     
     def test_close_event_when_idle(self, dialog, qtbot):
         """Test that dialog can be closed when idle."""

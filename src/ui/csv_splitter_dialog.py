@@ -14,9 +14,6 @@ from src.workers.csv_splitter_worker import CSVSplitterWorker
 
 logger = logging.getLogger(__name__)
 
-# Thread cleanup timeout in milliseconds - generous value for large CSV files
-THREAD_CLEANUP_TIMEOUT_MILLISECONDS = 30000  # 30 seconds
-
 # Log formatting constant
 LOG_SEPARATOR = "=" * 60
 
@@ -289,15 +286,12 @@ class CSVSplitterDialog(QDialog):
         self._reset_controls()
     
     def _cleanup_thread(self):
-        """Clean up thread and worker."""
+        """Clean up thread and worker.
+        
+        Note: This method is only called from thread.finished signal,
+        so the thread is guaranteed to have already finished by this point.
+        """
         if self.thread:
-            if self.thread.isRunning():
-                # Wait with timeout to prevent UI freeze if thread doesn't terminate
-                if not self.thread.wait(THREAD_CLEANUP_TIMEOUT_MILLISECONDS):
-                    logger.warning(
-                        f"CSV Splitter thread did not terminate within "
-                        f"{THREAD_CLEANUP_TIMEOUT_MILLISECONDS/1000:.0f} seconds"
-                    )
             self.thread.deleteLater()
             self.thread = None
         if self.worker:
@@ -321,15 +315,23 @@ class CSVSplitterDialog(QDialog):
         self.log_text.setTextCursor(cursor)
     
     def closeEvent(self, event):
-        """Handle dialog close event."""
-        # Don't allow closing while processing
+        """Handle dialog close event.
+        
+        If processing is active, prevents closing to avoid crashes from signals
+        being emitted to a destroyed dialog. The thread will clean up naturally
+        when it finishes.
+        """
         if self.thread and self.thread.isRunning():
-            # In test environment (no parent), just cleanup and close
+            # In test environment (no parent), allow closing without blocking wait()
             if self.parent() is None:
-                self._cleanup_thread()
+                # Request worker to stop gracefully
+                if self.worker:
+                    self.worker.stop()
+                # Don't call _cleanup_thread here - it will be called by thread.finished
+                # signal when the worker completes. This prevents UI freeze.
                 event.accept()
             else:
-                # In normal GUI, show warning
+                # In normal GUI, show warning and prevent close
                 QMessageBox.warning(
                     self,
                     "Vorgang läuft",

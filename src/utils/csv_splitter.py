@@ -53,9 +53,12 @@ def extract_doi_prefix(doi: str, level: int = 2) -> str:
     
     Args:
         doi: DOI string
-        level: Number of dot-separated parts to include after the slash
-               level=1 includes only DOI prefix/registrant code (e.g., 10.5880)
-               level=2 includes DOI prefix + 2 parts after slash (e.g., 10.5880/gfz.2011)
+        level: Granularity of prefix extraction:
+               level=1: Returns only registrant code (e.g., 10.5880)
+               level=2: Returns registrant + first 2 dot-separated suffix parts
+                       (e.g., 10.5880/gfz.2011)
+               level=3: Returns registrant + first 3 suffix parts
+               level=4: Returns registrant + first 4 suffix parts
     
     Returns:
         DOI prefix string
