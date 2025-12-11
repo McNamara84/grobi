@@ -213,11 +213,18 @@ class CSVSplitterDialog(QDialog):
         self._log(LOG_SEPARATOR)
         
         # Create worker and thread
-        self.worker = CSVSplitterWorker(
-            self.input_file,
-            self.output_dir,
-            self.prefix_spinbox.value()
-        )
+        try:
+            self.worker = CSVSplitterWorker(
+                self.input_file,
+                self.output_dir,
+                self.prefix_spinbox.value()
+            )
+        except ValueError as e:
+            self._log(f"Fehler: {e}")
+            QMessageBox.critical(self, "Fehler", str(e))
+            self._reset_controls()
+            return
+        
         self.thread = QThread()
         self.worker.moveToThread(self.thread)
         
@@ -281,8 +288,9 @@ class CSVSplitterDialog(QDialog):
         if self.thread:
             if self.thread.isRunning():
                 # Wait with timeout to prevent UI freeze if thread doesn't terminate
-                if not self.thread.wait(5000):  # 5 seconds timeout
-                    logger.warning("CSV Splitter thread did not terminate within 5 seconds")
+                # 30 seconds allows for large CSV files with many file handles to close
+                if not self.thread.wait(30000):  # 30 seconds timeout
+                    logger.warning("CSV Splitter thread did not terminate within 30 seconds")
             self.thread.deleteLater()
             self.thread = None
         if self.worker:

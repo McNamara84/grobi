@@ -94,6 +94,12 @@ class TestExtractDOIPrefix:
         # Test negative level
         with pytest.raises(CSVSplitError, match="Ungültiger prefix_level.*zwischen 1 und 4"):
             extract_doi_prefix(doi, level=-1)
+    
+    def test_extract_prefix_doi_ends_with_slash(self):
+        """Test error handling for DOI ending with slash."""
+        # DOI ending with / should raise error
+        with pytest.raises(CSVSplitError, match="Ungültiges DOI-Format: 10.5880/"):
+            extract_doi_prefix("10.5880/", level=2)
 
 
 class TestSplitCSVByDOIPrefix:
@@ -216,8 +222,10 @@ class TestSplitCSVByDOIPrefix:
         calls = [str(call) for call in progress_callback.call_args_list]
         assert any('Lese CSV-Datei' in str(call) for call in calls)
     
-    def test_split_skips_invalid_dois(self, tmp_path):
-        """Test that invalid DOIs are skipped gracefully."""
+    def test_split_skips_invalid_dois(self, tmp_path, caplog):
+        """Test that invalid DOIs are skipped gracefully and logged."""
+        import logging
+        
         input_file = tmp_path / "test_input.csv"
         with open(input_file, 'w', encoding='utf-8-sig', newline='') as f:
             writer = csv.writer(f)
@@ -229,15 +237,20 @@ class TestSplitCSVByDOIPrefix:
         
         output_dir = tmp_path / "output"
         
-        total_rows, prefix_counts = split_csv_by_doi_prefix(
-            input_file,
-            output_dir,
-            prefix_level=2
-        )
+        with caplog.at_level(logging.WARNING):
+            total_rows, prefix_counts = split_csv_by_doi_prefix(
+                input_file,
+                output_dir,
+                prefix_level=2
+            )
         
         # Should only count valid DOIs
         assert total_rows == 2
         assert prefix_counts['10.5880/gfz.2011'] == 2
+        
+        # Verify warnings were logged for invalid DOIs
+        assert any('Überspringe ungültigen DOI: invalid-doi' in record.message 
+                   for record in caplog.records if record.levelno == logging.WARNING)
     
     def test_split_creates_output_directory(self, tmp_path):
         """Test that output directory is created if it doesn't exist."""

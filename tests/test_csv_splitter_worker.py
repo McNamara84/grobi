@@ -179,7 +179,7 @@ class TestCSVSplitterWorker:
         assert len(prefix_counts) == 1  # All grouped under 10.5880
     
     def test_worker_exception_handling(self, tmp_path):
-        """Test worker handling of unexpected exceptions."""
+        """Test worker handling of unexpected exceptions preserves error details."""
         input_file = tmp_path / "test.csv"
         input_file.write_text("DOI,URL\n10.5880/test,http://example.com\n")
         output_dir = tmp_path / "output"
@@ -191,12 +191,17 @@ class TestCSVSplitterWorker:
         
         # Mock split_csv_by_doi_prefix to raise unexpected exception
         with patch('src.workers.csv_splitter_worker.split_csv_by_doi_prefix') as mock_split:
-            mock_split.side_effect = RuntimeError("Unexpected error")
+            mock_split.side_effect = RuntimeError("Unexpected error details")
             
             # Run worker directly (not in thread)
             worker.run()
             
             # Should emit error signal
             assert error_mock.call_count == 1
+            
+            # Verify original error message is preserved in wrapper
+            error_message = error_mock.call_args[0][0]
+            assert "Unerwarteter Fehler" in error_message
+            assert "Unexpected error details" in error_message
             error_message = error_mock.call_args[0][0]
             assert "Unerwarteter Fehler" in error_message

@@ -145,6 +145,46 @@ class TestCSVSplitterDialog:
                 # Verify thread was created and started
                 assert mock_thread.start.call_count == 1
     
+    def test_signals_connected_before_thread_start(self, dialog, qtbot, tmp_path):
+        """Test that worker signals are connected before thread starts."""
+        test_file = tmp_path / "test.csv"
+        test_file.write_text("DOI,URL\n10.5880/test,http://example.com\n")
+        
+        dialog.input_file = test_file
+        dialog.output_dir = tmp_path / "output"
+        dialog.start_button.setEnabled(True)
+        
+        # Track order of operations
+        operations = []
+        
+        def mock_connect(*args, **kwargs):
+            operations.append('connect')
+        
+        def mock_start():
+            operations.append('start')
+        
+        with patch('src.ui.csv_splitter_dialog.QThread') as mock_thread_class:
+            mock_thread = MagicMock()
+            mock_thread.start = mock_start
+            mock_thread_class.return_value = mock_thread
+            
+            with patch('src.ui.csv_splitter_dialog.CSVSplitterWorker') as mock_worker_class:
+                mock_worker = MagicMock()
+                mock_worker_class.return_value = mock_worker
+                
+                # Track signal connections
+                mock_worker.progress.connect = mock_connect
+                mock_worker.finished.connect = mock_connect
+                mock_worker.error.connect = mock_connect
+                
+                dialog._start_splitting()
+                
+                # Verify connections happened before start
+                # Should have at least 5 connects (progress, finished, error, 2x quit) before start
+                start_index = operations.index('start')
+                connect_count_before_start = operations[:start_index].count('connect')
+                assert connect_count_before_start >= 3, "Signals must be connected before thread.start()"
+    
     def test_ui_disabled_during_processing(self, dialog, qtbot, tmp_path):
         """Test that UI controls are disabled during processing."""
         test_file = tmp_path / "test.csv"

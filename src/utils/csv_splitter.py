@@ -3,7 +3,7 @@
 import csv
 import logging
 from pathlib import Path
-from typing import Dict, Tuple, Optional, Callable
+from typing import Dict, Tuple, Optional, Callable, TextIO
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ def extract_doi_prefix(doi: str, level: int = 2) -> str:
         raise CSVSplitError(f"Ungültiges DOI-Format: {doi}")
     
     parts = doi.split('/')
-    if len(parts) < 2:
+    if len(parts) < 2 or not parts[1]:
         raise CSVSplitError(f"Ungültiges DOI-Format: {doi}")
     
     # First part is the DOI prefix/registrant code (e.g., "10.5880")
@@ -89,6 +89,11 @@ def split_csv_by_doi_prefix(
     
     Raises:
         CSVSplitError: If file reading/writing fails or prefix_level is invalid
+    
+    Note:
+        If an error occurs during processing, partial output files will remain in
+        the output directory. These files may contain incomplete data and should
+        be manually removed or overwritten by re-running the operation.
     """
     if not 1 <= prefix_level <= 4:
         raise CSVSplitError(f"Ungültiger prefix_level: {prefix_level}. Muss zwischen 1 und 4 liegen.")
@@ -100,8 +105,9 @@ def split_csv_by_doi_prefix(
     
     # Track open file handles and writers for streaming approach
     # Separate dicts to avoid (fh, None) state during initialization
-    file_handles: Dict[str, object] = {}  # prefix -> file_handle
+    file_handles: Dict[str, TextIO] = {}  # prefix -> file_handle
     writers: Dict[str, csv.writer] = {}  # prefix -> csv_writer
+    sanitized_prefixes: Dict[str, str] = {}  # prefix -> sanitized_prefix (for caching)
     header = None
     total_rows = 0
     skipped_rows = 0
@@ -139,6 +145,7 @@ def split_csv_by_doi_prefix(
                     # Open new file if this is the first row for this prefix
                     if prefix not in file_handles:
                         safe_prefix = prefix.replace('/', '_').replace('\\', '_')
+                        sanitized_prefixes[prefix] = safe_prefix  # Cache for later use
                         output_file = output_dir / f"{base_filename}_{safe_prefix}.csv"
                         fh = open(output_file, 'w', encoding='utf-8-sig', newline='')
                         # Add to file_handles immediately to ensure cleanup even if error occurs
@@ -151,6 +158,7 @@ def split_csv_by_doi_prefix(
                             # If header writing fails, ensure file is closed
                             fh.close()
                             del file_handles[prefix]
+                            del sanitized_prefixes[prefix]
                             raise
                     
                     # Write row to appropriate file
@@ -179,7 +187,7 @@ def split_csv_by_doi_prefix(
     # Log progress for each prefix
     for i, (prefix, count) in enumerate(sorted(prefix_counts.items()), 1):
         if progress_callback:
-            safe_prefix = prefix.replace('/', '_').replace('\\', '_')
+            safe_prefix = sanitized_prefixes[prefix]  # Use cached value
             output_file = output_dir / f"{base_filename}_{safe_prefix}.csv"
             progress_callback(
                 f"[{i}/{len(prefix_counts)}] {prefix}: {count} DOIs → {output_file.name}"
