@@ -131,7 +131,7 @@ def split_csv_by_doi_prefix(
         manually cleaning existing files before running the operation.
     """
     if not 1 <= prefix_level <= 4:
-        raise CSVSplitError(f"Ungültiger prefix_level: {prefix_level}. Muss zwischen 1 und 4 liegen.")
+        raise CSVSplitError(f"Ungültiger Prefix-Level: {prefix_level}. Muss zwischen 1 und 4 liegen.")
     
     if not input_file.exists():
         raise CSVSplitError(f"Eingabedatei nicht gefunden: {input_file}")

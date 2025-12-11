@@ -418,9 +418,9 @@ class TestSplitCSVByDOIPrefix:
         output_dir = tmp_path / "output"
         
         # Test level < 1
-        with pytest.raises(CSVSplitError, match="Ungültiger prefix_level.*zwischen 1 und 4"):
+        with pytest.raises(CSVSplitError, match="Ungültiger Prefix-Level.*zwischen 1 und 4"):
             split_csv_by_doi_prefix(input_file, output_dir, prefix_level=0)
         
         # Test level > 4
-        with pytest.raises(CSVSplitError, match="Ungültiger prefix_level.*zwischen 1 und 4"):
+        with pytest.raises(CSVSplitError, match="Ungültiger Prefix-Level.*zwischen 1 und 4"):
             split_csv_by_doi_prefix(input_file, output_dir, prefix_level=5)

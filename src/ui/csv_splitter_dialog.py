@@ -8,14 +8,14 @@ from PySide6.QtWidgets import (
     QFileDialog, QTextEdit, QProgressBar, QGroupBox, QSpinBox, QMessageBox
 )
 from PySide6.QtCore import QThread, Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QTextCursor
 
 from src.workers.csv_splitter_worker import CSVSplitterWorker
 
 logger = logging.getLogger(__name__)
 
 # Thread cleanup timeout in milliseconds - generous value for large CSV files
-THREAD_CLEANUP_TIMEOUT_MS = 30000  # 30 seconds
+THREAD_CLEANUP_TIMEOUT_MILLISECONDS = 30000  # 30 seconds
 
 # Log formatting constant
 LOG_SEPARATOR = "=" * 60
@@ -52,7 +52,8 @@ class CSVSplitterDialog(QDialog):
         # Description
         desc_label = QLabel(
             "Dieses Tool splittet große CSV-Dateien in kleinere Dateien basierend auf DOI-Präfixen.\n"
-            "Beispiel: DOIs wie 10.5880/gfz.2011.100 werden gruppiert nach 10.5880/gfz.2011"
+            "Beispiel: DOIs wie 10.5880/gfz.2011.100 werden gruppiert nach 10.5880/gfz.2011\n\n"
+            "⚠️ Hinweis: Existierende Dateien im Ausgabe-Ordner werden ohne Rückfrage überschrieben!"
         )
         desc_label.setWordWrap(True)
         layout.addWidget(desc_label)
@@ -292,10 +293,10 @@ class CSVSplitterDialog(QDialog):
         if self.thread:
             if self.thread.isRunning():
                 # Wait with timeout to prevent UI freeze if thread doesn't terminate
-                if not self.thread.wait(THREAD_CLEANUP_TIMEOUT_MS):
+                if not self.thread.wait(THREAD_CLEANUP_TIMEOUT_MILLISECONDS):
                     logger.warning(
                         f"CSV Splitter thread did not terminate within "
-                        f"{THREAD_CLEANUP_TIMEOUT_MS/1000:.0f} seconds"
+                        f"{THREAD_CLEANUP_TIMEOUT_MILLISECONDS/1000:.0f} seconds"
                     )
             self.thread.deleteLater()
             self.thread = None
@@ -316,7 +317,7 @@ class CSVSplitterDialog(QDialog):
         self.log_text.append(message)
         # Auto-scroll to bottom
         cursor = self.log_text.textCursor()
-        cursor.movePosition(cursor.MoveOperation.End)
+        cursor.movePosition(QTextCursor.MoveOperation.End)
         self.log_text.setTextCursor(cursor)
     
     def closeEvent(self, event):
