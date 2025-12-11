@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox
 )
 from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt, QSettings
-from PySide6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices, QPixmap
+from PySide6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices, QPixmap, QGuiApplication
 
 from src.ui.credentials_dialog import CredentialsDialog
 from src.ui.save_credentials_dialog import SaveCredentialsDialog
@@ -307,11 +307,15 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(800, 600)
         
         # Set initial window size to maximize height
-        from PySide6.QtGui import QGuiApplication
-        screen = QGuiApplication.primaryScreen().availableGeometry()
-        # Use 800px width (suitable for the UI) and ~95% of available height
-        window_height = int(screen.height() * 0.95)
-        self.resize(800, window_height)
+        screen_obj = QGuiApplication.primaryScreen()
+        if screen_obj is not None:
+            screen = screen_obj.availableGeometry()
+            # Use 800px width (suitable for the UI) and ~95% of available height
+            window_height = int(screen.height() * 0.95)
+            self.resize(800, window_height)
+        else:
+            # Fallback to a reasonable default size if screen detection fails
+            self.resize(800, 900)
         
         # Set window icon
         icon_path = Path(__file__).parent / "GROBI-Logo.ico"
