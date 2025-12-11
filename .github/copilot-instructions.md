@@ -52,7 +52,7 @@ src/
 # Run application
 python -m src.main
 
-# Run tests (391 tests, ~78% coverage)
+# Run tests
 pytest
 
 # Run tests with coverage report

@@ -144,7 +144,8 @@ def split_csv_by_doi_prefix(
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Track open file handles and writers for streaming approach
-    # Separate dicts to avoid (fh, None) state during initialization
+    # Using separate dicts (rather than tuples) to allow atomic operations:
+    # file_handles is updated first to ensure cleanup even if writer creation fails
     file_handles: Dict[str, TextIO] = {}  # prefix -> file_handle
     writers: Dict[str, csv.writer] = {}  # prefix -> csv_writer
     sanitized_prefixes: Dict[str, str] = {}  # prefix -> sanitized_prefix (for caching)
@@ -218,9 +219,20 @@ def split_csv_by_doi_prefix(
                     continue
     
     except Exception as e:
-        raise CSVSplitError(f"Fehler beim Lesen der CSV-Datei: {str(e)}") from e
-    finally:
-        # Close all open file handles, catching cleanup exceptions separately
+        original_error = CSVSplitError(f"Fehler beim Lesen der CSV-Datei: {str(e)}")
+        original_error.__cause__ = e
+        
+        # Close all open file handles
+        for prefix, fh in file_handles.items():
+            try:
+                fh.close()
+            except Exception as cleanup_error:
+                # Log cleanup errors but don't mask original error
+                logger.error(f"Fehler beim Schließen der Datei für Prefix {prefix}: {cleanup_error}")
+        
+        raise original_error
+    else:
+        # Normal path - close files after successful processing
         for prefix, fh in file_handles.items():
             try:
                 fh.close()

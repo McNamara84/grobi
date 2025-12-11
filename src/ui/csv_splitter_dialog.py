@@ -49,8 +49,7 @@ class CSVSplitterDialog(QDialog):
         # Description
         desc_label = QLabel(
             "Dieses Tool splittet große CSV-Dateien in kleinere Dateien basierend auf DOI-Präfixen.\n"
-            "Beispiel: DOIs wie 10.5880/gfz.2011.100 werden gruppiert nach 10.5880/gfz.2011\n\n"
-            "⚠️ Hinweis: Existierende Dateien im Ausgabe-Ordner werden ohne Rückfrage überschrieben!"
+            "Beispiel: DOIs wie 10.5880/gfz.2011.100 werden gruppiert nach 10.5880/gfz.2011"
         )
         desc_label.setWordWrap(True)
         layout.addWidget(desc_label)
@@ -125,6 +124,7 @@ class CSVSplitterDialog(QDialog):
         
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
+        self.progress_bar.setAccessibleName("CSV-Splitting Fortschritt")
         progress_layout.addWidget(self.progress_bar)
         
         progress_group.setLayout(progress_layout)
@@ -190,6 +190,10 @@ class CSVSplitterDialog(QDialog):
             QMessageBox.warning(self, "Fehler", "Bitte wählen Sie eine gültige CSV-Datei aus.")
             return
         
+        # Check for existing output files and ask for confirmation
+        if not self._check_existing_output_files():
+            return  # User cancelled
+        
         # Prevent starting a new operation if one is already running
         if self.thread and self.thread.isRunning():
             QMessageBox.warning(
@@ -229,14 +233,14 @@ class CSVSplitterDialog(QDialog):
         self.thread = QThread()
         self.worker.moveToThread(self.thread)
         
-        # Connect signals
+        # Connect signals (thread lifecycle first, then worker signals)
         self.thread.started.connect(self.worker.run)
+        self.thread.finished.connect(self._cleanup_thread)
         self.worker.progress.connect(self._on_progress)
         self.worker.finished.connect(self._on_finished)
         self.worker.error.connect(self._on_error)
         self.worker.finished.connect(self.thread.quit)
         self.worker.error.connect(self.thread.quit)
-        self.thread.finished.connect(self._cleanup_thread)
         
         # Start processing
         self.thread.start()

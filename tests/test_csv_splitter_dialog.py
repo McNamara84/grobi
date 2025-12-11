@@ -123,16 +123,18 @@ class TestCSVSplitterDialog:
         dialog.output_dir = tmp_path / "output"
         dialog.start_button.setEnabled(True)
         
-        # Mock QThread to prevent actual threading
-        with patch('src.ui.csv_splitter_dialog.QThread') as mock_thread_class:
-            mock_thread = MagicMock()
-            mock_thread_class.return_value = mock_thread
-            
-            with patch('src.ui.csv_splitter_dialog.CSVSplitterWorker') as mock_worker_class:
-                mock_worker = MagicMock()
-                mock_worker_class.return_value = mock_worker
+        # Mock _check_existing_output_files to return True
+        with patch.object(dialog, '_check_existing_output_files', return_value=True):
+            # Mock QThread to prevent actual threading
+            with patch('src.ui.csv_splitter_dialog.QThread') as mock_thread_class:
+                mock_thread = MagicMock()
+                mock_thread_class.return_value = mock_thread
                 
-                dialog._start_splitting()
+                with patch('src.ui.csv_splitter_dialog.CSVSplitterWorker') as mock_worker_class:
+                    mock_worker = MagicMock()
+                    mock_worker_class.return_value = mock_worker
+                    
+                    dialog._start_splitting()
                 
                 # Verify worker was created with correct parameters
                 assert mock_worker_class.call_count == 1
@@ -153,36 +155,38 @@ class TestCSVSplitterDialog:
         dialog.output_dir = tmp_path / "output"
         dialog.start_button.setEnabled(True)
         
-        # Track order of operations
-        operations = []
-        
-        def mock_connect(*args, **kwargs):
-            operations.append('connect')
-        
-        def mock_start():
-            operations.append('start')
-        
-        with patch('src.ui.csv_splitter_dialog.QThread') as mock_thread_class:
-            mock_thread = MagicMock()
-            mock_thread.start = mock_start
-            mock_thread_class.return_value = mock_thread
+        # Mock _check_existing_output_files to return True
+        with patch.object(dialog, '_check_existing_output_files', return_value=True):
+            # Track order of operations
+            operations = []
             
-            with patch('src.ui.csv_splitter_dialog.CSVSplitterWorker') as mock_worker_class:
-                mock_worker = MagicMock()
-                mock_worker_class.return_value = mock_worker
+            def mock_connect(*args, **kwargs):
+                operations.append('connect')
+            
+            def mock_start():
+                operations.append('start')
+            
+            with patch('src.ui.csv_splitter_dialog.QThread') as mock_thread_class:
+                mock_thread = MagicMock()
+                mock_thread.start = mock_start
+                mock_thread_class.return_value = mock_thread
                 
-                # Track signal connections
-                mock_worker.progress.connect = mock_connect
-                mock_worker.finished.connect = mock_connect
-                mock_worker.error.connect = mock_connect
-                
-                dialog._start_splitting()
-                
-                # Verify connections happened before start
-                # Should have at least 5 connects (progress, finished, error, 2x quit) before start
-                start_index = operations.index('start')
-                connect_count_before_start = operations[:start_index].count('connect')
-                assert connect_count_before_start >= 3, "Signals must be connected before thread.start()"
+                with patch('src.ui.csv_splitter_dialog.CSVSplitterWorker') as mock_worker_class:
+                    mock_worker = MagicMock()
+                    mock_worker_class.return_value = mock_worker
+                    
+                    # Track signal connections
+                    mock_worker.progress.connect = mock_connect
+                    mock_worker.finished.connect = mock_connect
+                    mock_worker.error.connect = mock_connect
+                    
+                    dialog._start_splitting()
+                    
+                    # Verify connections happened before start
+                    # Should have at least 5 connects (progress, finished, error, 2x quit) before start
+                    start_index = operations.index('start')
+                    connect_count_before_start = operations[:start_index].count('connect')
+                    assert connect_count_before_start >= 3, "Signals must be connected before thread.start()"
     
     def test_ui_disabled_during_processing(self, dialog, qtbot, tmp_path):
         """Test that UI controls are disabled during processing."""
@@ -192,20 +196,23 @@ class TestCSVSplitterDialog:
         dialog.input_file = test_file
         dialog.output_dir = tmp_path / "output"
         dialog.start_button.setEnabled(True)
-        dialog.output_button.setEnabled(True)
         
-        # Mock the thread start to prevent actual execution
-        with patch.object(QThread, 'start'):
-            with patch.object(dialog.progress_bar, 'setVisible') as mock_set_visible:
-                dialog._start_splitting()
-                
-                # Verify controls are disabled
-                assert dialog.start_button.isEnabled() is False
-                assert dialog.browse_button.isEnabled() is False
-                assert dialog.output_button.isEnabled() is False
-                assert dialog.prefix_spinbox.isEnabled() is False
-                # Verify setVisible(True) was called
-                mock_set_visible.assert_called_with(True)
+        # Mock _check_existing_output_files to return True
+        with patch.object(dialog, '_check_existing_output_files', return_value=True):
+            dialog.output_button.setEnabled(True)
+            
+            # Mock the thread start to prevent actual execution
+            with patch.object(QThread, 'start'):
+                with patch.object(dialog.progress_bar, 'setVisible') as mock_set_visible:
+                    dialog._start_splitting()
+                    
+                    # Verify controls are disabled
+                    assert dialog.start_button.isEnabled() is False
+                    assert dialog.browse_button.isEnabled() is False
+                    assert dialog.output_button.isEnabled() is False
+                    assert dialog.prefix_spinbox.isEnabled() is False
+                    # Verify setVisible(True) was called
+                    mock_set_visible.assert_called_with(True)
     
     def test_on_progress_updates_log(self, dialog, qtbot):
         """Test that progress updates are logged."""
@@ -286,16 +293,17 @@ class TestCSVSplitterDialog:
         from PySide6.QtGui import QCloseEvent
         event = QCloseEvent()
         
-        with patch('src.ui.csv_splitter_dialog.QMessageBox.warning') as mock_warning:
-            dialog.closeEvent(event)
-            
-            # Verify close was prevented
-            assert event.isAccepted() is False
-            assert mock_warning.call_count == 1
-        
-        # Important: Reset thread to None to prevent pytest-qt teardown hanging
-        dialog.thread = None
-        parent.deleteLater()
+        try:
+            with patch('src.ui.csv_splitter_dialog.QMessageBox.warning') as mock_warning:
+                dialog.closeEvent(event)
+                
+                # Verify close was prevented
+                assert event.isAccepted() is False
+                assert mock_warning.call_count == 1
+        finally:
+            # Important: Reset thread to None to prevent pytest-qt teardown hanging
+            dialog.thread = None
+            parent.deleteLater()
     
     def test_close_event_while_processing_no_parent(self, dialog, qtbot):
         """Test that dialog can be closed while processing in test environment (no parent)."""

@@ -38,6 +38,9 @@ class CSVSplitterWorker(QObject):
         self.input_file = input_file
         self.output_dir = output_dir
         self.prefix_level = prefix_level
+        # Simple boolean flag checked periodically in worker thread
+        # Written once from GUI thread (stop()), read in worker thread
+        # No mutex needed - false negatives acceptable (graceful shutdown)
         self._is_running = True
     
     def run(self):
