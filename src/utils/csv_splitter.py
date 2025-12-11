@@ -1,11 +1,8 @@
 """CSV splitter utility for splitting CSV files by DOI prefix.
 
-Implementation Note:
-    The split_csv_by_doi_prefix function uses three separate dictionaries
-    (file_handles, writers, sanitized_prefixes) to track open files. This
-    design avoids (file_handle, None) states during initialization and ensures
-    atomic state transitions. A future refactor could bundle these into a
-    dataclass or namedtuple for better encapsulation.
+This module provides functionality to split large CSV files into smaller files
+based on DOI prefix patterns. Files are processed in a streaming fashion to
+handle large datasets efficiently.
 """
 
 import csv
@@ -144,8 +141,8 @@ def split_csv_by_doi_prefix(
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Track open file handles and writers for streaming approach
-    # Using separate dicts (rather than tuples) to allow atomic operations:
-    # file_handles is updated first to ensure cleanup even if writer creation fails
+    # Using separate dicts to ensure cleanup happens even if writer creation fails:
+    # file_handles is updated first, then writer is created (may fail), then added to writers dict
     file_handles: Dict[str, TextIO] = {}  # prefix -> file_handle
     writers: Dict[str, csv.writer] = {}  # prefix -> csv_writer
     sanitized_prefixes: Dict[str, str] = {}  # prefix -> sanitized_prefix (for caching)
@@ -219,7 +216,7 @@ def split_csv_by_doi_prefix(
                     continue
     
     except Exception as e:
-        original_error = CSVSplitError(f"Fehler beim Lesen der CSV-Datei: {str(e)}")
+        original_error = CSVSplitError(f"Fehler beim Verarbeiten der CSV-Datei: {str(e)}")
         original_error.__cause__ = e
         
         # Close all open file handles

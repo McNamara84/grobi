@@ -146,8 +146,8 @@ class TestCSVSplitterDialog:
                 # Verify thread was created and started
                 assert mock_thread.start.call_count == 1
     
-    def test_signals_connected_before_thread_start(self, dialog, qtbot, tmp_path):
-        """Test that worker signals are connected before thread starts."""
+    def test_signals_connected_before_thread_start_called(self, dialog, qtbot, tmp_path):
+        """Test that worker signals are connected before thread.start() is called."""
         test_file = tmp_path / "test.csv"
         test_file.write_text("DOI,URL\n10.5880/test,http://example.com\n")
         
@@ -169,24 +169,33 @@ class TestCSVSplitterDialog:
             with patch('src.ui.csv_splitter_dialog.QThread') as mock_thread_class:
                 mock_thread = MagicMock()
                 mock_thread.start = mock_start
+                # Track thread signal connections
+                mock_thread.started = MagicMock()
+                mock_thread.started.connect = mock_connect
+                mock_thread.finished = MagicMock()
+                mock_thread.finished.connect = mock_connect
                 mock_thread_class.return_value = mock_thread
                 
                 with patch('src.ui.csv_splitter_dialog.CSVSplitterWorker') as mock_worker_class:
                     mock_worker = MagicMock()
                     mock_worker_class.return_value = mock_worker
                     
-                    # Track signal connections
+                    # Track worker signal connections
+                    mock_worker.progress = MagicMock()
                     mock_worker.progress.connect = mock_connect
+                    mock_worker.finished = MagicMock()
                     mock_worker.finished.connect = mock_connect
+                    mock_worker.error = MagicMock()
                     mock_worker.error.connect = mock_connect
                     
                     dialog._start_splitting()
                     
                     # Verify connections happened before start
-                    # Should have at least 5 connects (progress, finished, error, 2x quit) before start
+                    # Should have 7 connects before start:
+                    # thread.started, thread.finished, progress, finished (2x), error (2x)
                     start_index = operations.index('start')
                     connect_count_before_start = operations[:start_index].count('connect')
-                    assert connect_count_before_start >= 3, "Signals must be connected before thread.start()"
+                    assert connect_count_before_start >= 7, "All signals must be connected before thread.start()"
     
     def test_ui_disabled_during_processing(self, dialog, qtbot, tmp_path):
         """Test that UI controls are disabled during processing."""

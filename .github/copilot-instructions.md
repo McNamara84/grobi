@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-GROBI (**G**FZ **R**esearch Data Repository **O**perations & **B**atch **I**nterface) ist eine PySide6-basierte Desktop-Anwendung für GFZ Data Services zur Verwaltung von DataCite DOIs. Die Anwendung ermöglicht Bulk-Updates von Landing Page URLs und Author-Metadaten.
+GROBI (**G**FZ **R**esearch Data Repository **O**perations & **B**atch **I**nterface) is a PySide6-based desktop application for GFZ Data Services to manage DataCite DOIs. The application enables bulk updates of landing page URLs and author metadata.
 
 ## Architecture
 

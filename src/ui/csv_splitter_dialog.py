@@ -195,6 +195,7 @@ class CSVSplitterDialog(QDialog):
             return  # User cancelled
         
         # Prevent starting a new operation if one is already running
+        # Check both thread existence and running state to avoid race conditions
         if self.thread and self.thread.isRunning():
             QMessageBox.warning(
                 self,
@@ -231,9 +232,9 @@ class CSVSplitterDialog(QDialog):
             return
         
         self.thread = QThread()
-        self.worker.moveToThread(self.thread)
         
-        # Connect signals (thread lifecycle first, then worker signals)
+        # Connect signals BEFORE moveToThread to avoid race conditions
+        # (thread lifecycle first, then worker signals)
         self.thread.started.connect(self.worker.run)
         self.thread.finished.connect(self._cleanup_thread)
         self.worker.progress.connect(self._on_progress)
@@ -241,6 +242,9 @@ class CSVSplitterDialog(QDialog):
         self.worker.error.connect(self._on_error)
         self.worker.finished.connect(self.thread.quit)
         self.worker.error.connect(self.thread.quit)
+        
+        # Move worker to thread after all signals are connected
+        self.worker.moveToThread(self.thread)
         
         # Start processing
         self.thread.start()
@@ -303,18 +307,38 @@ class CSVSplitterDialog(QDialog):
             self.worker = None
     
     def _check_existing_output_files(self) -> bool:
-        """Check if output directory contains files that would be overwritten.
+        """Check if output directory contains files that would be overwritten and ask for confirmation.
         
         Returns:
-            True if potential output files exist, False otherwise
+            True if processing should proceed (no files exist OR user confirmed overwrite),
+            False if processing should be cancelled (user declined overwrite)
         """
         if not self.output_dir.exists():
-            return False
+            return True  # No directory yet, proceed
         
         # Check for CSV files with the same base pattern
         pattern = f"{self.input_file.stem}_*.csv"
         matching_files = list(self.output_dir.glob(pattern))
-        return len(matching_files) > 0
+        
+        if len(matching_files) == 0:
+            return True  # No conflicting files, proceed
+        
+        # Files would be overwritten - ask user for confirmation
+        file_list = "\n".join([f"  • {f.name}" for f in matching_files[:5]])
+        if len(matching_files) > 5:
+            file_list += f"\n  ... und {len(matching_files) - 5} weitere"
+        
+        reply = QMessageBox.question(
+            self,
+            "Dateien überschreiben?",
+            f"Die folgenden Dateien existieren bereits und würden überschrieben:\n\n"
+            f"{file_list}\n\n"
+            f"Möchten Sie fortfahren?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        return reply == QMessageBox.StandardButton.Yes
     
     def _reset_controls(self):
         """Re-enable controls after processing."""
