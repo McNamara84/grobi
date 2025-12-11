@@ -66,7 +66,9 @@ class TestDataCiteClientUpdate:
             call_args = mock_put.call_args
             sent_url = call_args[1]['json']['data']['attributes']['url']
             assert sent_url == expected_url, f"Expected {expected_url}, got {sent_url}"
-            assert ":" not in sent_url.split("?")[1], "Query params should not contain unencoded colons"
+            # Query params should not contain unencoded colons
+            query_part = sent_url.split("?")[1] if "?" in sent_url else ""
+            assert ":" not in query_part, "Query params should not contain unencoded colons"
     
     def test_update_doi_url_authentication_error(self, client):
         """Test update with authentication error."""

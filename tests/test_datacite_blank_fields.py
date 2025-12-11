@@ -1,6 +1,5 @@
 """Tests for 'Can't be blank' error handling with detailed field identification."""
 
-import pytest
 import responses
 from src.api.datacite_client import DataCiteClient
 

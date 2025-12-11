@@ -2,7 +2,7 @@
 
 import logging
 from typing import List, Tuple, Dict, Any, Optional
-from urllib.parse import urlparse, urlunparse, quote
+from urllib.parse import urlparse, urlunparse, quote, unquote
 import requests
 from requests.auth import HTTPBasicAuth
 
@@ -622,9 +622,12 @@ class DataCiteClient:
                 attrs = metadata.get('data', {}).get('attributes', {})
                 missing_fields = []
                 
-                if not attrs.get('titles') or len(attrs.get('titles', [])) == 0:
+                titles = attrs.get('titles', [])
+                if not titles:
                     missing_fields.append('title')
-                if not attrs.get('creators') or len(attrs.get('creators', [])) == 0:
+                
+                creators = attrs.get('creators', [])
+                if not creators:
                     missing_fields.append('creators')
                 
                 if missing_fields:
@@ -714,11 +717,11 @@ class DataCiteClient:
             missing_fields = []
             
             titles = attributes.get('titles', [])
-            if not titles or len(titles) == 0:
+            if not titles:
                 missing_fields.append('title')
             
             creators = attributes.get('creators', [])
-            if not creators or len(creators) == 0:
+            if not creators:
                 missing_fields.append('creators')
             
             types = attributes.get('types', {})
@@ -777,22 +780,21 @@ class DataCiteClient:
             titles = attributes.get('titles', [])
             creators = attributes.get('creators', [])
             
-            if not titles or len(titles) == 0:
+            if not titles:
                 logger.error("Cannot upgrade to Schema 4: title is missing (mandatory field that cannot be auto-filled)")
                 return None
             
-            if not creators or len(creators) == 0:
+            if not creators:
                 logger.error("Cannot upgrade to Schema 4: creators are missing (mandatory field that cannot be auto-filled)")
                 return None
             
             # Handle resourceTypeGeneral (can be auto-filled)
-            types = attributes.get('types', {})
+            types = attributes.get('types', {}).copy()
             resource_type_general = types.get('resourceTypeGeneral')
             
             if not resource_type_general:
                 logger.warning("resourceTypeGeneral missing - auto-filling with 'Dataset'")
                 types['resourceTypeGeneral'] = 'Dataset'
-                resource_type_general = 'Dataset'
             
             # Handle publisher (can be auto-filled)
             publisher = attributes.get('publisher')

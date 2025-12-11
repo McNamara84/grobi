@@ -1,6 +1,5 @@
 """Tests for DataCite URL normalization."""
 
-import pytest
 from src.api.datacite_client import DataCiteClient
 
 
@@ -38,10 +37,9 @@ class TestURLNormalization:
         # URLs that are already encoded should remain unchanged
         url = "http://example.com/path?id=test%3A123"
         normalized = DataCiteClient.normalize_url(url)
-        # Note: The current implementation might double-encode.
-        # If this test fails, we need to improve the normalization logic.
-        # For now, we accept that it might be encoded again.
-        assert "%3A" in normalized or ":" not in normalized
+        # URL should remain properly encoded (colon stays as %3A)
+        assert "%3A" in normalized
+        assert ":" not in normalized.split("?")[1]  # No unencoded colons in query
     
     def test_normalize_url_with_spaces(self):
         """Test normalization of URLs with spaces."""
@@ -62,8 +60,7 @@ class TestURLNormalization:
         
         for input_url, expected_pattern in test_cases:
             normalized = DataCiteClient.normalize_url(input_url)
-            # Just verify the special chars are handled
-            assert "[" not in normalized or normalized == input_url
+            assert normalized == expected_pattern, f"Expected {expected_pattern}, got {normalized}"
     
     def test_normalize_url_preserves_structure(self):
         """Test that URL normalization preserves the overall structure."""

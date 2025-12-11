@@ -1,7 +1,6 @@
 """Tests for automatic Schema 3 to Schema 4 upgrade functionality."""
 
 import json
-import pytest
 import responses
 from src.api.datacite_client import DataCiteClient
 
