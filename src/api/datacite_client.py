@@ -436,7 +436,18 @@ class DataCiteClient:
             
             elif response.status_code == 422:
                 # Unprocessable Entity - validation error
-                error_msg = f"Ungültige URL für DOI {doi}"
+                # Extract detailed error message from API response
+                try:
+                    error_data = response.json()
+                    # DataCite API returns errors in 'errors' array
+                    if 'errors' in error_data and error_data['errors']:
+                        error_details = error_data['errors'][0].get('title', 'Unbekannter Validierungsfehler')
+                        error_msg = f"Ungültige URL für DOI {doi}: {error_details}"
+                    else:
+                        error_msg = f"Ungültige URL für DOI {doi}: {response.text}"
+                except Exception:
+                    error_msg = f"Ungültige URL für DOI {doi}: {response.text}"
+                
                 logger.error(f"Validation error for DOI {doi}: {response.text}")
                 return False, error_msg
             

@@ -94,6 +94,14 @@ class TestDataCiteClientUpdate:
         mock_response = Mock()
         mock_response.status_code = 422
         mock_response.text = "Unprocessable Entity"
+        mock_response.json.return_value = {
+            "errors": [
+                {
+                    "title": "URL must be a valid HTTP(S) URL",
+                    "source": "/data/attributes/url"
+                }
+            ]
+        }
         
         with patch('requests.put', return_value=mock_response):
             success, message = client.update_doi_url(
@@ -103,6 +111,24 @@ class TestDataCiteClientUpdate:
             
             assert success is False
             assert "Ungültige URL" in message
+            assert "valid HTTP(S) URL" in message
+    
+    def test_update_doi_url_validation_error_no_json(self, client):
+        """Test update with validation error without structured JSON response."""
+        mock_response = Mock()
+        mock_response.status_code = 422
+        mock_response.text = "Unprocessable Entity: Invalid URL format"
+        mock_response.json.side_effect = Exception("No JSON")
+        
+        with patch('requests.put', return_value=mock_response):
+            success, message = client.update_doi_url(
+                "10.5880/GFZ.1.1.2021.001",
+                "invalid-url"
+            )
+            
+            assert success is False
+            assert "Ungültige URL" in message
+            assert "Invalid URL format" in message
     
     def test_update_doi_url_rate_limit(self, client):
         """Test update with rate limit error."""
