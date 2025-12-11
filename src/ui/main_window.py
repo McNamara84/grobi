@@ -306,6 +306,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("GROBI - GFZ Data Services Tool")
         self.setMinimumSize(800, 600)
         
+        # Set initial window size to maximize height
+        from PySide6.QtGui import QGuiApplication
+        screen = QGuiApplication.primaryScreen().availableGeometry()
+        # Use 800px width (suitable for the UI) and ~95% of available height
+        window_height = int(screen.height() * 0.95)
+        self.resize(800, window_height)
+        
         # Set window icon
         icon_path = Path(__file__).parent / "GROBI-Logo.ico"
         if icon_path.exists():
