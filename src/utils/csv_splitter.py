@@ -1,4 +1,12 @@
-"""CSV splitter utility for splitting CSV files by DOI prefix."""
+"""CSV splitter utility for splitting CSV files by DOI prefix.
+
+Implementation Note:
+    The split_csv_by_doi_prefix function uses three separate dictionaries
+    (file_handles, writers, sanitized_prefixes) to track open files. This
+    design avoids (file_handle, None) states during initialization and ensures
+    atomic state transitions. A future refactor could bundle these into a
+    dataclass or namedtuple for better encapsulation.
+"""
 
 import csv
 import logging
@@ -107,8 +115,6 @@ def split_csv_by_doi_prefix(
     
     # Track open file handles and writers for streaming approach
     # Separate dicts to avoid (fh, None) state during initialization
-    # NOTE: Three separate dicts create complexity but ensure atomic state transitions.
-    # Future refactor: Consider dataclass/namedtuple to bundle (handle, writer, prefix)
     file_handles: Dict[str, TextIO] = {}  # prefix -> file_handle
     writers: Dict[str, csv.writer] = {}  # prefix -> csv_writer
     sanitized_prefixes: Dict[str, str] = {}  # prefix -> sanitized_prefix (for caching)
@@ -199,12 +205,12 @@ def split_csv_by_doi_prefix(
     
     # Always log and report skipped rows count for transparency
     if skipped_rows > 0:
-        skip_msg = f"{skipped_rows} Zeilen übersprungen (ungültige DOIs)"
+        skip_msg = f"⚠️ {skipped_rows} Zeilen übersprungen (ungültige DOIs)"
         logger.warning(skip_msg)
         if progress_callback:
-            progress_callback(f"⚠️ {skip_msg}")
+            progress_callback(skip_msg)
     else:
-        skip_msg = "Alle Zeilen erfolgreich verarbeitet (0 Zeilen übersprungen)"
+        skip_msg = "✓ Alle Zeilen erfolgreich verarbeitet"
         logger.info(skip_msg)
         if progress_callback:
             progress_callback(f"✓ {skip_msg}")

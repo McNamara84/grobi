@@ -292,10 +292,6 @@ class CSVSplitterDialog(QDialog):
                 # 30 seconds allows for large CSV files with many file handles to close
                 if not self.thread.wait(30000):  # 30 seconds timeout
                     logger.warning("CSV Splitter thread did not terminate within 30 seconds")
-                # Recheck after wait to avoid redundant wait on already-finished thread
-                elif self.thread.isRunning():
-                    # Thread still running after timeout - this shouldn't happen
-                    logger.error("CSV Splitter thread still running after timeout")
             self.thread.deleteLater()
             self.thread = None
         if self.worker:
