@@ -99,7 +99,9 @@ def split_csv_by_doi_prefix(
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Track open file handles and writers for streaming approach
-    file_handles: Dict[str, tuple] = {}  # prefix -> (file_handle, csv_writer)
+    # Separate dicts to avoid (fh, None) state during initialization
+    file_handles: Dict[str, object] = {}  # prefix -> file_handle
+    writers: Dict[str, csv.writer] = {}  # prefix -> csv_writer
     header = None
     total_rows = 0
     skipped_rows = 0
@@ -140,11 +142,11 @@ def split_csv_by_doi_prefix(
                         output_file = output_dir / f"{base_filename}_{safe_prefix}.csv"
                         fh = open(output_file, 'w', encoding='utf-8-sig', newline='')
                         # Add to file_handles immediately to ensure cleanup even if error occurs
-                        file_handles[prefix] = (fh, None)
+                        file_handles[prefix] = fh
                         try:
                             writer = csv.writer(fh)
                             writer.writerow(header)
-                            file_handles[prefix] = (fh, writer)
+                            writers[prefix] = writer
                         except Exception:
                             # If header writing fails, ensure file is closed
                             fh.close()
@@ -152,8 +154,7 @@ def split_csv_by_doi_prefix(
                             raise
                     
                     # Write row to appropriate file
-                    _, writer = file_handles[prefix]
-                    writer.writerow(row)
+                    writers[prefix].writerow(row)
                     prefix_counts[prefix] += 1
                     total_rows += 1
                     
@@ -166,7 +167,7 @@ def split_csv_by_doi_prefix(
         raise CSVSplitError(f"Fehler beim Lesen der CSV-Datei: {str(e)}")
     finally:
         # Close all open file handles, catching cleanup exceptions separately
-        for prefix, (fh, _) in file_handles.items():
+        for prefix, fh in file_handles.items():
             try:
                 fh.close()
             except Exception as cleanup_error:
@@ -184,10 +185,16 @@ def split_csv_by_doi_prefix(
                 f"[{i}/{len(prefix_counts)}] {prefix}: {count} DOIs → {output_file.name}"
             )
     
-    # Always log skipped rows count for transparency
+    # Always log and report skipped rows count for transparency
     if skipped_rows > 0:
-        logger.warning(f"{skipped_rows} Zeilen übersprungen (ungültige DOIs)")
+        skip_msg = f"{skipped_rows} Zeilen übersprungen (ungültige DOIs)"
+        logger.warning(skip_msg)
+        if progress_callback:
+            progress_callback(f"⚠️ {skip_msg}")
     else:
-        logger.info("Alle Zeilen erfolgreich verarbeitet (0 Zeilen übersprungen)")
+        skip_msg = "Alle Zeilen erfolgreich verarbeitet (0 Zeilen übersprungen)"
+        logger.info(skip_msg)
+        if progress_callback:
+            progress_callback(f"✓ {skip_msg}")
     
     return total_rows, prefix_counts

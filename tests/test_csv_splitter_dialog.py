@@ -266,13 +266,13 @@ class TestCSVSplitterDialog:
     
     def test_log_method_autoscrolls(self, dialog, qtbot):
         """Test that log method auto-scrolls to bottom."""
-        # Add multiple lines to ensure scrolling is needed
+        # Add many log entries to force scrolling
         for i in range(100):
             dialog._log(f"Line {i}")
         
-        # Verify cursor is at end
-        cursor = dialog.log_text.textCursor()
-        assert cursor.position() == cursor.selectionEnd()
+        # Verify scrollbar is at maximum (bottom) position
+        scrollbar = dialog.log_text.verticalScrollBar()
+        assert scrollbar.value() == scrollbar.maximum()
     
     def test_cleanup_thread(self, dialog, qtbot):
         """Test thread cleanup."""

@@ -280,7 +280,9 @@ class CSVSplitterDialog(QDialog):
         """Clean up thread and worker."""
         if self.thread:
             if self.thread.isRunning():
-                self.thread.wait()
+                # Wait with timeout to prevent UI freeze if thread doesn't terminate
+                if not self.thread.wait(5000):  # 5 seconds timeout
+                    logger.warning("CSV Splitter thread did not terminate within 5 seconds")
             self.thread.deleteLater()
             self.thread = None
         if self.worker:
