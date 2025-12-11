@@ -95,6 +95,7 @@ class TestFetchDownloadURLs:
                 'doi': '10.5880/GFZ.1',
                 'filename': 'data.zip',
                 'download_url': 'https://download.gfz.de/data1.zip',
+                'description': 'Download data and description',
                 'format': 'ZIP',
                 'size': 1048576
             },
@@ -102,6 +103,7 @@ class TestFetchDownloadURLs:
                 'doi': '10.5880/GFZ.1',
                 'filename': 'metadata.xml',
                 'download_url': 'https://download.gfz.de/meta1.xml',
+                'description': 'Metadata file',
                 'format': 'XML',
                 'size': 2048
             },
@@ -109,6 +111,7 @@ class TestFetchDownloadURLs:
                 'doi': '10.5880/GFZ.2',
                 'filename': 'dataset.nc',
                 'download_url': 'https://download.gfz.de/data2.nc',
+                'description': 'NetCDF dataset',
                 'format': 'NetCDF',
                 'size': 5242880
             }
@@ -127,6 +130,7 @@ class TestFetchDownloadURLs:
                 '10.5880/GFZ.1',
                 'data.zip',
                 'https://download.gfz.de/data1.zip',
+                'Download data and description',
                 'ZIP',
                 1048576
             )
@@ -135,6 +139,7 @@ class TestFetchDownloadURLs:
                 '10.5880/GFZ.1',
                 'metadata.xml',
                 'https://download.gfz.de/meta1.xml',
+                'Metadata file',
                 'XML',
                 2048
             )
@@ -143,6 +148,7 @@ class TestFetchDownloadURLs:
                 '10.5880/GFZ.2',
                 'dataset.nc',
                 'https://download.gfz.de/data2.nc',
+                'NetCDF dataset',
                 'NetCDF',
                 5242880
             )
