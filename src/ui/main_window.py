@@ -2964,7 +2964,7 @@ class MainWindow(QMainWindow):
                 export_dois_download_urls(dois_files, filepath)
                 
                 # Count unique DOIs
-                unique_dois = len(set(doi for doi, _, _, _, _ in dois_files))
+                unique_dois = len(set(doi for doi, _, _, _, _, _ in dois_files))
                 
                 self._log(f"[OK] CSV-Datei gespeichert: {filepath}")
                 QMessageBox.information(

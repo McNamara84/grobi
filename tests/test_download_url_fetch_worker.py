@@ -42,8 +42,8 @@ class TestDownloadURLFetchWorker:
         )
         
         mock_data = [
-            ('10.5880/GFZ.1', 'data.zip', 'https://example.com/data.zip', 'ZIP', 1024),
-            ('10.5880/GFZ.2', 'file.nc', 'https://example.com/file.nc', 'NetCDF', 2048)
+            ('10.5880/GFZ.1', 'data.zip', 'https://example.com/data.zip', 'Download data file', 'ZIP', 1024),
+            ('10.5880/GFZ.2', 'file.nc', 'https://example.com/file.nc', 'Metadata file', 'NetCDF', 2048)
         ]
         
         with patch('src.workers.download_url_fetch_worker.SumarioPMDClient') as mock_client_class:

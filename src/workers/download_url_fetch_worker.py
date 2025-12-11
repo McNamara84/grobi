@@ -14,7 +14,7 @@ class DownloadURLFetchWorker(QObject):
     
     # Signals
     progress = Signal(str)  # Progress messages
-    finished = Signal(list)  # List of (DOI, Filename, URL, Format, Size) tuples
+    finished = Signal(list)  # List of (DOI, Filename, URL, Description, Format, Size) tuples
     error = Signal(str)     # Error message
     
     def __init__(self, db_host: str, db_name: str, db_user: str, db_password: str):
@@ -62,7 +62,7 @@ class DownloadURLFetchWorker(QObject):
                 return
             
             # Count unique DOIs
-            unique_dois = len(set(doi for doi, _, _, _, _ in dois_files))
+            unique_dois = len(set(doi for doi, _, _, _, _, _ in dois_files))
             self.progress.emit(
                 f"[OK] {len(dois_files)} Dateien für {unique_dois} DOIs gefunden"
             )
