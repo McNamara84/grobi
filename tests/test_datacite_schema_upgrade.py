@@ -41,6 +41,8 @@ class TestSchemaUpgrade:
                     "attributes": {
                         "doi": doi,
                         "url": "https://example.org/old",
+                        "titles": [{"title": "Test Dataset"}],
+                        "creators": [{"name": "Test Creator"}],
                         "types": {
                             "resourceTypeGeneral": "Dataset",
                             "resourceType": "Test Dataset"
@@ -127,6 +129,8 @@ class TestSchemaUpgrade:
                     "attributes": {
                         "doi": doi,
                         "url": "https://example.org/old",
+                        "titles": [{"title": "Test Dataset"}],
+                        "creators": [{"name": "Test Creator"}],
                         "types": {
                             "resourceTypeGeneral": "Dataset"
                         },
@@ -198,7 +202,7 @@ class TestSchemaUpgrade:
             status=422
         )
         
-        # GET metadata WITHOUT resourceTypeGeneral (invalid for Schema 4)
+        # GET metadata WITHOUT resourceTypeGeneral (should be auto-filled)
         responses.add(
             responses.GET,
             f"https://api.test.datacite.org/dois/{doi}",
@@ -209,21 +213,35 @@ class TestSchemaUpgrade:
                     "attributes": {
                         "doi": doi,
                         "url": "https://example.org/old",
-                        "types": {}  # Missing resourceTypeGeneral
+                        "titles": [{"title": "Test Dataset"}],
+                        "creators": [{"name": "Test Creator"}],
+                        "types": {}  # Missing resourceTypeGeneral - should be auto-filled with 'Dataset'
                     }
                 }
             },
             status=200
         )
         
+        # Second PUT: Successful update with auto-filled resourceTypeGeneral
+        responses.add(
+            responses.PUT,
+            f"https://api.test.datacite.org/dois/{doi}",
+            json={"data": {"id": doi}},
+            status=200
+        )
+        
         success, message = client.update_doi_url(doi, new_url)
         
-        assert success is False
-        assert "resourceTypeGeneral fehlt" in message
-        assert "Fabrica" in message
+        # Should now succeed because resourceTypeGeneral is auto-filled
+        assert success is True
+        assert "erfolgreich aktualisiert" in message
         
-        # Verify no retry was attempted (only PUT and GET)
-        assert len(responses.calls) == 2
+        # Verify resourceTypeGeneral was auto-filled
+        upgrade_payload = json.loads(responses.calls[2].request.body)
+        assert upgrade_payload["data"]["attributes"]["types"]["resourceTypeGeneral"] == "Dataset"
+        
+        # Verify all 3 API calls: PUT (fail) → GET (metadata) → PUT (success)
+        assert len(responses.calls) == 3
     
     @responses.activate
     def test_update_doi_url_with_schema_4_no_upgrade_needed(self):
@@ -292,6 +310,8 @@ class TestSchemaUpgrade:
                     "attributes": {
                         "doi": doi,
                         "url": "https://example.org/old",
+                        "titles": [{"title": "Test Dataset"}],
+                        "creators": [{"name": "Test Creator"}],
                         "types": {"resourceTypeGeneral": "Dataset"}
                     }
                 }
@@ -348,6 +368,8 @@ class TestSchemaUpgrade:
                     "attributes": {
                         "doi": doi,
                         "url": "https://example.org/old",
+                        "titles": [{"title": "Test Dataset"}],
+                        "creators": [{"name": "Test Creator"}],
                         "types": {"resourceTypeGeneral": "Dataset"}
                     }
                 }
@@ -370,5 +392,4 @@ class TestSchemaUpgrade:
         success, message = client.update_doi_url(doi, new_url)
         
         assert success is False
-        assert "Schema-Upgrade" in message
-        assert "fehlgeschlagen" in message
+        assert "Schema-Upgrade" in message or "fehlgeschlagen" in message

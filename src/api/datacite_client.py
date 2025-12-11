@@ -529,20 +529,29 @@ class DataCiteClient:
             
             elif response.status_code == 422:
                 # Unprocessable Entity - validation error
-                # Check if this is a schema deprecation error
+                # Check if this is a schema-related error that can be fixed with upgrade
                 try:
                     error_data = response.json()
                     if 'errors' in error_data and error_data['errors']:
                         error_details = error_data['errors'][0].get('title', '')
                         
-                        # Check for schema deprecation error
+                        # Check for schema deprecation error (kernel-3 no longer supported)
                         if 'schema' in error_details.lower() and 'no longer supported' in error_details.lower():
                             logger.warning(f"DOI {doi} uses deprecated Schema 3, attempting automatic upgrade to Schema 4")
-                            
-                            # Try to upgrade schema and retry
                             return self._retry_update_with_schema_upgrade(doi, normalized_url, error_details)
+                        
+                        # Check for missing schema version error (no matching global declaration)
+                        elif 'no matching global declaration' in error_details.lower():
+                            logger.warning(f"DOI {doi} has missing schemaVersion, attempting automatic upgrade to Schema 4")
+                            return self._retry_update_with_schema_upgrade(doi, normalized_url, error_details)
+                        
+                        # Check for "Can't be blank" error - fetch metadata to determine which field is missing
+                        elif "can't be blank" in error_details.lower():
+                            logger.warning(f"DOI {doi} has blank mandatory fields, fetching metadata to identify missing fields")
+                            return self._handle_blank_fields_error(doi, error_details)
+                        
                         else:
-                            # Other validation errors (e.g., invalid URL format)
+                            # Other validation errors (e.g., invalid URL format, missing mandatory fields)
                             error_msg = f"Validierungsfehler für DOI {doi}: {error_details}"
                             logger.error(f"Validation error for DOI {doi}: {error_details}")
                             return False, error_msg
@@ -609,11 +618,28 @@ class DataCiteClient:
             upgraded_attributes = self._upgrade_schema_to_v4(metadata, normalized_url)
             
             if not upgraded_attributes:
-                error_msg = (
-                    f"DOI {doi} kann nicht automatisch zu Schema 4 aktualisiert werden: "
-                    f"resourceTypeGeneral fehlt in den Metadaten. Bitte ergänze dieses Pflichtfeld "
-                    f"manuell über das DataCite Fabrica Interface."
-                )
+                # Check which mandatory fields are missing
+                attrs = metadata.get('data', {}).get('attributes', {})
+                missing_fields = []
+                
+                if not attrs.get('titles') or len(attrs.get('titles', [])) == 0:
+                    missing_fields.append('title')
+                if not attrs.get('creators') or len(attrs.get('creators', [])) == 0:
+                    missing_fields.append('creators')
+                
+                if missing_fields:
+                    fields_str = ' und '.join(missing_fields)
+                    error_msg = (
+                        f"DOI {doi} kann nicht automatisch zu Schema 4 aktualisiert werden: "
+                        f"{fields_str} fehlen in den Metadaten. Diese Pflichtfelder können nicht automatisch "
+                        f"befüllt werden. Bitte ergänze sie manuell über das DataCite Fabrica Interface."
+                    )
+                else:
+                    error_msg = (
+                        f"DOI {doi} kann nicht automatisch zu Schema 4 aktualisiert werden. "
+                        f"Bitte prüfe die Metadaten manuell über das DataCite Fabrica Interface."
+                    )
+                
                 logger.error(error_msg)
                 return False, error_msg
             
@@ -654,6 +680,75 @@ class DataCiteClient:
             logger.error(error_msg)
             return False, error_msg
     
+    def _handle_blank_fields_error(self, doi: str, original_error: str) -> Tuple[bool, str]:
+        """
+        Handle 'Can't be blank' validation errors by fetching metadata 
+        and identifying which mandatory fields are missing.
+        
+        Args:
+            doi: The DOI identifier
+            original_error: The original "Can't be blank" error message
+            
+        Returns:
+            Tuple of (success: bool, message: str) with detailed error message
+        """
+        try:
+            # Fetch current metadata to identify missing fields
+            url = f"{self.base_url}/dois/{doi}"
+            response = requests.get(
+                url,
+                auth=self.auth,
+                timeout=self.TIMEOUT,
+                headers={"Accept": "application/vnd.api+json"}
+            )
+            
+            if response.status_code != 200:
+                error_msg = f"Validierungsfehler für DOI {doi}: {original_error} (Metadaten konnten nicht abgerufen werden)"
+                logger.error(f"Failed to fetch metadata for blank field analysis: HTTP {response.status_code}")
+                return False, error_msg
+            
+            metadata = response.json()
+            attributes = metadata.get('data', {}).get('attributes', {})
+            
+            # Check which mandatory fields are missing
+            missing_fields = []
+            
+            titles = attributes.get('titles', [])
+            if not titles or len(titles) == 0:
+                missing_fields.append('title')
+            
+            creators = attributes.get('creators', [])
+            if not creators or len(creators) == 0:
+                missing_fields.append('creators')
+            
+            types = attributes.get('types', {})
+            resource_type_general = types.get('resourceTypeGeneral')
+            if not resource_type_general:
+                missing_fields.append('resourceTypeGeneral')
+            
+            publisher = attributes.get('publisher')
+            if not publisher:
+                missing_fields.append('publisher')
+            
+            if missing_fields:
+                fields_str = ", ".join(missing_fields)
+                error_msg = (
+                    f"DOI {doi} kann nicht aktualisiert werden: Die folgenden Pflichtfelder fehlen: {fields_str}. "
+                    f"Bitte ergänze diese Felder manuell über das DataCite Fabrica Interface (https://doi.datacite.org/dois/{doi})."
+                )
+                logger.error(f"Missing mandatory fields for DOI {doi}: {fields_str}")
+                return False, error_msg
+            else:
+                # Fields are present but DataCite still says "Can't be blank" - unusual case
+                error_msg = f"Validierungsfehler für DOI {doi}: {original_error}"
+                logger.error(f"Can't be blank error but all checked fields are present for DOI {doi}")
+                return False, error_msg
+                
+        except Exception as e:
+            error_msg = f"Validierungsfehler für DOI {doi}: {original_error} (Fehler bei Metadatenanalyse: {str(e)})"
+            logger.error(f"Error analyzing blank fields for DOI {doi}: {e}")
+            return False, error_msg
+    
     def _upgrade_schema_to_v4(self, metadata: Dict[str, Any], new_url: str) -> Optional[Dict[str, Any]]:
         """
         Upgrade DOI metadata from Schema 3 to Schema 4.
@@ -662,6 +757,11 @@ class DataCiteClient:
         1. schemaVersion set to "http://datacite.org/schema/kernel-4"
         2. resourceTypeGeneral must be present (mandatory in Schema 4)
         3. Contributors with contributorType "Funder" should be moved to fundingReferences
+        
+        Additionally handles missing mandatory fields:
+        - Auto-fills resourceTypeGeneral with "Dataset" if missing
+        - Auto-fills publisher with "GFZ Data Services" if missing
+        - Requires title and creators to be present (cannot auto-fill)
         
         Args:
             metadata: Current DOI metadata from DataCite API
@@ -673,19 +773,39 @@ class DataCiteClient:
         try:
             attributes = metadata.get('data', {}).get('attributes', {})
             
-            # Check if resourceTypeGeneral exists (required for Schema 4)
+            # Check mandatory fields that cannot be auto-filled
+            titles = attributes.get('titles', [])
+            creators = attributes.get('creators', [])
+            
+            if not titles or len(titles) == 0:
+                logger.error("Cannot upgrade to Schema 4: title is missing (mandatory field that cannot be auto-filled)")
+                return None
+            
+            if not creators or len(creators) == 0:
+                logger.error("Cannot upgrade to Schema 4: creators are missing (mandatory field that cannot be auto-filled)")
+                return None
+            
+            # Handle resourceTypeGeneral (can be auto-filled)
             types = attributes.get('types', {})
             resource_type_general = types.get('resourceTypeGeneral')
             
             if not resource_type_general:
-                logger.error("Cannot upgrade to Schema 4: resourceTypeGeneral is missing")
-                return None
+                logger.warning("resourceTypeGeneral missing - auto-filling with 'Dataset'")
+                types['resourceTypeGeneral'] = 'Dataset'
+                resource_type_general = 'Dataset'
+            
+            # Handle publisher (can be auto-filled)
+            publisher = attributes.get('publisher')
+            if not publisher:
+                logger.warning("publisher missing - auto-filling with 'GFZ Data Services'")
+                publisher = 'GFZ Data Services'
             
             # Build upgraded attributes
             upgraded = {
                 'url': new_url,
                 'schemaVersion': 'http://datacite.org/schema/kernel-4',
-                'types': types
+                'types': types,
+                'publisher': publisher
             }
             
             # Handle Funder contributors (deprecated in Schema 4)

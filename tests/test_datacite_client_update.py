@@ -170,7 +170,7 @@ class TestDataCiteClientUpdate:
             ]
         }
         
-        # GET: Returns metadata without resourceTypeGeneral (cannot upgrade)
+        # GET: Returns metadata without resourceTypeGeneral (will be auto-filled)
         mock_get_response = Mock()
         mock_get_response.status_code = 200
         mock_get_response.json.return_value = {
@@ -180,29 +180,48 @@ class TestDataCiteClientUpdate:
                 "attributes": {
                     "doi": "10.1594/gfz.sddb.1010",
                     "url": "http://old-url.example.org",
-                    "types": {}  # Missing resourceTypeGeneral - upgrade not possible
+                    "titles": [{"title": "Test Dataset"}],
+                    "creators": [{"name": "Test Creator"}],
+                    "types": {}  # Missing resourceTypeGeneral - will be auto-filled with 'Dataset'
                 }
             }
         }
         
-        def request_mock(method, *args, **kwargs):
-            """Mock both PUT and GET requests."""
-            if method == 'PUT' or (len(args) > 0 and args[0].endswith('/dois/10.1594/gfz.sddb.1010')):
-                return mock_put_response
-            else:
-                return mock_get_response
+        # Second PUT: Successful upgrade after auto-fill
+        mock_put_success = Mock()
+        mock_put_success.status_code = 200
+        mock_put_success.json.return_value = {
+            "data": {
+                "id": "10.1594/gfz.sddb.1010",
+                "type": "dois",
+                "attributes": {
+                    "doi": "10.1594/gfz.sddb.1010",
+                    "url": "http://dataservices.gfz.de/SDDB/showshort.php?id=escidoc%3A76037",
+                    "schemaVersion": "http://datacite.org/schema/kernel-4"
+                }
+            }
+        }
         
-        with patch('requests.put', return_value=mock_put_response), \
+        # Track PUT call count to return different responses
+        put_call_count = 0
+        def put_side_effect(*args, **kwargs):
+            nonlocal put_call_count
+            put_call_count += 1
+            if put_call_count == 1:
+                return mock_put_response  # First call: schema error
+            else:
+                return mock_put_success  # Second call: success
+        
+        with patch('requests.put', side_effect=put_side_effect), \
              patch('requests.get', return_value=mock_get_response):
             success, message = client.update_doi_url(
                 "10.1594/gfz.sddb.1010",
                 "http://dataservices.gfz.de/SDDB/showshort.php?id=escidoc:76037"
             )
             
-            # Should fail because resourceTypeGeneral is missing
-            assert success is False
-            assert "resourceTypeGeneral fehlt" in message
-            assert "Fabrica" in message
+            # Should now succeed because resourceTypeGeneral is auto-filled with 'Dataset'
+            assert success is True
+            assert "erfolgreich aktualisiert" in message
     
     def test_update_doi_url_rate_limit(self, client):
         """Test update with rate limit error."""
