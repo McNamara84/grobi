@@ -5,6 +5,67 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2025-12-11
+
+### Added
+- 📂 **CSV Splitter Tool** (#19): Split large CSV files into manageable chunks
+  - **UI Integration**: New "CSV Splitter" GroupBox in main window
+    - Input file selection with drag & drop support
+    - Configurable chunk size (default: 100 rows per file)
+    - Output directory selection with automatic default
+    - Real-time validation and progress reporting
+  - **Smart File Handling**: Automatic output filename generation
+    - Pattern: `{original}_part{N}.csv` (e.g., `dois_part1.csv`, `dois_part2.csv`)
+    - Preserves original CSV headers in all chunks
+    - Intelligent row distribution across files
+  - **Background Processing**: Threaded worker for responsive UI
+    - Progress updates during splitting operation
+    - Error handling with detailed user feedback
+    - Automatic cleanup on completion
+  - **Robust CSV Processing**: 
+    - Handles large files without memory issues
+    - Preserves UTF-8 encoding and special characters
+    - Validates input file existence and readability
+    - Creates output directory if needed
+- 🔄 **Cursor-Based DOI Export** (#18): Efficient pagination for large datasets
+  - **DataCite API Enhancement**: Cursor-based pagination support
+    - Uses `page[cursor]=1` for initial requests (DataCite API requirement)
+    - Follows `links.next` for subsequent pages
+    - Eliminates offset-based pagination limitations
+    - Handles datasets with 10,000+ DOIs efficiently
+  - **Comprehensive Documentation**: Added inline comments
+    - References to DataCite API pagination requirements
+    - Documentation links for cursor-based paging
+    - Clarifies pagination behavior across all fetch methods
+
+### Changed
+- 🖥️ **Adaptive Window Sizing** (#21): Improved initial window dimensions
+  - Calculates initial height as 95% of available screen height
+  - Maintains minimum height of 800px for usability
+  - Ensures window fits on smaller displays
+  - Prevents window from exceeding screen boundaries on startup
+
+### Technical Details
+- **CSV Splitter Implementation**:
+  - `src/workers/csv_splitter_worker.py`: New worker (180+ lines) for background splitting
+  - `src/ui/csv_splitter_dialog.py`: Standalone dialog (350+ lines) with file selection UI
+  - `src/ui/main_window.py`: Integration into main window GroupBox
+  - Threading model: `QThread` with signal/slot communication
+  - Error handling: `CSVSplitError` custom exception class
+- **Cursor Pagination Changes**:
+  - Updated methods: `fetch_all_dois`, `fetch_all_dois_with_creators`, `fetch_all_dois_with_publisher`, `fetch_all_dois_with_contributors`
+  - No breaking changes: Existing code continues to work without modification
+  - Improved reliability for large repositories (tested with 10,000+ DOIs)
+- **Window Sizing Logic**:
+  - Uses `QApplication.primaryScreen().availableGeometry()`
+  - Calculates height dynamically: `min(int(screen_height * 0.95), screen_height - 100)`
+  - Ensures minimum usable height of 800px
+  - Applied in `MainWindow.__init__()` during window setup
+- **Test Coverage**: +15 tests (441 → 456 tests)
+  - CSV splitter: Worker logic, dialog UI, file handling edge cases
+  - Window sizing: Screen detection, height calculation, boundary cases
+  - Overall coverage: 78% maintained
+
 ## [0.5.0] - 2025-12-10
 
 ### Added
