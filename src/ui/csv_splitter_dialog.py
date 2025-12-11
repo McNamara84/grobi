@@ -298,6 +298,20 @@ class CSVSplitterDialog(QDialog):
             self.worker.deleteLater()
             self.worker = None
     
+    def _check_existing_output_files(self) -> bool:
+        """Check if output directory contains files that would be overwritten.
+        
+        Returns:
+            True if potential output files exist, False otherwise
+        """
+        if not self.output_dir.exists():
+            return False
+        
+        # Check for CSV files with the same base pattern
+        pattern = f"{self.input_file.stem}_*.csv"
+        matching_files = list(self.output_dir.glob(pattern))
+        return len(matching_files) > 0
+    
     def _reset_controls(self):
         """Re-enable controls after processing."""
         self.start_button.setEnabled(True)

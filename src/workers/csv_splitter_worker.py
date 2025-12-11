@@ -38,6 +38,7 @@ class CSVSplitterWorker(QObject):
         self.input_file = input_file
         self.output_dir = output_dir
         self.prefix_level = prefix_level
+        self._is_running = True
     
     def run(self):
         """Execute CSV splitting operation."""
@@ -48,7 +49,8 @@ class CSVSplitterWorker(QObject):
                 self.input_file,
                 self.output_dir,
                 self.prefix_level,
-                progress_callback=self._on_progress
+                progress_callback=self._on_progress,
+                should_stop=lambda: not self._is_running
             )
             
             self.progress.emit("[OK] CSV-Splitting erfolgreich abgeschlossen")
@@ -63,3 +65,8 @@ class CSVSplitterWorker(QObject):
     def _on_progress(self, message: str):
         """Forward progress messages."""
         self.progress.emit(message)
+    
+    def stop(self):
+        """Request graceful stop of the operation."""
+        self._is_running = False
+        logger.info("CSV Splitter worker stop requested")

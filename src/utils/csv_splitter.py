@@ -104,7 +104,8 @@ def split_csv_by_doi_prefix(
     input_file: Path,
     output_dir: Path,
     prefix_level: int = 2,
-    progress_callback: Optional[Callable[[str], None]] = None
+    progress_callback: Optional[Callable[[str], None]] = None,
+    should_stop: Optional[Callable[[], bool]] = None
 ) -> Tuple[int, Dict[str, int]]:
     """
     Split CSV file by DOI prefix into multiple files.
@@ -114,6 +115,7 @@ def split_csv_by_doi_prefix(
         output_dir: Directory to write output files
         prefix_level: Level of DOI prefix to use for splitting (1-4, default: 2)
         progress_callback: Optional callback function(message: str) for progress updates
+        should_stop: Optional callback function() -> bool to check if operation should be cancelled
     
     Returns:
         Tuple of (total_rows, dict mapping prefix to row count)
@@ -171,6 +173,12 @@ def split_csv_by_doi_prefix(
             
             # Process rows and write directly to output files (streaming approach)
             for row in reader:
+                # Check if operation should be cancelled
+                if should_stop and should_stop():
+                    if progress_callback:
+                        progress_callback("[ABBRUCH] Operation wurde abgebrochen")
+                    raise CSVSplitError("Operation wurde durch Benutzer abgebrochen")
+                
                 if not row or not row[0]:
                     skipped_rows += 1
                     continue
