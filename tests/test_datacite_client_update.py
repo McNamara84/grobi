@@ -44,6 +44,30 @@ class TestDataCiteClientUpdate:
             # Check headers
             assert call_args[1]['headers']['Content-Type'] == 'application/vnd.api+json'
     
+    def test_update_doi_url_with_colon_in_query(self, client):
+        """Test that URLs with colons in query parameters are properly encoded."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = "OK"
+        
+        with patch('requests.put', return_value=mock_response) as mock_put:
+            # URL with colon that needs encoding
+            original_url = "http://dataservices.gfz.de/panmetaworks/showshort.php?id=escidoc:43448"
+            expected_url = "http://dataservices.gfz.de/panmetaworks/showshort.php?id=escidoc%3A43448"
+            
+            success, message = client.update_doi_url(
+                "10.5880/gfz.2011.100",
+                original_url
+            )
+            
+            assert success is True
+            
+            # Verify the URL was properly encoded before sending
+            call_args = mock_put.call_args
+            sent_url = call_args[1]['json']['data']['attributes']['url']
+            assert sent_url == expected_url, f"Expected {expected_url}, got {sent_url}"
+            assert ":" not in sent_url.split("?")[1], "Query params should not contain unencoded colons"
+    
     def test_update_doi_url_authentication_error(self, client):
         """Test update with authentication error."""
         mock_response = Mock()

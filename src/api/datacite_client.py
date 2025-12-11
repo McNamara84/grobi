@@ -2,6 +2,7 @@
 
 import logging
 from typing import List, Tuple, Dict, Any, Optional
+from urllib.parse import urlparse, urlunparse, quote
 import requests
 from requests.auth import HTTPBasicAuth
 
@@ -97,6 +98,61 @@ class DataCiteClient:
         
         logger.info(f"Successfully fetched {len(all_dois)} DOIs in total")
         return all_dois
+    
+    @staticmethod
+    def normalize_url(url: str) -> str:
+        """
+        Normalize and properly encode a URL for DataCite API.
+        
+        URLs must be properly encoded according to RFC 3986. This function ensures that:
+        - Special characters in query parameters are percent-encoded (e.g., : → %3A)
+        - The URL structure (scheme, netloc, path, query, fragment) is preserved
+        - Already encoded characters are not double-encoded
+        
+        Args:
+            url: The URL to normalize
+            
+        Returns:
+            Properly encoded URL string
+            
+        Examples:
+            >>> normalize_url("http://example.com/path?id=test:123")
+            'http://example.com/path?id=test%3A123'
+        """
+        try:
+            from urllib.parse import unquote
+            
+            # Parse the URL into components
+            parsed = urlparse(url)
+            
+            # Decode first, then encode to avoid double-encoding
+            # This handles URLs that are already partially or fully encoded
+            decoded_query = unquote(parsed.query) if parsed.query else ''
+            decoded_path = unquote(parsed.path, errors='replace') if parsed.path else ''
+            
+            # Now encode properly:
+            # For query: keep '=' and '&' unencoded (they're query separators)
+            # but encode special characters like ':' to '%3A'
+            encoded_query = quote(decoded_query, safe='=&') if decoded_query else ''
+            
+            # For path: keep '/' unencoded (it's a path separator)
+            encoded_path = quote(decoded_path, safe='/') if decoded_path else ''
+            
+            # Reconstruct the URL with encoded components
+            normalized = urlunparse((
+                parsed.scheme,
+                parsed.netloc,
+                encoded_path,
+                parsed.params,
+                encoded_query,
+                parsed.fragment
+            ))
+            
+            return normalized
+            
+        except Exception as e:
+            logger.warning(f"Could not normalize URL '{url}': {e}. Using original URL.")
+            return url
     
     def fetch_all_dois_with_creators(self) -> List[Tuple[str, str, str, str, str, str, str, str]]:
         """
@@ -376,9 +432,13 @@ class DataCiteClient:
         """
         Update the landing page URL for a specific DOI.
         
+        URLs are automatically normalized and percent-encoded according to RFC 3986
+        before being sent to DataCite API (e.g., colons in query parameters are 
+        encoded as %3A).
+        
         Args:
             doi: The DOI identifier to update (e.g., "10.5880/GFZ.1.1.2021.001")
-            new_url: The new landing page URL
+            new_url: The new landing page URL (will be normalized automatically)
             
         Returns:
             Tuple of (success: bool, message: str)
@@ -390,17 +450,24 @@ class DataCiteClient:
         """
         url = f"{self.base_url}/dois/{doi}"
         
+        # Normalize and encode the URL for DataCite API
+        normalized_url = self.normalize_url(new_url)
+        
+        # Log if URL was modified during normalization
+        if normalized_url != new_url:
+            logger.debug(f"URL normalized: '{new_url}' → '{normalized_url}'")
+        
         # Prepare JSON payload according to DataCite API specification
         payload = {
             "data": {
                 "type": "dois",
                 "attributes": {
-                    "url": new_url
+                    "url": normalized_url
                 }
             }
         }
         
-        logger.info(f"Updating DOI {doi} with new URL: {new_url}")
+        logger.info(f"Updating DOI {doi} with normalized URL: {normalized_url}")
         
         try:
             response = requests.put(
