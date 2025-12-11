@@ -2950,8 +2950,12 @@ class MainWindow(QMainWindow):
         
         self._log(f"[OK] {len(dois_files)} Datei-Einträge abgerufen")
         
-        # File dialog
-        default_filename = f"dois_download_urls_{datetime.now():%Y%m%d_%H%M%S}.csv"
+        # Use current username if available, otherwise use generic name
+        if self._current_username:
+            default_filename = f"{self._current_username}_download_urls.csv"
+        else:
+            default_filename = "download_urls.csv"
+        
         filepath, _ = QFileDialog.getSaveFileName(
             self,
             "CSV-Datei speichern",
