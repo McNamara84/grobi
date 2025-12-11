@@ -777,11 +777,11 @@ class MainWindow(QMainWindow):
     
     def _open_csv_splitter(self):
         """Open CSV splitter dialog."""
-        dialog = None
         try:
             dialog = CSVSplitterDialog(self)
             dialog.exec()
             logger.info("CSV Splitter dialog closed")
+            dialog.deleteLater()
         except Exception as e:
             logger.error(f"Error opening CSV splitter dialog: {e}")
             QMessageBox.critical(
@@ -789,10 +789,6 @@ class MainWindow(QMainWindow):
                 "Fehler",
                 f"Der CSV-Splitter-Dialog konnte nicht geöffnet werden:\n\n{str(e)}"
             )
-        finally:
-            # Ensure dialog cleanup even if exception occurs
-            if dialog is not None:
-                dialog.deleteLater()
     
     def _open_settings_dialog(self):
         """Open settings dialog."""

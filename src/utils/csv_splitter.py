@@ -92,8 +92,10 @@ def split_csv_by_doi_prefix(
     
     Note:
         If an error occurs during processing, partial output files will remain in
-        the output directory. These files may contain incomplete data and should
-        be manually removed or overwritten by re-running the operation.
+        the output directory. This is due to the streaming approach where rows are
+        written incrementally as they are processed. These partial files may contain
+        incomplete data but can be useful for debugging or recovery. They should be
+        manually removed or overwritten by re-running the operation.
     """
     if not 1 <= prefix_level <= 4:
         raise CSVSplitError(f"Ungültiger prefix_level: {prefix_level}. Muss zwischen 1 und 4 liegen.")
@@ -105,6 +107,8 @@ def split_csv_by_doi_prefix(
     
     # Track open file handles and writers for streaming approach
     # Separate dicts to avoid (fh, None) state during initialization
+    # NOTE: Three separate dicts create complexity but ensure atomic state transitions.
+    # Future refactor: Consider dataclass/namedtuple to bundle (handle, writer, prefix)
     file_handles: Dict[str, TextIO] = {}  # prefix -> file_handle
     writers: Dict[str, csv.writer] = {}  # prefix -> csv_writer
     sanitized_prefixes: Dict[str, str] = {}  # prefix -> sanitized_prefix (for caching)

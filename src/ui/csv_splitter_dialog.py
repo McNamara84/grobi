@@ -273,6 +273,7 @@ class CSVSplitterDialog(QDialog):
     def _on_error(self, error_message: str):
         """Handle errors."""
         self.progress_bar.setVisible(False)
+        self.progress_bar.setRange(0, 1)  # Reset from indeterminate mode
         self._log(f"❌ FEHLER: {error_message}")
         
         QMessageBox.critical(
@@ -291,6 +292,10 @@ class CSVSplitterDialog(QDialog):
                 # 30 seconds allows for large CSV files with many file handles to close
                 if not self.thread.wait(30000):  # 30 seconds timeout
                     logger.warning("CSV Splitter thread did not terminate within 30 seconds")
+                # Recheck after wait to avoid redundant wait on already-finished thread
+                elif self.thread.isRunning():
+                    # Thread still running after timeout - this shouldn't happen
+                    logger.error("CSV Splitter thread still running after timeout")
             self.thread.deleteLater()
             self.thread = None
         if self.worker:
@@ -303,6 +308,7 @@ class CSVSplitterDialog(QDialog):
         self.browse_button.setEnabled(True)
         self.output_button.setEnabled(True)
         self.prefix_spinbox.setEnabled(True)
+        self.progress_bar.setRange(0, 1)  # Reset from indeterminate mode
     
     def _log(self, message: str):
         """Add message to log."""

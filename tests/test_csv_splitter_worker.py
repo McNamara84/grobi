@@ -203,5 +203,3 @@ class TestCSVSplitterWorker:
             error_message = error_mock.call_args[0][0]
             assert "Unerwarteter Fehler" in error_message
             assert "Unexpected error details" in error_message
-            error_message = error_mock.call_args[0][0]
-            assert "Unerwarteter Fehler" in error_message
