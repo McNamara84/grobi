@@ -144,9 +144,6 @@ class TestCSVSplitterDialog:
                 
                 # Verify thread was created and started
                 assert mock_thread.start.call_count == 1
-                
-                # Clean up: ensure dialog.thread is set to None to prevent closeEvent issues
-                dialog.thread = None
     
     def test_ui_disabled_during_processing(self, dialog, qtbot, tmp_path):
         """Test that UI controls are disabled during processing."""
@@ -170,9 +167,6 @@ class TestCSVSplitterDialog:
                 assert dialog.prefix_spinbox.isEnabled() is False
                 # Verify setVisible(True) was called
                 mock_set_visible.assert_called_with(True)
-                
-                # Clean up: ensure dialog.thread is None to prevent closeEvent issues
-                dialog.thread = None
     
     def test_on_progress_updates_log(self, dialog, qtbot):
         """Test that progress updates are logged."""
@@ -254,9 +248,6 @@ class TestCSVSplitterDialog:
             # Verify close was prevented
             assert event.isAccepted() is False
             assert mock_warning.call_count == 1
-        
-        # Clean up: reset thread to None to prevent teardown issues
-        dialog.thread = None
     
     def test_close_event_when_idle(self, dialog, qtbot):
         """Test that dialog can be closed when idle."""

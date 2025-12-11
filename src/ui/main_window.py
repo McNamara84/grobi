@@ -363,7 +363,7 @@ class MainWindow(QMainWindow):
         # Werkzeuge-Menü
         tools_menu = menubar.addMenu("Werkzeuge")
         
-        csv_splitter_action = QAction("📂 CSV-Datei aufsplitten...", self)
+        csv_splitter_action = QAction("CSV-Datei aufsplitten...", self)
         csv_splitter_action.setShortcut("Ctrl+Shift+S")
         csv_splitter_action.triggered.connect(self._open_csv_splitter)
         tools_menu.addAction(csv_splitter_action)

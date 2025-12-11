@@ -14,6 +14,9 @@ from src.workers.csv_splitter_worker import CSVSplitterWorker
 
 logger = logging.getLogger(__name__)
 
+# Log formatting constant
+LOG_SEPARATOR = "=" * 60
+
 
 class CSVSplitterDialog(QDialog):
     """Dialog for splitting CSV files by DOI prefix."""
@@ -130,7 +133,7 @@ class CSVSplitterDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
         
-        self.start_button = QPushButton("🚀 Splitting starten")
+        self.start_button = QPushButton("Splitting starten")
         self.start_button.setEnabled(False)
         self.start_button.setMinimumWidth(150)
         self.start_button.clicked.connect(self._start_splitting)
@@ -194,11 +197,11 @@ class CSVSplitterDialog(QDialog):
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)  # Indeterminate
         
-        self._log("=" * 60)
+        self._log(LOG_SEPARATOR)
         self._log(f"Starte Splitting von: {self.input_file.name}")
         self._log(f"Ausgabe-Ordner: {self.output_dir}")
         self._log(f"Präfix-Level: {self.prefix_spinbox.value()}")
-        self._log("=" * 60)
+        self._log(LOG_SEPARATOR)
         
         # Create worker and thread
         self.worker = CSVSplitterWorker(
@@ -231,9 +234,9 @@ class CSVSplitterDialog(QDialog):
         self.progress_bar.setValue(1)
         self.progress_bar.setVisible(False)
         
-        self._log("=" * 60)
+        self._log(LOG_SEPARATOR)
         self._log(f"✅ ERFOLGREICH: {total_rows} DOIs in {len(prefix_counts)} Dateien aufgeteilt")
-        self._log("=" * 60)
+        self._log(LOG_SEPARATOR)
         self._log("\nÜbersicht:")
         
         for prefix, count in sorted(prefix_counts.items()):

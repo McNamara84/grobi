@@ -26,8 +26,8 @@ def extract_doi_prefix(doi: str, level: int = 2) -> str:
     Args:
         doi: DOI string
         level: Number of dot-separated parts to include after the slash
-               level=1 includes only registrant (e.g., 10.5880)
-               level=2 includes registrant + 2 parts after slash (e.g., 10.5880/gfz.2011)
+               level=1 includes only DOI prefix/registrant code (e.g., 10.5880)
+               level=2 includes DOI prefix + 2 parts after slash (e.g., 10.5880/gfz.2011)
     
     Returns:
         DOI prefix string
@@ -45,12 +45,12 @@ def extract_doi_prefix(doi: str, level: int = 2) -> str:
     if len(parts) < 2:
         raise CSVSplitError(f"Ungültiges DOI-Format: {doi}")
     
-    # First part is always the registrant (e.g., "10.5880")
-    registrant = parts[0]
+    # First part is the DOI prefix/registrant code (e.g., "10.5880")
+    doi_prefix = parts[0]
     
-    # For level=1, return just registrant
+    # For level=1, return just the DOI prefix
     if level == 1:
-        return registrant
+        return doi_prefix
     
     # Get the suffix parts (everything after the slash)
     suffix_parts = parts[1].split('.')
@@ -66,7 +66,7 @@ def extract_doi_prefix(doi: str, level: int = 2) -> str:
         # If we don't have enough parts, use what we have
         suffix_prefix = '.'.join(suffix_parts)
     
-    return f"{registrant}/{suffix_prefix}"
+    return f"{doi_prefix}/{suffix_prefix}"
 
 
 def split_csv_by_doi_prefix(
@@ -98,11 +98,13 @@ def split_csv_by_doi_prefix(
     
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Group rows by prefix
-    prefix_groups: Dict[str, List[List[str]]] = defaultdict(list)
+    # Track open file handles and writers for streaming approach
+    file_handles: Dict[str, tuple] = {}  # prefix -> (file_handle, csv_writer)
     header = None
     total_rows = 0
     skipped_rows = 0
+    prefix_counts: Dict[str, int] = defaultdict(int)
+    base_filename = input_file.stem
     
     if progress_callback:
         progress_callback(f"Lese CSV-Datei: {input_file.name}")
@@ -121,7 +123,7 @@ def split_csv_by_doi_prefix(
             if not header or header[0].upper() != 'DOI':
                 raise CSVSplitError("CSV-Datei muss 'DOI' als erste Spalte haben")
             
-            # Group rows by prefix
+            # Process rows and write directly to output files (streaming approach)
             for row in reader:
                 if not row or not row[0]:
                     skipped_rows += 1
@@ -131,8 +133,22 @@ def split_csv_by_doi_prefix(
                 
                 try:
                     prefix = extract_doi_prefix(doi, level=prefix_level)
-                    prefix_groups[prefix].append(row)
+                    
+                    # Open new file if this is the first row for this prefix
+                    if prefix not in file_handles:
+                        safe_prefix = prefix.replace('/', '_').replace('\\', '_')
+                        output_file = output_dir / f"{base_filename}_{safe_prefix}.csv"
+                        fh = open(output_file, 'w', encoding='utf-8-sig', newline='')
+                        writer = csv.writer(fh)
+                        writer.writerow(header)
+                        file_handles[prefix] = (fh, writer)
+                    
+                    # Write row to appropriate file
+                    _, writer = file_handles[prefix]
+                    writer.writerow(row)
+                    prefix_counts[prefix] += 1
                     total_rows += 1
+                    
                 except CSVSplitError as e:
                     logger.warning(f"Überspringe ungültigen DOI: {doi} - {e}")
                     skipped_rows += 1
@@ -140,36 +156,27 @@ def split_csv_by_doi_prefix(
     
     except Exception as e:
         raise CSVSplitError(f"Fehler beim Lesen der CSV-Datei: {str(e)}")
+    finally:
+        # Close all open file handles
+        for fh, _ in file_handles.values():
+            fh.close()
     
     if progress_callback:
-        progress_callback(f"Gefunden: {total_rows} DOIs in {len(prefix_groups)} Gruppen")
+        progress_callback(f"Geschrieben: {total_rows} DOIs in {len(prefix_counts)} Dateien")
     
-    # Write separate files for each prefix
-    prefix_counts = {}
-    base_filename = input_file.stem
+    # Log progress for each prefix
+    for i, (prefix, count) in enumerate(sorted(prefix_counts.items()), 1):
+        if progress_callback:
+            safe_prefix = prefix.replace('/', '_').replace('\\', '_')
+            output_file = output_dir / f"{base_filename}_{safe_prefix}.csv"
+            progress_callback(
+                f"[{i}/{len(prefix_counts)}] {prefix}: {count} DOIs → {output_file.name}"
+            )
     
-    for i, (prefix, rows) in enumerate(sorted(prefix_groups.items()), 1):
-        # Sanitize prefix for filename (replace / with _)
-        safe_prefix = prefix.replace('/', '_').replace('\\', '_')
-        output_file = output_dir / f"{base_filename}_{safe_prefix}.csv"
-        
-        try:
-            with open(output_file, 'w', encoding='utf-8-sig', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(header)
-                writer.writerows(rows)
-            
-            prefix_counts[prefix] = len(rows)
-            
-            if progress_callback:
-                progress_callback(
-                    f"[{i}/{len(prefix_groups)}] {prefix}: {len(rows)} DOIs → {output_file.name}"
-                )
-        
-        except Exception as e:
-            raise CSVSplitError(f"Fehler beim Schreiben von {output_file}: {str(e)}")
-    
+    # Always log skipped rows count for transparency
     if skipped_rows > 0:
         logger.warning(f"{skipped_rows} Zeilen übersprungen (ungültige DOIs)")
+    else:
+        logger.info("Alle Zeilen erfolgreich verarbeitet (0 Zeilen übersprungen)")
     
     return total_rows, prefix_counts
