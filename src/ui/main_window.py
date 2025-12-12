@@ -23,6 +23,7 @@ from src.workers.update_worker import UpdateWorker
 from src.workers.authors_update_worker import AuthorsUpdateWorker
 from src.workers.publisher_update_worker import PublisherUpdateWorker
 from src.workers.contributors_update_worker import ContributorsUpdateWorker
+from src.workers.schema_check_worker import SchemaCheckWorker
 
 
 logger = logging.getLogger(__name__)
@@ -575,6 +576,28 @@ class MainWindow(QMainWindow):
         
         downloads_group.setLayout(downloads_layout)
         layout.addWidget(downloads_group)
+        
+        # GroupBox 6: Schema Upgrade Check
+        schema_group = QGroupBox("🔍 Schema-Versionen")
+        schema_layout = QVBoxLayout()
+        schema_layout.setSpacing(10)
+        
+        # Info label
+        schema_info = QLabel(
+            "Überprüfe DOIs mit alten Schema-Versionen (2.x/3.x) auf Kompatibilität mit Schema 4.\n"
+            "Es wird KEIN automatisches Upgrade durchgeführt!"
+        )
+        schema_info.setWordWrap(True)
+        schema_layout.addWidget(schema_info)
+        
+        # Button for schema check workflow
+        self.schema_check_btn = QPushButton("🔍 Schema-Kompatibilität überprüfen")
+        self.schema_check_btn.setMinimumHeight(40)
+        self.schema_check_btn.clicked.connect(self._on_schema_check_clicked)
+        schema_layout.addWidget(self.schema_check_btn)
+        
+        schema_group.setLayout(schema_layout)
+        layout.addWidget(schema_group)
         
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -2865,6 +2888,145 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._log(f"[WARNUNG] Log-Datei konnte nicht erstellt werden: {str(e)}")
     
+    # ==================== SCHEMA CHECK METHODS ====================
+    
+    def _on_schema_check_clicked(self):
+        """Handle schema check button click."""
+        from PySide6.QtWidgets import QFileDialog
+        from src.ui.credentials_dialog import CredentialsDialog
+        
+        # Show credentials dialog in schema check mode
+        dialog = CredentialsDialog(self, mode="schema_check")
+        
+        if dialog.exec():
+            username = dialog.get_username()
+            password = dialog.get_password()
+            use_test_api = dialog.get_use_test_api()
+            
+            # Ask user where to save the results
+            default_filename = f"{username}_schema_check.csv"
+            filepath, _ = QFileDialog.getSaveFileName(
+                self,
+                "Schema-Check Ergebnisse speichern",
+                default_filename,
+                "CSV Files (*.csv)"
+            )
+            
+            if filepath:
+                self._start_schema_check(username, password, use_test_api, filepath)
+    
+    def _start_schema_check(self, username: str, password: str, use_test_api: bool, output_path: str):
+        """
+        Start the schema check worker.
+        
+        Args:
+            username: DataCite username
+            password: DataCite password
+            use_test_api: Whether to use test API
+            output_path: Path where to save results CSV
+        """
+        self._log("Starte Schema-Kompatibilitätsprüfung...")
+        
+        # Create worker
+        self.schema_check_worker = SchemaCheckWorker(username, password, use_test_api)
+        self.schema_check_output_path = output_path
+        self.schema_check_username = username
+        
+        # Connect signals
+        self.schema_check_worker.progress_update.connect(self._log)
+        self.schema_check_worker.finished.connect(self._on_schema_check_finished)
+        self.schema_check_worker.error_occurred.connect(self._on_schema_check_error)
+        
+        # Create thread
+        self.schema_check_thread = QThread()
+        self.schema_check_worker.moveToThread(self.schema_check_thread)
+        
+        # Connect thread signals
+        self.schema_check_thread.started.connect(self.schema_check_worker.run)
+        self.schema_check_worker.finished.connect(self.schema_check_thread.quit)
+        self.schema_check_worker.error_occurred.connect(self.schema_check_thread.quit)
+        
+        # Clean up after worker finishes or errors
+        self.schema_check_worker.finished.connect(self.schema_check_worker.deleteLater)
+        self.schema_check_worker.error_occurred.connect(self.schema_check_worker.deleteLater)
+        
+        # Clean up thread when it finishes
+        self.schema_check_thread.finished.connect(self.schema_check_thread.deleteLater)
+        self.schema_check_thread.finished.connect(self._cleanup_schema_check_worker)
+        
+        # Start thread
+        self.schema_check_thread.start()
+        
+        # Disable button during check
+        self.schema_check_btn.setEnabled(False)
+        self.progress_bar.setVisible(True)
+    
+    def _on_schema_check_finished(self, incompatible_dois: list):
+        """
+        Called when schema check has finished.
+        
+        Args:
+            incompatible_dois: List of tuples (DOI, schema_version, missing_fields, reason)
+        """
+        from src.utils.csv_exporter import export_schema_check_results_to_csv
+        
+        if not incompatible_dois:
+            self._log("[OK] Alle DOIs sind kompatibel mit Schema 4 oder verwenden bereits Schema 4")
+            QMessageBox.information(
+                self,
+                "Schema-Check abgeschlossen",
+                "Alle DOIs sind kompatibel mit Schema 4 oder verwenden bereits Schema 4.\n\n"
+                "Es wurden keine inkompatiblen DOIs gefunden."
+            )
+            return
+        
+        # Export results to CSV
+        try:
+            # Get directory from output path
+            output_dir = str(Path(self.schema_check_output_path).parent)
+            
+            csv_path = export_schema_check_results_to_csv(
+                incompatible_dois,
+                self.schema_check_username,
+                output_dir
+            )
+            
+            self._log(f"[OK] Schema-Check abgeschlossen. Ergebnisse gespeichert: {csv_path}")
+            
+            QMessageBox.information(
+                self,
+                "Schema-Check abgeschlossen",
+                f"{len(incompatible_dois)} DOIs sind NICHT kompatibel mit Schema 4.\n\n"
+                f"Die Ergebnisse wurden gespeichert:\n{Path(csv_path).name}\n\n"
+                f"Die CSV-Datei enthält Details zu fehlenden Pflichtfeldern."
+            )
+            
+        except Exception as e:
+            self._log(f"[FEHLER] CSV-Export fehlgeschlagen: {e}")
+            QMessageBox.critical(
+                self,
+                "Fehler",
+                f"Fehler beim Speichern der Ergebnisse:\n{e}"
+            )
+    
+    def _on_schema_check_error(self, error_msg: str):
+        """Called when schema check failed."""
+        self._log(f"[FEHLER] {error_msg}")
+        QMessageBox.critical(self, "Fehler", error_msg)
+    
+    def _cleanup_schema_check_worker(self):
+        """Clean up schema check worker and thread."""
+        self.progress_bar.setVisible(False)
+        self.schema_check_btn.setEnabled(True)
+        
+        # Reset references
+        self.schema_check_thread = None
+        self.schema_check_worker = None
+        self.schema_check_output_path = None
+        self.schema_check_username = None
+        
+        self._log("Bereit für nächsten Vorgang.")
+    
     # ==================== DOWNLOAD URLs METHODS ====================
     
     def _on_export_download_urls_clicked(self):
@@ -3065,5 +3227,13 @@ class MainWindow(QMainWindow):
             self._log("Warte auf Abschluss des Download-URL Exports...")
             self.download_url_thread.quit()
             self.download_url_thread.wait(3000)  # Wait max 3 seconds
+        
+        # If schema check thread is running, stop worker and wait for it to finish
+        if hasattr(self, 'schema_check_thread') and self.schema_check_thread is not None and self.schema_check_thread.isRunning():
+            self._log("Warte auf Abschluss des Schema-Checks...")
+            if self.schema_check_worker is not None:
+                self.schema_check_worker.stop()
+            self.schema_check_thread.quit()
+            self.schema_check_thread.wait(3000)  # Wait max 3 seconds
         
         event.accept()
