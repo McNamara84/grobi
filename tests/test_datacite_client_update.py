@@ -204,17 +204,8 @@ class TestDataCiteClientUpdate:
             }
         }
         
-        # Track PUT call count to return different responses
-        put_call_count = 0
-        def put_side_effect(*args, **kwargs):
-            nonlocal put_call_count
-            put_call_count += 1
-            if put_call_count == 1:
-                return mock_put_response  # First call: schema error
-            else:
-                return mock_put_success  # Second call: success
-        
-        with patch('requests.put', side_effect=put_side_effect), \
+        # Mock PUT with list: first returns schema error, then success
+        with patch('requests.put', side_effect=[mock_put_response, mock_put_success]), \
              patch('requests.get', return_value=mock_get_response):
             success, message = client.update_doi_url(
                 "10.1594/gfz.sddb.1010",

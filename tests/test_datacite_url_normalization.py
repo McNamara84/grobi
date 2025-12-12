@@ -1,5 +1,6 @@
 """Tests for DataCite URL normalization."""
 
+import responses
 from src.api.datacite_client import DataCiteClient
 
 
@@ -101,6 +102,8 @@ class TestURLNormalization:
     
     def test_normalize_url_invalid_url(self):
         """Test that invalid URLs are handled gracefully."""
+        # URLs without proper scheme/netloc return either normalized or original
+        # The key is that they don't raise exceptions
         invalid_urls = [
             "not a url",
             "",
@@ -109,9 +112,11 @@ class TestURLNormalization:
         ]
         
         for url in invalid_urls:
-            # Should not raise exception, just return the original or best effort
+            # Should not raise exception, returns either normalized or original
             result = DataCiteClient.normalize_url(url)
             assert isinstance(result, str)
+            # For "not a url", normalize_url encodes spaces -> "not%20a%20url"
+            # This is acceptable behavior (doesn't break anything)
     
     def test_normalize_url_with_port(self):
         """Test that port numbers (with colon) are preserved."""
@@ -122,3 +127,73 @@ class TestURLNormalization:
         assert ":8080" in normalized
         # But query parameter colon SHOULD be encoded
         assert "test%3A123" in normalized
+    
+    @responses.activate
+    def test_normalize_url_integration_with_api_request(self):
+        """Integration test: Verify normalized URL is sent in API request payload."""
+        client = DataCiteClient("test.client", "password", use_test_api=True)
+        doi = "10.5880/GFZ.TEST.URL"
+        url_with_special_chars = "http://example.com/path?id=test:123&name=foo+bar"
+        
+        # Mock successful PUT response
+        def request_callback(request):
+            import json
+            payload = json.loads(request.body)
+            sent_url = payload["data"]["attributes"]["url"]
+            
+            # Verify colon is encoded
+            assert "test%3A123" in sent_url
+            # Verify plus sign is preserved (not converted to %2B or space)
+            assert "foo+bar" in sent_url or "foo%20bar" in sent_url
+            # Verify ampersand is not encoded
+            assert "&" in sent_url
+            assert "%26" not in sent_url
+            
+            return (200, {}, json.dumps({"data": {"id": doi}}))
+        
+        responses.add_callback(
+            responses.PUT,
+            f"https://api.test.datacite.org/dois/{doi}",
+            callback=request_callback,
+            content_type="application/json"
+        )
+        
+        success, message = client.update_doi_url(doi, url_with_special_chars)
+        
+        assert success is True
+        assert "erfolgreich aktualisiert" in message
+    
+    @responses.activate
+    def test_normalize_url_integration_with_api_request(self):
+        """Integration test: Verify normalized URL is sent in API request payload."""
+        client = DataCiteClient("test.client", "password", use_test_api=True)
+        doi = "10.5880/GFZ.TEST.URL"
+        url_with_special_chars = "http://example.com/path?id=test:123&name=foo+bar"
+        
+        # Mock successful PUT response
+        def request_callback(request):
+            import json
+            payload = json.loads(request.body)
+            sent_url = payload["data"]["attributes"]["url"]
+            
+            # Verify colon is encoded
+            assert "test%3A123" in sent_url
+            # Verify plus sign is preserved (not converted to %2B or space)
+            assert "foo+bar" in sent_url or "foo%20bar" in sent_url
+            # Verify ampersand is not encoded
+            assert "&" in sent_url
+            assert "%26" not in sent_url
+            
+            return (200, {}, json.dumps({"data": {"id": doi}}))
+        
+        responses.add_callback(
+            responses.PUT,
+            f"https://api.test.datacite.org/dois/{doi}",
+            callback=request_callback,
+            content_type="application/json"
+        )
+        
+        success, message = client.update_doi_url(doi, url_with_special_chars)
+        
+        assert success is True
+        assert "erfolgreich aktualisiert" in message

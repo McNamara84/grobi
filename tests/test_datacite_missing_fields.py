@@ -125,6 +125,7 @@ def test_missing_title_cannot_auto_fill(client):
     
     assert success is False
     assert "title" in message.lower()
+    assert "fehlen in den Metadaten" in message
     assert "Pflichtfeld" in message
     assert "Fabrica" in message
 
@@ -214,7 +215,8 @@ def test_missing_title_and_creators(client):
     assert success is False
     assert "title" in message.lower()
     assert "creators" in message.lower()
-    assert "und" in message  # Both fields mentioned with "und"
+    assert "title und creators" in message  # Correct German grammar: field1 und field2
+    assert "fehlen in den Metadaten" in message
 
 
 @responses.activate

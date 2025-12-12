@@ -121,16 +121,11 @@ class DataCiteClient:
             'http://example.com/path?id=test%3A123'
             
         Note:
-            This method uses a decode-then-encode strategy to avoid double-encoding.
-            However, this means that intentionally double-encoded sequences (e.g., "%2520" 
-            representing an already-encoded space "%20") will be normalized to their 
-            single-encoded form. This is acceptable for DataCite URLs as double-encoding
-            is typically unintentional and causes issues.
-            
-            **Edge Case Warning**: If you have a URL where percent-encoded characters are
-            intentional and must be preserved exactly as-is (e.g., a query parameter that
-            itself contains encoded data), this normalization may produce unexpected results.
-            In such cases, ensure the URL is pre-encoded correctly before passing to DataCite.
+            This method uses a decode-then-encode strategy to normalize all URLs consistently.
+            This means that any percent-encoded sequences will be decoded and re-encoded in a
+            standardized way. Double-encoded sequences (e.g., "%2520") will be normalized to
+            their single-encoded form ("%20"). This is intentional behavior to ensure DataCite
+            receives properly formatted URLs, as double-encoding typically causes issues.
         """
         try:
             # Parse the URL into components
@@ -142,9 +137,10 @@ class DataCiteClient:
             decoded_path = unquote(parsed.path) if parsed.path else ''
             
             # Now encode properly:
-            # For query: keep '=' and '&' unencoded (they're query separators)
+            # For query: keep '=', '&', and '+' unencoded
+            # '=' and '&' are query separators, '+' represents spaces in query strings
             # but encode special characters like ':' to '%3A'
-            encoded_query = quote(decoded_query, safe='=&') if decoded_query else ''
+            encoded_query = quote(decoded_query, safe='=&+') if decoded_query else ''
             
             # For path: keep '/' unencoded (it's a path separator)
             encoded_path = quote(decoded_path, safe='/') if decoded_path else ''
@@ -164,6 +160,65 @@ class DataCiteClient:
         except Exception as e:
             logger.warning(f"Could not normalize URL '{url}': {e}. Using original URL.")
             return url
+    
+    @staticmethod
+    def _format_missing_fields_list(fields: List[str]) -> str:
+        """
+        Format a list of missing field names into a human-readable German string.
+        
+        Args:
+            fields: List of field names
+            
+        Returns:
+            Formatted string with proper German grammar:
+            - 1 field: "title"
+            - 2 fields: "title und creators"
+            - 3+ fields: "title, creators und publisher"
+        """
+        if len(fields) == 1:
+            return fields[0]
+        elif len(fields) == 2:
+            return ' und '.join(fields)
+        else:
+            return ', '.join(fields[:-1]) + ' und ' + fields[-1]
+    
+    @staticmethod
+    def _check_missing_mandatory_fields(attributes: Dict[str, Any]) -> List[str]:
+        """
+        Check which mandatory DataCite fields are missing from metadata.
+        
+        Checks for the presence of:
+        - titles: Required, cannot be auto-filled
+        - creators: Required, cannot be auto-filled
+        - resourceTypeGeneral: Can be auto-filled with 'Dataset'
+        - publisher: Can be auto-filled with 'GFZ Data Services'
+        
+        Args:
+            attributes: The 'attributes' section of DataCite metadata
+            
+        Returns:
+            List of missing field names
+        """
+        missing_fields = []
+        
+        titles = attributes.get('titles', [])
+        if not titles:
+            missing_fields.append('title')
+        
+        creators = attributes.get('creators', [])
+        if not creators:
+            missing_fields.append('creators')
+        
+        types = attributes.get('types', {})
+        resource_type_general = types.get('resourceTypeGeneral')
+        if not resource_type_general:
+            missing_fields.append('resourceTypeGeneral')
+        
+        publisher = attributes.get('publisher')
+        if not publisher:
+            missing_fields.append('publisher')
+        
+        return missing_fields
     
     def fetch_all_dois_with_creators(self) -> List[Tuple[str, str, str, str, str, str, str, str]]:
         """
@@ -571,6 +626,10 @@ class DataCiteClient:
                         error_msg = f"Validierungsfehler für DOI {doi}: {response.text}"
                         logger.error(f"Validation error for DOI {doi}: {response.text}")
                         return False, error_msg
+                except ValueError as e:  # json.JSONDecodeError is a subclass of ValueError
+                    error_msg = f"Validierungsfehler für DOI {doi}: Ungültige JSON-Antwort vom Server"
+                    logger.error(f"Invalid JSON in validation error response for DOI {doi}: {e}")
+                    return False, error_msg
                 except Exception as e:
                     error_msg = f"Validierungsfehler für DOI {doi}: {response.text}"
                     logger.error(f"Error parsing validation error: {e}")
@@ -643,12 +702,7 @@ class DataCiteClient:
                     missing_fields.append('creators')
                 
                 if missing_fields:
-                    if len(missing_fields) == 1:
-                        fields_str = missing_fields[0]
-                    elif len(missing_fields) == 2:
-                        fields_str = ' und '.join(missing_fields)
-                    else:
-                        fields_str = ', '.join(missing_fields[:-1]) + ' und ' + missing_fields[-1]
+                    fields_str = self._format_missing_fields_list(missing_fields)
                     error_msg = (
                         f"DOI {doi} kann nicht automatisch zu Schema 4 aktualisiert werden: "
                         f"{fields_str} fehlen in den Metadaten. Diese Pflichtfelder können nicht automatisch "
@@ -753,28 +807,11 @@ class DataCiteClient:
             metadata = response.json()
             attributes = metadata.get('data', {}).get('attributes', {})
             
-            # Check which mandatory fields are missing
-            missing_fields = []
-            
-            titles = attributes.get('titles', [])
-            if not titles:
-                missing_fields.append('title')
-            
-            creators = attributes.get('creators', [])
-            if not creators:
-                missing_fields.append('creators')
-            
-            types = attributes.get('types', {})
-            resource_type_general = types.get('resourceTypeGeneral')
-            if not resource_type_general:
-                missing_fields.append('resourceTypeGeneral')
-            
-            publisher = attributes.get('publisher')
-            if not publisher:
-                missing_fields.append('publisher')
+            # Check which mandatory fields are missing using helper method
+            missing_fields = self._check_missing_mandatory_fields(attributes)
             
             if missing_fields:
-                fields_str = ", ".join(missing_fields)
+                fields_str = self._format_missing_fields_list(missing_fields)
                 error_msg = (
                     f"DOI {doi} kann nicht aktualisiert werden: Die folgenden Pflichtfelder fehlen: {fields_str}. "
                     f"Bitte ergänze diese Felder manuell über das DataCite Fabrica Interface (https://doi.datacite.org/dois/{doi})."
@@ -787,6 +824,9 @@ class DataCiteClient:
                 logger.error(f"Can't be blank error but all checked fields are present for DOI {doi}")
                 return False, error_msg
                 
+        except NetworkError:
+            # Re-raise NetworkError to preserve specific network error context
+            raise
         except Exception as e:
             error_msg = f"Validierungsfehler für DOI {doi}: {original_error} (Fehler bei Metadatenanalyse: {str(e)})"
             logger.error(f"Error analyzing blank fields for DOI {doi}: {e}")

@@ -271,7 +271,7 @@ class TestSchemaUpgrade:
         
         assert success is True
         assert "erfolgreich aktualisiert" in message
-        # Should NOT mention "kernel-4" upgrade in message
+        # Success message should not mention schema upgrade since DOI already uses Schema 4
         assert "kernel-4" not in message
         assert "Schema" not in message.lower()
         
