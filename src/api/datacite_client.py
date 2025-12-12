@@ -120,6 +120,9 @@ class DataCiteClient:
             >>> normalize_url("http://example.com/path?id=test:123")
             'http://example.com/path?id=test%3A123'
             
+            >>> normalize_url("http://example.com/path?id=test%3A123")  # Already encoded
+            'http://example.com/path?id=test%3A123'
+            
         Note:
             This method uses a decode-then-encode strategy to normalize all URLs consistently.
             This means that any percent-encoded sequences will be decoded and re-encoded in a
@@ -200,6 +203,27 @@ class DataCiteClient:
         fields_str = DataCiteClient._format_missing_fields_list(fields)
         verb = "fehlt" if len(fields) == 1 else "fehlen"
         return fields_str, verb
+    
+    @staticmethod
+    def _filter_non_autofillable_fields(missing_fields: List[str]) -> List[str]:
+        """
+        Filter list of missing fields to only include non-auto-fillable fields.
+        
+        Auto-fillable fields:
+        - resourceTypeGeneral: Can be filled with 'Dataset'
+        - publisher: Can be filled with 'GFZ Data Services'
+        
+        Non-auto-fillable fields:
+        - title: Must be provided manually
+        - creators: Must be provided manually
+        
+        Args:
+            missing_fields: List of all missing mandatory field names
+            
+        Returns:
+            List containing only 'title' and/or 'creators' if they are missing
+        """
+        return [f for f in missing_fields if f in ['title', 'creators']]
     
     @staticmethod
     def _check_missing_mandatory_fields(attributes: Dict[str, Any]) -> List[str]:
@@ -642,8 +666,10 @@ class DataCiteClient:
                             logger.error(f"Validation error for DOI {doi}: {error_details}")
                             return False, error_msg
                     else:
-                        error_msg = f"Validierungsfehler für DOI {doi}: {response.text}"
-                        logger.error(f"Validation error for DOI {doi}: {response.text}")
+                        # Extract first line of response as error details for consistency
+                        error_details = response.text.split('\n')[0] if response.text else 'Unknown error'
+                        error_msg = f"Validierungsfehler für DOI {doi}: {error_details}"
+                        logger.error(f"Validation error for DOI {doi}: {error_details}")
                         return False, error_msg
                 except ValueError as e:  # json.JSONDecodeError is a subclass of ValueError
                     error_msg = f"Validierungsfehler für DOI {doi}: Ungültige JSON-Antwort vom Server: {response.text}"
@@ -708,21 +734,13 @@ class DataCiteClient:
             upgraded_attributes = self._upgrade_schema_to_v4(metadata, normalized_url)
             
             if not upgraded_attributes:
-                # Check which mandatory fields are missing
+                # Check which mandatory fields are missing using helper method
                 attrs = metadata.get('data', {}).get('attributes', {})
-                missing_fields = []
+                all_missing = self._check_missing_mandatory_fields(attrs)
+                non_autofillable = self._filter_non_autofillable_fields(all_missing)
                 
-                titles = attrs.get('titles', [])
-                if not titles:
-                    missing_fields.append('title')
-                
-                creators = attrs.get('creators', [])
-                if not creators:
-                    missing_fields.append('creators')
-                
-                if missing_fields:
-                    fields_str = self._format_missing_fields_list(missing_fields)
-                    verb = "fehlt" if len(missing_fields) == 1 else "fehlen"
+                if non_autofillable:
+                    fields_str, verb = self._format_missing_fields_with_verb(non_autofillable)
                     error_msg = (
                         f"DOI {doi} kann nicht automatisch zu Schema 4 aktualisiert werden: "
                         f"{fields_str} {verb} in den Metadaten. Diese Pflichtfelder können nicht automatisch "
@@ -832,7 +850,7 @@ class DataCiteClient:
             
             # Filter for non-auto-fillable fields only (title and creators)
             # resourceTypeGeneral and publisher can be auto-filled, so we don't report them here
-            non_autofillable = [f for f in all_missing if f in ['title', 'creators']]
+            non_autofillable = self._filter_non_autofillable_fields(all_missing)
             
             if non_autofillable:
                 fields_str, verb = self._format_missing_fields_with_verb(non_autofillable)
@@ -882,7 +900,7 @@ class DataCiteClient:
             
             # Check mandatory fields that cannot be auto-filled using helper method
             all_missing = self._check_missing_mandatory_fields(attributes)
-            non_autofillable = [f for f in all_missing if f in ['title', 'creators']]
+            non_autofillable = self._filter_non_autofillable_fields(all_missing)
             
             if non_autofillable:
                 fields_str = self._format_missing_fields_list(non_autofillable)
