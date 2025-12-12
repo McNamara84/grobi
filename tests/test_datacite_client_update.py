@@ -1,6 +1,7 @@
 """Tests for DataCite Client update_doi_url method."""
 
 import pytest
+import responses
 from unittest.mock import Mock, patch
 import requests
 
@@ -43,6 +44,32 @@ class TestDataCiteClientUpdate:
             
             # Check headers
             assert call_args[1]['headers']['Content-Type'] == 'application/vnd.api+json'
+    
+    def test_update_doi_url_with_colon_in_query(self, client):
+        """Test that URLs with colons in query parameters are properly encoded."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = "OK"
+        
+        with patch('requests.put', return_value=mock_response) as mock_put:
+            # URL with colon that needs encoding
+            original_url = "http://dataservices.gfz.de/panmetaworks/showshort.php?id=escidoc:43448"
+            expected_url = "http://dataservices.gfz.de/panmetaworks/showshort.php?id=escidoc%3A43448"
+            
+            success, message = client.update_doi_url(
+                "10.5880/gfz.2011.100",
+                original_url
+            )
+            
+            assert success is True
+            
+            # Verify the URL was properly encoded before sending
+            call_args = mock_put.call_args
+            sent_url = call_args[1]['json']['data']['attributes']['url']
+            assert sent_url == expected_url, f"Expected {expected_url}, got {sent_url}"
+            # Query params should not contain unencoded colons
+            query_part = sent_url.split("?")[1] if "?" in sent_url else ""
+            assert ":" not in query_part, "Query params should not contain unencoded colons"
     
     def test_update_doi_url_authentication_error(self, client):
         """Test update with authentication error."""
@@ -94,6 +121,14 @@ class TestDataCiteClientUpdate:
         mock_response = Mock()
         mock_response.status_code = 422
         mock_response.text = "Unprocessable Entity"
+        mock_response.json.return_value = {
+            "errors": [
+                {
+                    "title": "URL must be a valid HTTP(S) URL",
+                    "source": "/data/attributes/url"
+                }
+            ]
+        }
         
         with patch('requests.put', return_value=mock_response):
             success, message = client.update_doi_url(
@@ -102,7 +137,92 @@ class TestDataCiteClientUpdate:
             )
             
             assert success is False
-            assert "Ungültige URL" in message
+            assert "Validierungsfehler" in message
+            assert "valid HTTP(S) URL" in message
+    
+    def test_update_doi_url_validation_error_no_json(self, client):
+        """Test update with validation error without structured JSON response."""
+        mock_response = Mock()
+        mock_response.status_code = 422
+        mock_response.text = "Unprocessable Entity: Invalid URL format"
+        mock_response.json.side_effect = Exception("No JSON")
+        
+        with patch('requests.put', return_value=mock_response):
+            success, message = client.update_doi_url(
+                "10.5880/GFZ.1.1.2021.001",
+                "invalid-url"
+            )
+            
+            assert success is False
+            assert "Validierungsfehler" in message
+            assert "Invalid URL format" in message
+    
+    @responses.activate
+    def test_update_doi_url_deprecated_schema_auto_upgrade_with_autofill(self, client):
+        """Test update with deprecated schema automatically upgrades to kernel-4 and auto-fills resourceTypeGeneral."""
+        doi = "10.1594/gfz.sddb.1010"
+        new_url = "http://dataservices.gfz.de/SDDB/showshort.php?id=escidoc:76037"
+        
+        # First PUT: Returns schema deprecation error
+        responses.add(
+            responses.PUT,
+            f"https://api.test.datacite.org/dois/{doi}",
+            json={
+                "errors": [{
+                    "source": "xml",
+                    "title": f"DOI {doi}: Schema http://datacite.org/schema/kernel-3 is no longer supported",
+                    "uid": doi
+                }]
+            },
+            status=422
+        )
+        
+        # GET: Returns metadata without resourceTypeGeneral (will be auto-filled)
+        responses.add(
+            responses.GET,
+            f"https://api.test.datacite.org/dois/{doi}",
+            json={
+                "data": {
+                    "id": doi,
+                    "type": "dois",
+                    "attributes": {
+                        "doi": doi,
+                        "url": "http://old-url.example.org",
+                        "titles": [{"title": "Test Dataset"}],
+                        "creators": [{"name": "Test Creator"}],
+                        "types": {}  # Missing resourceTypeGeneral - will be auto-filled with 'Dataset'
+                    }
+                }
+            },
+            status=200
+        )
+        
+        # Second PUT: Successful upgrade after auto-fill
+        responses.add(
+            responses.PUT,
+            f"https://api.test.datacite.org/dois/{doi}",
+            json={
+                "data": {
+                    "id": doi,
+                    "type": "dois",
+                    "attributes": {
+                        "doi": doi,
+                        "url": "http://dataservices.gfz.de/SDDB/showshort.php?id=escidoc%3A76037",
+                        "schemaVersion": "http://datacite.org/schema/kernel-4"
+                    }
+                }
+            },
+            status=200
+        )
+        
+        success, message = client.update_doi_url(doi, new_url)
+        
+        # Should now succeed because resourceTypeGeneral is auto-filled with 'Dataset'
+        assert success is True
+        assert "erfolgreich aktualisiert" in message
+        
+        # Verify all 3 API calls: PUT (fail) → GET (metadata) → PUT (success)
+        assert len(responses.calls) == 3
     
     def test_update_doi_url_rate_limit(self, client):
         """Test update with rate limit error."""

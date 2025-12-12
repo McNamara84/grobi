@@ -1,7 +1,9 @@
 """DataCite API Client for fetching DOIs and metadata."""
 
+import copy
 import logging
 from typing import List, Tuple, Dict, Any, Optional
+from urllib.parse import urlparse, urlunparse, quote, unquote
 import requests
 from requests.auth import HTTPBasicAuth
 
@@ -97,6 +99,169 @@ class DataCiteClient:
         
         logger.info(f"Successfully fetched {len(all_dois)} DOIs in total")
         return all_dois
+    
+    @staticmethod
+    def normalize_url(url: str) -> str:
+        """
+        Normalize and properly encode a URL for DataCite API.
+        
+        URLs must be properly encoded according to RFC 3986. This function ensures that:
+        - Special characters in query parameters are percent-encoded (e.g., : → %3A)
+        - The URL structure (scheme, netloc, path, query, fragment) is preserved
+        - URLs are normalized by decoding and re-encoding to ensure consistent formatting
+        
+        Args:
+            url: The URL to normalize
+            
+        Returns:
+            Properly encoded URL string
+            
+        Examples:
+            >>> normalize_url("http://example.com/path?id=test:123")
+            'http://example.com/path?id=test%3A123'
+            
+            >>> normalize_url("http://example.com/path?id=test%3A123")  # Already encoded
+            'http://example.com/path?id=test%3A123'
+            
+        Note:
+            This method uses a decode-then-encode strategy to normalize all URLs consistently.
+            This means that any percent-encoded sequences will be decoded and re-encoded in a
+            standardized way. Double-encoded sequences (e.g., "%2520") will be normalized to
+            their single-encoded form ("%20"). This is intentional behavior to ensure DataCite
+            receives properly formatted URLs, as double-encoding typically causes issues.
+            
+            **Important**: If your URL legitimately contains double-encoded sequences (e.g., a
+            query parameter value that is itself a percent-encoded string like "%2520"), this
+            normalization will decode it. Always provide unencoded or single-encoded URLs as input.
+        """
+        try:
+            # Parse the URL into components
+            parsed = urlparse(url)
+            
+            # Decode first, then encode to avoid double-encoding
+            # This handles URLs that are already partially or fully encoded
+            decoded_query = unquote(parsed.query) if parsed.query else ''
+            decoded_path = unquote(parsed.path) if parsed.path else ''
+            
+            # Now encode properly:
+            # For query: keep '=', '&', and '+' unencoded
+            # '=' and '&' are query separators, '+' represents spaces in query strings
+            # but encode special characters like ':' to '%3A'
+            encoded_query = quote(decoded_query, safe='=&+') if decoded_query else ''
+            
+            # For path: keep '/' unencoded (it's a path separator)
+            encoded_path = quote(decoded_path, safe='/') if decoded_path else ''
+            
+            # Reconstruct the URL with encoded components
+            normalized = urlunparse((
+                parsed.scheme,
+                parsed.netloc,
+                encoded_path,
+                parsed.params,
+                encoded_query,
+                parsed.fragment
+            ))
+            
+            return normalized
+            
+        except Exception as e:
+            logger.warning(f"Could not normalize URL '{url}': {e}. Using original URL.")
+            return url
+    
+    @staticmethod
+    def _format_missing_fields_list(fields: List[str]) -> str:
+        """
+        Format a list of missing field names into a human-readable German string.
+        
+        Args:
+            fields: List of field names
+            
+        Returns:
+            Formatted string with proper German grammar:
+            - 1 field: "title"
+            - 2 fields: "title und creators"
+            - 3+ fields: "title, creators und publisher"
+        """
+        if len(fields) == 1:
+            return fields[0]
+        elif len(fields) == 2:
+            return ' und '.join(fields)
+        else:
+            return ', '.join(fields[:-1]) + ' und ' + fields[-1]
+    
+    @staticmethod
+    def _format_missing_fields_with_verb(fields: List[str]) -> tuple[str, str]:
+        """
+        Format missing fields and determine the correct German verb form.
+        
+        Args:
+            fields: List of missing field names
+            
+        Returns:
+            Tuple of (formatted_fields_string, verb) where verb is "fehlt" or "fehlen"
+        """
+        fields_str = DataCiteClient._format_missing_fields_list(fields)
+        verb = "fehlt" if len(fields) == 1 else "fehlen"
+        return fields_str, verb
+    
+    @staticmethod
+    def _filter_non_autofillable_fields(missing_fields: List[str]) -> List[str]:
+        """
+        Filter list of missing fields to only include non-auto-fillable fields.
+        
+        Auto-fillable fields:
+        - resourceTypeGeneral: Can be filled with 'Dataset'
+        - publisher: Can be filled with 'GFZ Data Services'
+        
+        Non-auto-fillable fields:
+        - title: Must be provided manually
+        - creators: Must be provided manually
+        
+        Args:
+            missing_fields: List of all missing mandatory field names
+            
+        Returns:
+            List containing only 'title' and/or 'creators' if they are missing
+        """
+        return [f for f in missing_fields if f in ['title', 'creators']]
+    
+    @staticmethod
+    def _check_missing_mandatory_fields(attributes: Dict[str, Any]) -> List[str]:
+        """
+        Check which mandatory DataCite fields are missing from metadata.
+        
+        Checks for the presence of:
+        - titles: Required, cannot be auto-filled
+        - creators: Required, cannot be auto-filled
+        - resourceTypeGeneral: Can be auto-filled with 'Dataset'
+        - publisher: Can be auto-filled with 'GFZ Data Services'
+        
+        Args:
+            attributes: The 'attributes' section of DataCite metadata
+            
+        Returns:
+            List of missing field names
+        """
+        missing_fields = []
+        
+        titles = attributes.get('titles', [])
+        if not titles:
+            missing_fields.append('title')
+        
+        creators = attributes.get('creators', [])
+        if not creators:
+            missing_fields.append('creators')
+        
+        types = attributes.get('types', {})
+        resource_type_general = types.get('resourceTypeGeneral')
+        if not resource_type_general:
+            missing_fields.append('resourceTypeGeneral')
+        
+        publisher = attributes.get('publisher')
+        if not publisher:
+            missing_fields.append('publisher')
+        
+        return missing_fields
     
     def fetch_all_dois_with_creators(self) -> List[Tuple[str, str, str, str, str, str, str, str]]:
         """
@@ -376,9 +541,17 @@ class DataCiteClient:
         """
         Update the landing page URL for a specific DOI.
         
+        URLs are automatically normalized and percent-encoded according to RFC 3986
+        before being sent to DataCite API (e.g., colons in query parameters are 
+        encoded as %3A).
+        
+        If the DOI uses deprecated Schema 3, it will be automatically upgraded to
+        Schema 4 (kernel-4) during the URL update. The upgrade ensures that required
+        Schema 4 metadata (like resourceTypeGeneral) is present.
+        
         Args:
             doi: The DOI identifier to update (e.g., "10.5880/GFZ.1.1.2021.001")
-            new_url: The new landing page URL
+            new_url: The new landing page URL (will be normalized automatically)
             
         Returns:
             Tuple of (success: bool, message: str)
@@ -388,25 +561,55 @@ class DataCiteClient:
         Raises:
             NetworkError: If connection to API fails
         """
+        # Normalize and encode the URL for DataCite API
+        normalized_url = self.normalize_url(new_url)
+        
+        # Log if URL was modified during normalization
+        if normalized_url != new_url:
+            logger.debug(f"URL normalized: '{new_url}' → '{normalized_url}'")
+        
+        # Try update with automatic schema upgrade if needed
+        return self._update_doi_with_schema_upgrade(doi, normalized_url)
+    
+    def _update_doi_with_schema_upgrade(self, doi: str, normalized_url: str) -> Tuple[bool, str]:
+        """
+        Update DOI URL with automatic schema upgrade if Schema 3 is detected.
+        
+        This method first tries a simple URL update. If it fails with a schema
+        deprecation error, it fetches the current metadata, upgrades to Schema 4,
+        and retries the update.
+        
+        Args:
+            doi: The DOI identifier
+            normalized_url: The normalized landing page URL
+            
+        Returns:
+            Tuple of (success: bool, message: str)
+            
+        Note:
+            May raise NetworkError indirectly through internal API calls if
+            connection to DataCite API fails (timeout or connection errors).
+        """
         url = f"{self.base_url}/dois/{doi}"
         
-        # Prepare JSON payload according to DataCite API specification
-        payload = {
+        # Prepare simple URL-only update payload
+        simple_payload = {
             "data": {
                 "type": "dois",
                 "attributes": {
-                    "url": new_url
+                    "url": normalized_url
                 }
             }
         }
         
-        logger.info(f"Updating DOI {doi} with new URL: {new_url}")
+        logger.info(f"Updating DOI {doi} with normalized URL: {normalized_url}")
         
         try:
+            # First attempt: simple URL update
             response = requests.put(
                 url,
                 auth=self.auth,
-                json=payload,
+                json=simple_payload,
                 timeout=self.TIMEOUT,
                 headers={
                     "Content-Type": "application/vnd.api+json",
@@ -436,9 +639,46 @@ class DataCiteClient:
             
             elif response.status_code == 422:
                 # Unprocessable Entity - validation error
-                error_msg = f"Ungültige URL für DOI {doi}"
-                logger.error(f"Validation error for DOI {doi}: {response.text}")
-                return False, error_msg
+                # Check if this is a schema-related error that can be fixed with upgrade
+                try:
+                    error_data = response.json()
+                    if 'errors' in error_data and error_data['errors']:
+                        error_details = error_data['errors'][0].get('title', '')
+                        
+                        # Check for schema deprecation error (kernel-3 no longer supported)
+                        if 'schema' in error_details.lower() and 'no longer supported' in error_details.lower():
+                            logger.warning(f"DOI {doi} uses deprecated Schema 3, attempting automatic upgrade to Schema 4")
+                            return self._retry_update_with_schema_upgrade(doi, normalized_url, error_details)
+                        
+                        # Check for missing schema version error (no matching global declaration)
+                        elif 'no matching global declaration' in error_details.lower():
+                            logger.warning(f"DOI {doi} has missing schemaVersion, attempting automatic upgrade to Schema 4")
+                            return self._retry_update_with_schema_upgrade(doi, normalized_url, error_details)
+                        
+                        # Check for "Can't be blank" error - fetch metadata to determine which field is missing
+                        elif "can't be blank" in error_details.lower():
+                            logger.warning(f"DOI {doi} has blank mandatory fields, fetching metadata to identify missing fields")
+                            return self._handle_blank_fields_error(doi, error_details)
+                        
+                        else:
+                            # Other validation errors (e.g., invalid URL format, missing mandatory fields)
+                            error_msg = f"Validierungsfehler für DOI {doi}: {error_details}"
+                            logger.error(f"Validation error for DOI {doi}: {error_details}")
+                            return False, error_msg
+                    else:
+                        # Extract first line of response as error details for consistency
+                        error_details = response.text.split('\n')[0] if response.text else 'Unknown error'
+                        error_msg = f"Validierungsfehler für DOI {doi}: {error_details}"
+                        logger.error(f"Validation error for DOI {doi}: {error_details}")
+                        return False, error_msg
+                except ValueError as e:  # json.JSONDecodeError is a subclass of ValueError
+                    error_msg = f"Validierungsfehler für DOI {doi}: Ungültige JSON-Antwort vom Server: {response.text}"
+                    logger.error(f"Invalid JSON in validation error response for DOI {doi}: {e}. Response: {response.text}")
+                    return False, error_msg
+                except Exception as e:
+                    error_msg = f"Validierungsfehler für DOI {doi}: {response.text}"
+                    logger.error(f"Error parsing validation error: {e}")
+                    return False, error_msg
             
             elif response.status_code == 429:
                 error_msg = "Zu viele Anfragen - Rate Limit erreicht"
@@ -464,6 +704,276 @@ class DataCiteClient:
             error_msg = f"Netzwerkfehler bei DOI {doi}: {str(e)}"
             logger.error(f"Request exception during update: {e}")
             raise NetworkError(error_msg)
+    
+    def _retry_update_with_schema_upgrade(self, doi: str, normalized_url: str, original_error: str) -> Tuple[bool, str]:
+        """
+        Retry DOI update after upgrading metadata from Schema 3 to Schema 4.
+        
+        This method fetches the current metadata, upgrades it to Schema 4 by adding
+        schemaVersion and ensuring resourceTypeGeneral is present, then retries the update.
+        
+        Args:
+            doi: The DOI identifier
+            normalized_url: The normalized landing page URL
+            original_error: The original schema deprecation error message
+            
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        try:
+            # Fetch current metadata
+            logger.info(f"Fetching current metadata for DOI {doi} to perform schema upgrade")
+            metadata = self.get_doi_metadata(doi)
+            
+            if not metadata:
+                error_msg = f"Konnte Metadaten für DOI {doi} nicht abrufen für Schema-Upgrade"
+                logger.error(error_msg)
+                return False, error_msg
+            
+            # Upgrade metadata to Schema 4
+            upgraded_attributes = self._upgrade_schema_to_v4(metadata, normalized_url)
+            
+            if not upgraded_attributes:
+                # Check which mandatory fields are missing using helper method
+                attrs = metadata.get('data', {}).get('attributes', {})
+                all_missing = self._check_missing_mandatory_fields(attrs)
+                non_autofillable = self._filter_non_autofillable_fields(all_missing)
+                
+                if non_autofillable:
+                    fields_str, verb = self._format_missing_fields_with_verb(non_autofillable)
+                    error_msg = (
+                        f"DOI {doi} kann nicht automatisch zu Schema 4 aktualisiert werden: "
+                        f"{fields_str} {verb} in den Metadaten. Diese Pflichtfelder können nicht automatisch "
+                        f"befüllt werden. Bitte ergänze sie manuell über das DataCite Fabrica Interface "
+                        f"(https://doi.datacite.org/dois/{doi})."
+                    )
+                else:
+                    error_msg = (
+                        f"DOI {doi} kann nicht automatisch zu Schema 4 aktualisiert werden. "
+                        f"Bitte prüfe die Metadaten manuell über das DataCite Fabrica Interface "
+                        f"(https://doi.datacite.org/dois/{doi})."
+                    )
+                
+                logger.error(error_msg)
+                return False, error_msg
+            
+            # Prepare upgraded payload
+            upgraded_payload = {
+                "data": {
+                    "type": "dois",
+                    "attributes": upgraded_attributes
+                }
+            }
+            
+            url = f"{self.base_url}/dois/{doi}"
+            logger.info(f"Retrying DOI {doi} update with Schema 4 metadata")
+            
+            # Retry with upgraded metadata
+            try:
+                response = requests.put(
+                    url,
+                    auth=self.auth,
+                    json=upgraded_payload,
+                    timeout=self.TIMEOUT,
+                    headers={
+                        "Content-Type": "application/vnd.api+json",
+                        "Accept": "application/vnd.api+json"
+                    }
+                )
+            except requests.exceptions.Timeout:
+                error_msg = "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut."
+                logger.error(f"Timeout during schema upgrade retry for DOI {doi}")
+                raise NetworkError(error_msg)
+            except requests.exceptions.ConnectionError as e:
+                error_msg = "Verbindung zur DataCite API fehlgeschlagen. Bitte überprüfe deine Internetverbindung."
+                logger.error(f"Connection error during schema upgrade retry: {e}")
+                raise NetworkError(error_msg)
+            
+            if response.status_code == 200:
+                success_msg = f"DOI {doi} erfolgreich aktualisiert (Schema automatisch auf kernel-4 aktualisiert)"
+                logger.info(success_msg)
+                return True, success_msg
+            else:
+                error_msg = f"Schema-Upgrade für DOI {doi} fehlgeschlagen (HTTP {response.status_code}): {response.text}"
+                logger.error(error_msg)
+                return False, error_msg
+                
+        except NetworkError:
+            # Re-raise NetworkError to preserve specific network error context
+            raise
+        except Exception as e:
+            error_msg = f"Fehler beim Schema-Upgrade für DOI {doi}: {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
+    
+    def _handle_blank_fields_error(self, doi: str, original_error: str) -> Tuple[bool, str]:
+        """
+        Handle 'Can't be blank' validation errors by fetching metadata 
+        and identifying which mandatory fields are missing.
+        
+        Args:
+            doi: The DOI identifier
+            original_error: The original "Can't be blank" error message
+            
+        Returns:
+            Tuple of (success: bool, message: str) with detailed error message
+        """
+        try:
+            # Fetch current metadata to identify missing fields
+            url = f"{self.base_url}/dois/{doi}"
+            try:
+                response = requests.get(
+                    url,
+                    auth=self.auth,
+                    timeout=self.TIMEOUT,
+                    headers={"Accept": "application/vnd.api+json"}
+                )
+            except requests.exceptions.Timeout:
+                error_msg = f"Validierungsfehler für DOI {doi}: {original_error} (Timeout beim Metadaten-Abruf)"
+                logger.error(f"Timeout while fetching metadata for blank field analysis")
+                raise NetworkError(error_msg)
+            except requests.exceptions.ConnectionError as e:
+                error_msg = f"Validierungsfehler für DOI {doi}: {original_error} (Verbindungsfehler beim Metadaten-Abruf)"
+                logger.error(f"Connection error while fetching metadata: {e}")
+                raise NetworkError(error_msg)
+            
+            if response.status_code != 200:
+                error_msg = f"Validierungsfehler für DOI {doi}: {original_error} (Metadaten konnten nicht abgerufen werden)"
+                logger.error(f"Failed to fetch metadata for blank field analysis: HTTP {response.status_code}")
+                return False, error_msg
+            
+            metadata = response.json()
+            attributes = metadata.get('data', {}).get('attributes', {})
+            
+            # Check which mandatory fields are missing using helper method
+            all_missing = self._check_missing_mandatory_fields(attributes)
+            
+            # Filter for non-auto-fillable fields only (title and creators)
+            # resourceTypeGeneral and publisher can be auto-filled, so we don't report them here
+            non_autofillable = self._filter_non_autofillable_fields(all_missing)
+            
+            if non_autofillable:
+                fields_str, verb = self._format_missing_fields_with_verb(non_autofillable)
+                error_msg = (
+                    f"DOI {doi} kann nicht aktualisiert werden: {fields_str} {verb} in den Metadaten. "
+                    f"Bitte ergänze diese Pflichtfelder manuell über das DataCite Fabrica Interface (https://doi.datacite.org/dois/{doi})."
+                )
+                logger.error(f"Missing mandatory fields for DOI {doi}: {fields_str}")
+                return False, error_msg
+            else:
+                # Fields are present but DataCite still says "Can't be blank" - unusual case
+                error_msg = f"Validierungsfehler für DOI {doi}: {original_error}"
+                logger.error(f"Can't be blank error but all checked fields are present for DOI {doi}")
+                return False, error_msg
+                
+        except NetworkError:
+            # Re-raise NetworkError to preserve specific network error context
+            raise
+        except Exception as e:
+            error_msg = f"Validierungsfehler für DOI {doi}: {original_error} (Fehler bei Metadatenanalyse: {str(e)})"
+            logger.error(f"Error analyzing blank fields for DOI {doi}: {e}")
+            return False, error_msg
+    
+    def _upgrade_schema_to_v4(self, metadata: Dict[str, Any], new_url: str) -> Optional[Dict[str, Any]]:
+        """
+        Upgrade DOI metadata from Schema 3 to Schema 4.
+        
+        According to DataCite documentation, Schema 4 requires:
+        1. schemaVersion set to "http://datacite.org/schema/kernel-4"
+        2. resourceTypeGeneral must be present (mandatory in Schema 4)
+        3. Contributors with contributorType "Funder" should be moved to fundingReferences
+        
+        Additionally handles missing mandatory fields:
+        - Auto-fills resourceTypeGeneral with "Dataset" if missing
+        - Auto-fills publisher with "GFZ Data Services" if missing
+        - Requires title and creators to be present (cannot auto-fill)
+        
+        Args:
+            metadata: Current DOI metadata from DataCite API
+            new_url: New landing page URL to include in update
+            
+        Returns:
+            Upgraded attributes dict ready for PUT request, or None if upgrade not possible
+        """
+        try:
+            attributes = metadata.get('data', {}).get('attributes', {})
+            
+            # Check mandatory fields that cannot be auto-filled using helper method
+            all_missing = self._check_missing_mandatory_fields(attributes)
+            non_autofillable = self._filter_non_autofillable_fields(all_missing)
+            
+            if non_autofillable:
+                fields_str = self._format_missing_fields_list(non_autofillable)
+                logger.error(f"Cannot upgrade to Schema 4: {fields_str} missing (mandatory fields that cannot be auto-filled)")
+                return None
+            
+            # Handle resourceTypeGeneral (can be auto-filled)
+            types = copy.deepcopy(attributes.get('types', {}))
+            resource_type_general = types.get('resourceTypeGeneral')
+            
+            if not resource_type_general:
+                logger.warning("resourceTypeGeneral missing - auto-filling with 'Dataset'")
+                types['resourceTypeGeneral'] = 'Dataset'
+            
+            # Handle publisher (can be auto-filled)
+            publisher = attributes.get('publisher')
+            if not publisher:
+                logger.warning("publisher missing - auto-filling with 'GFZ Data Services'")
+                publisher = 'GFZ Data Services'
+            
+            # Build upgraded attributes
+            # Preserve mandatory fields from original metadata
+            upgraded = {
+                'url': new_url,
+                'schemaVersion': 'http://datacite.org/schema/kernel-4',
+                'titles': attributes.get('titles', []),
+                'creators': attributes.get('creators', []),
+                'types': types,
+                'publisher': publisher
+            }
+            
+            # Handle Funder contributors (deprecated in Schema 4)
+            contributors = attributes.get('contributors', [])
+            funding_references = copy.deepcopy(attributes.get('fundingReferences', []))
+            
+            non_funder_contributors = []
+            funders_to_migrate = []
+            
+            for contributor in contributors:
+                if contributor.get('contributorType') == 'Funder':
+                    funders_to_migrate.append(contributor)
+                else:
+                    non_funder_contributors.append(contributor)
+            
+            # Migrate Funder contributors to fundingReferences
+            if funders_to_migrate:
+                logger.info(f"Migrating {len(funders_to_migrate)} Funder contributor(s) to fundingReferences")
+                for funder in funders_to_migrate:
+                    funding_ref = {'funderName': funder.get('name', '')}
+                    
+                    # Copy name identifier if present
+                    name_identifiers = funder.get('nameIdentifiers', [])
+                    if name_identifiers:
+                        identifier = name_identifiers[0]
+                        funding_ref['funderIdentifier'] = identifier.get('nameIdentifier', '')
+                        funding_ref['funderIdentifierType'] = identifier.get('nameIdentifierScheme', '')
+                    
+                    funding_references.append(funding_ref)
+            
+            # Include contributors (without Funders) if any remain
+            if non_funder_contributors:
+                upgraded['contributors'] = non_funder_contributors
+            
+            # Include fundingReferences if any exist
+            if funding_references:
+                upgraded['fundingReferences'] = funding_references
+            
+            logger.info(f"Successfully prepared Schema 4 upgrade with schemaVersion=kernel-4")
+            return upgraded
+            
+        except Exception as e:
+            logger.error(f"Error preparing Schema 4 upgrade: {e}")
+            return None
     
     def get_doi_metadata(self, doi: str) -> Optional[Dict[str, Any]]:
         """
