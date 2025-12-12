@@ -7938,7 +7938,8 @@ class DataCiteClient:
         if next_url:
             url = next_url
         else:
-            url = f"{self.base_url}/dois?page[size]={self.PAGE_SIZE}&page[cursor]=1"
+            # Filter by client-id to only fetch DOIs belonging to this client
+            url = f"{self.base_url}/dois?client-id={self.username}&page[size]={self.PAGE_SIZE}&page[cursor]=1"
         try:
             response = requests.get(
                 url, auth=self.auth, timeout=self.TIMEOUT,
