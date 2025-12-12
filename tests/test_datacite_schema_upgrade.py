@@ -184,7 +184,7 @@ class TestSchemaUpgrade:
     
     @responses.activate
     def test_update_doi_url_schema_3_without_resource_type_general(self):
-        """Test that upgrade fails gracefully if resourceTypeGeneral is missing."""
+        """Test that missing resourceTypeGeneral is auto-filled during schema upgrade."""
         client = DataCiteClient("test.client", "password", use_test_api=True)
         doi = "10.5880/GFZ.TEST.003"
         new_url = "https://example.org/updated"

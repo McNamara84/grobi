@@ -1,6 +1,9 @@
 """Tests for DataCite Client update_doi_url method."""
 
+import json
+
 import pytest
+import responses
 from unittest.mock import Mock, patch
 import requests
 
@@ -156,65 +159,72 @@ class TestDataCiteClientUpdate:
             assert "Validierungsfehler" in message
             assert "Invalid URL format" in message
     
+    @responses.activate
     def test_update_doi_url_deprecated_schema_auto_upgrade_with_autofill(self, client):
         """Test update with deprecated schema automatically upgrades to kernel-4 and auto-fills resourceTypeGeneral."""
+        doi = "10.1594/gfz.sddb.1010"
+        new_url = "http://dataservices.gfz.de/SDDB/showshort.php?id=escidoc:76037"
+        
         # First PUT: Returns schema deprecation error
-        mock_put_response = Mock()
-        mock_put_response.status_code = 422
-        mock_put_response.text = '{"errors":[{"source":"xml","title":"DOI 10.1594/gfz.sddb.1010: Schema http://datacite.org/schema/kernel-3 is no longer supported","uid":"10.1594/gfz.sddb.1010"}]}'
-        mock_put_response.json.return_value = {
-            "errors": [
-                {
+        responses.add(
+            responses.PUT,
+            f"https://api.test.datacite.org/dois/{doi}",
+            json={
+                "errors": [{
                     "source": "xml",
-                    "title": "DOI 10.1594/gfz.sddb.1010: Schema http://datacite.org/schema/kernel-3 is no longer supported",
-                    "uid": "10.1594/gfz.sddb.1010"
-                }
-            ]
-        }
+                    "title": f"DOI {doi}: Schema http://datacite.org/schema/kernel-3 is no longer supported",
+                    "uid": doi
+                }]
+            },
+            status=422
+        )
         
         # GET: Returns metadata without resourceTypeGeneral (will be auto-filled)
-        mock_get_response = Mock()
-        mock_get_response.status_code = 200
-        mock_get_response.json.return_value = {
-            "data": {
-                "id": "10.1594/gfz.sddb.1010",
-                "type": "dois",
-                "attributes": {
-                    "doi": "10.1594/gfz.sddb.1010",
-                    "url": "http://old-url.example.org",
-                    "titles": [{"title": "Test Dataset"}],
-                    "creators": [{"name": "Test Creator"}],
-                    "types": {}  # Missing resourceTypeGeneral - will be auto-filled with 'Dataset'
+        responses.add(
+            responses.GET,
+            f"https://api.test.datacite.org/dois/{doi}",
+            json={
+                "data": {
+                    "id": doi,
+                    "type": "dois",
+                    "attributes": {
+                        "doi": doi,
+                        "url": "http://old-url.example.org",
+                        "titles": [{"title": "Test Dataset"}],
+                        "creators": [{"name": "Test Creator"}],
+                        "types": {}  # Missing resourceTypeGeneral - will be auto-filled with 'Dataset'
+                    }
                 }
-            }
-        }
+            },
+            status=200
+        )
         
         # Second PUT: Successful upgrade after auto-fill
-        mock_put_success = Mock()
-        mock_put_success.status_code = 200
-        mock_put_success.json.return_value = {
-            "data": {
-                "id": "10.1594/gfz.sddb.1010",
-                "type": "dois",
-                "attributes": {
-                    "doi": "10.1594/gfz.sddb.1010",
-                    "url": "http://dataservices.gfz.de/SDDB/showshort.php?id=escidoc%3A76037",
-                    "schemaVersion": "http://datacite.org/schema/kernel-4"
+        responses.add(
+            responses.PUT,
+            f"https://api.test.datacite.org/dois/{doi}",
+            json={
+                "data": {
+                    "id": doi,
+                    "type": "dois",
+                    "attributes": {
+                        "doi": doi,
+                        "url": "http://dataservices.gfz.de/SDDB/showshort.php?id=escidoc%3A76037",
+                        "schemaVersion": "http://datacite.org/schema/kernel-4"
+                    }
                 }
-            }
-        }
+            },
+            status=200
+        )
         
-        # Mock PUT with list: first returns schema error, then success
-        with patch('requests.put', side_effect=[mock_put_response, mock_put_success]), \
-             patch('requests.get', return_value=mock_get_response):
-            success, message = client.update_doi_url(
-                "10.1594/gfz.sddb.1010",
-                "http://dataservices.gfz.de/SDDB/showshort.php?id=escidoc:76037"
-            )
-            
-            # Should now succeed because resourceTypeGeneral is auto-filled with 'Dataset'
-            assert success is True
-            assert "erfolgreich aktualisiert" in message
+        success, message = client.update_doi_url(doi, new_url)
+        
+        # Should now succeed because resourceTypeGeneral is auto-filled with 'Dataset'
+        assert success is True
+        assert "erfolgreich aktualisiert" in message
+        
+        # Verify all 3 API calls: PUT (fail) → GET (metadata) → PUT (success)
+        assert len(responses.calls) == 3
     
     def test_update_doi_url_rate_limit(self, client):
         """Test update with rate limit error."""
