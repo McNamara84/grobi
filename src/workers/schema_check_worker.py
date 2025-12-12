@@ -75,34 +75,50 @@ class SchemaCheckWorker(QObject):
             total_dois = len(dois_with_schema)
             self.progress_update.emit(f"{total_dois} DOIs gefunden. Überprüfe Schema-Versionen...")
             
-            # Filter DOIs with old schema versions (2.x or 3.x)
-            old_schema_dois = []
+            # Filter DOIs that need checking:
+            # - DOIs with old schema versions (2.x or 3.x)
+            # - DOIs with no/empty schema version (need to be checked too!)
+            # DOIs with Schema 4.x are already validated and can be skipped
+            dois_to_check = []
+            schema_4_count = 0
             for doi, schema_version in dois_with_schema:
-                if schema_version and (schema_version.startswith("2.") or schema_version.startswith("3.") or 
-                                      "kernel-2" in schema_version or "kernel-3" in schema_version):
-                    old_schema_dois.append((doi, schema_version))
+                if not schema_version or schema_version.strip() == "":
+                    # No schema version - needs checking
+                    dois_to_check.append((doi, schema_version or "unbekannt"))
+                elif schema_version.startswith("2.") or schema_version.startswith("3.") or \
+                     "kernel-2" in schema_version or "kernel-3" in schema_version:
+                    # Old schema version - needs checking
+                    dois_to_check.append((doi, schema_version))
+                elif schema_version.startswith("4.") or "kernel-4" in schema_version:
+                    # Schema 4.x - already validated, skip
+                    schema_4_count += 1
+                else:
+                    # Unknown schema version - check to be safe
+                    dois_to_check.append((doi, schema_version))
             
             if self._should_stop:
                 logger.info("Schema check cancelled by user")
                 return
             
-            old_schema_count = len(old_schema_dois)
+            check_count = len(dois_to_check)
             
-            if old_schema_count == 0:
-                self.progress_update.emit("[OK] Alle DOIs verwenden bereits Schema 4.x")
+            if check_count == 0:
+                self.progress_update.emit(
+                    f"[OK] Alle {schema_4_count} DOIs verwenden bereits Schema 4.x"
+                )
                 self.finished.emit([])
                 return
             
             self.progress_update.emit(
-                f"{old_schema_count} DOIs mit altem Schema gefunden (2.x oder 3.x). "
-                f"Überprüfe Kompatibilität zu Schema 4..."
+                f"{check_count} DOIs zu prüfen ({schema_4_count} mit Schema 4.x übersprungen). "
+                f"Überprüfe Kompatibilität..."
             )
             
-            # Check each old schema DOI for Schema 4 compatibility
+            # Check each DOI for Schema 4 compatibility
             incompatible_dois = []
             processed = 0
             
-            for doi, schema_version in old_schema_dois:
+            for doi, schema_version in dois_to_check:
                 if self._should_stop:
                     logger.info("Schema check cancelled by user")
                     return
@@ -110,9 +126,9 @@ class SchemaCheckWorker(QObject):
                 processed += 1
                 
                 # Update progress every 10 DOIs
-                if processed % 10 == 0 or processed == old_schema_count:
+                if processed % 10 == 0 or processed == check_count:
                     self.progress_update.emit(
-                        f"Überprüfe DOI {processed}/{old_schema_count}: {doi}"
+                        f"Überprüfe DOI {processed}/{check_count}: {doi}"
                     )
                 
                 # Check Schema 4 compatibility
@@ -131,12 +147,12 @@ class SchemaCheckWorker(QObject):
             # Report results
             if incompatible_dois:
                 self.progress_update.emit(
-                    f"[WARNUNG] {len(incompatible_dois)} von {old_schema_count} DOIs "
+                    f"[WARNUNG] {len(incompatible_dois)} von {check_count} DOIs "
                     f"sind NICHT kompatibel mit Schema 4"
                 )
             else:
                 self.progress_update.emit(
-                    f"[OK] Alle {old_schema_count} DOIs mit altem Schema sind kompatibel mit Schema 4"
+                    f"[OK] Alle {check_count} geprüften DOIs sind kompatibel mit Schema 4"
                 )
             
             self.finished.emit(incompatible_dois)
