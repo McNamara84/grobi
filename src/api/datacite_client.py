@@ -126,6 +126,11 @@ class DataCiteClient:
             representing an already-encoded space "%20") will be normalized to their 
             single-encoded form. This is acceptable for DataCite URLs as double-encoding
             is typically unintentional and causes issues.
+            
+            **Edge Case Warning**: If you have a URL where percent-encoded characters are
+            intentional and must be preserved exactly as-is (e.g., a query parameter that
+            itself contains encoded data), this normalization may produce unexpected results.
+            In such cases, ensure the URL is pre-encoded correctly before passing to DataCite.
         """
         try:
             # Parse the URL into components
@@ -647,12 +652,14 @@ class DataCiteClient:
                     error_msg = (
                         f"DOI {doi} kann nicht automatisch zu Schema 4 aktualisiert werden: "
                         f"{fields_str} fehlen in den Metadaten. Diese Pflichtfelder können nicht automatisch "
-                        f"befüllt werden. Bitte ergänze sie manuell über das DataCite Fabrica Interface."
+                        f"befüllt werden. Bitte ergänze sie manuell über das DataCite Fabrica Interface "
+                        f"(https://doi.datacite.org/dois/{doi})."
                     )
                 else:
                     error_msg = (
                         f"DOI {doi} kann nicht automatisch zu Schema 4 aktualisiert werden. "
-                        f"Bitte prüfe die Metadaten manuell über das DataCite Fabrica Interface."
+                        f"Bitte prüfe die Metadaten manuell über das DataCite Fabrica Interface "
+                        f"(https://doi.datacite.org/dois/{doi})."
                     )
                 
                 logger.error(error_msg)
@@ -699,6 +706,9 @@ class DataCiteClient:
                 logger.error(error_msg)
                 return False, error_msg
                 
+        except NetworkError:
+            # Re-raise NetworkError to preserve specific network error context
+            raise
         except Exception as e:
             error_msg = f"Fehler beim Schema-Upgrade für DOI {doi}: {str(e)}"
             logger.error(error_msg)
@@ -861,7 +871,7 @@ class DataCiteClient:
                     
                     # Copy name identifier if present
                     name_identifiers = funder.get('nameIdentifiers', [])
-                    if name_identifiers and len(name_identifiers) > 0:
+                    if name_identifiers:
                         identifier = name_identifiers[0]
                         funding_ref['funderIdentifier'] = identifier.get('nameIdentifier', '')
                         funding_ref['funderIdentifierType'] = identifier.get('nameIdentifierScheme', '')

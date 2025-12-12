@@ -104,7 +104,8 @@ class TestURLNormalization:
         invalid_urls = [
             "not a url",
             "",
-            "ht!tp://invalid",
+            "://missing-scheme",
+            "http://",  # Missing host
         ]
         
         for url in invalid_urls:
