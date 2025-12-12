@@ -557,6 +557,20 @@ class CredentialsDialog(QDialog):
         # Reset to "Neue Zugangsdaten"
         self.account_selector.setCurrentIndex(0)
     
+    def get_username(self) -> str:
+        """Get the entered username."""
+        return self.username_input.text().strip()
+    
+    def get_password(self) -> str:
+        """Get the password - uses loaded password for saved accounts, otherwise input field."""
+        if self._loaded_password:
+            return self._loaded_password
+        return self.password_input.text().strip()
+    
+    def get_use_test_api(self) -> bool:
+        """Get whether to use test API."""
+        return self.test_api_checkbox.isChecked()
+    
     def is_new_credentials(self) -> bool:
         """
         Check if user is entering new credentials (not using saved account).

@@ -106,7 +106,7 @@ class DataCiteClient:
     PAGE_SIZE = 100  # Maximum page size supported by DataCite API
 
 
-    TIMEOUT = 30  # Request timeout in seconds
+    TIMEOUT = 60  # Request timeout in seconds (increased for schema check operations)
 
 
     
