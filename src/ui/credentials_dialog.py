@@ -220,11 +220,13 @@ class CredentialsDialog(QDialog):
         button_box = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )
-        button_box.accepted.connect(self._validate_and_accept)
         button_box.rejected.connect(self.reject)
         
         # Customize button text based on mode
         self.ok_button = button_box.button(QDialogButtonBox.Ok)
+        # Connect OK button click directly (more reliable than accepted signal)
+        self.ok_button.clicked.connect(self._validate_and_accept)
+        
         if self.mode == "update":
             self.ok_button.setText("Landing Page URLs aktualisieren")
             # Disable button initially for update mode (needs CSV file)
@@ -327,23 +329,36 @@ class CredentialsDialog(QDialog):
     
     def _validate_and_accept(self):
         """Validate input before accepting the dialog."""
+        logger.info("_validate_and_accept aufgerufen")
+        
         username = self.username_input.text().strip()
         password = self.password_input.text().strip()
         
+        logger.info(f"Username: '{username}', Password field text: '{password[:3] if password else '(leer)'}...'")
+        
+        # For saved credentials, password field shows masked text but _loaded_password has the real password
+        has_loaded_password = hasattr(self, '_loaded_password') and self._loaded_password
+        has_password = bool(password) or has_loaded_password
+        
+        logger.info(f"has_loaded_password: {has_loaded_password}, has_password: {has_password}")
+        
         if not username:
+            logger.info("Validierung fehlgeschlagen: Username fehlt")
             self.username_input.setFocus()
             self.username_input.setStyleSheet(
                 "QLineEdit { border: 2px solid #d32f2f; }"
             )
             return
         
-        if not password:
+        if not has_password:
+            logger.info("Validierung fehlgeschlagen: Passwort fehlt")
             self.password_input.setFocus()
             self.password_input.setStyleSheet(
                 "QLineEdit { border: 2px solid #d32f2f; }"
             )
             return
         
+        logger.info("Validierung OK - rufe self.accept() auf")
         self.accept()
     
     def _browse_csv_file(self):
