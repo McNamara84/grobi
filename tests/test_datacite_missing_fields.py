@@ -124,10 +124,9 @@ def test_missing_title_cannot_auto_fill(client):
     success, message = client.update_doi_url(doi, new_url)
     
     assert success is False
-    assert "title" in message.lower()
-    assert "fehlt in den Metadaten" in message  # Singular verb for single field
-    assert "Pflichtfeld" in message or "Metadaten" in message
-    assert "Fabrica" in message
+    assert "title fehlt in den metadaten" in message.lower()  # Singular verb for single field
+    assert "pflichtfelder" in message.lower()  # Verify error context
+    assert "fabrica" in message.lower()
 
 
 @responses.activate
@@ -169,9 +168,9 @@ def test_missing_creators_cannot_auto_fill(client):
     success, message = client.update_doi_url(doi, new_url)
     
     assert success is False
-    assert "creators" in message.lower()
-    assert "Pflichtfeld" in message
-    assert "Fabrica" in message
+    assert "creators fehlt in den metadaten" in message.lower()  # Singular verb for single field
+    assert "pflichtfelder" in message.lower()  # Verify error context
+    assert "fabrica" in message.lower()
 
 
 @responses.activate
@@ -213,11 +212,11 @@ def test_missing_title_and_creators(client):
     success, message = client.update_doi_url(doi, new_url)
     
     assert success is False
+    # Verify both fields are mentioned with plural verb
     assert "title" in message.lower()
     assert "creators" in message.lower()
-    # Check both fields are mentioned with 'und' conjunction (order-independent)
-    assert "und" in message
-    assert "fehlen in den Metadaten" in message
+    assert "title und creators" in message.lower()
+    assert "fehlen in den Metadaten" in message  # Plural verb for multiple fields
 
 
 @responses.activate

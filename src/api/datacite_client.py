@@ -187,6 +187,21 @@ class DataCiteClient:
             return ', '.join(fields[:-1]) + ' und ' + fields[-1]
     
     @staticmethod
+    def _format_missing_fields_with_verb(fields: List[str]) -> tuple[str, str]:
+        """
+        Format missing fields and determine the correct German verb form.
+        
+        Args:
+            fields: List of missing field names
+            
+        Returns:
+            Tuple of (formatted_fields_string, verb) where verb is "fehlt" or "fehlen"
+        """
+        fields_str = DataCiteClient._format_missing_fields_list(fields)
+        verb = "fehlt" if len(fields) == 1 else "fehlen"
+        return fields_str, verb
+    
+    @staticmethod
     def _check_missing_mandatory_fields(attributes: Dict[str, Any]) -> List[str]:
         """
         Check which mandatory DataCite fields are missing from metadata.
@@ -820,8 +835,7 @@ class DataCiteClient:
             non_autofillable = [f for f in all_missing if f in ['title', 'creators']]
             
             if non_autofillable:
-                fields_str = self._format_missing_fields_list(non_autofillable)
-                verb = "fehlt" if len(non_autofillable) == 1 else "fehlen"
+                fields_str, verb = self._format_missing_fields_with_verb(non_autofillable)
                 error_msg = (
                     f"DOI {doi} kann nicht aktualisiert werden: {fields_str} {verb} in den Metadaten. "
                     f"Bitte ergänze diese Pflichtfelder manuell über das DataCite Fabrica Interface (https://doi.datacite.org/dois/{doi})."
