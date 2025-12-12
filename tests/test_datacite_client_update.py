@@ -1,7 +1,5 @@
 """Tests for DataCite Client update_doi_url method."""
 
-import json
-
 import pytest
 import responses
 from unittest.mock import Mock, patch

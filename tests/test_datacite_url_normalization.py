@@ -37,7 +37,7 @@ class TestURLNormalization:
     
     def test_normalize_url_already_encoded(self):
         """Test that already encoded URLs are properly normalized (decoded then re-encoded)."""
-        # URLs that are already encoded are decoded and re-encoded for normalization
+        # URLs that are already encoded are first decoded and then re-encoded during normalization
         url = "http://example.com/path?id=test%3A123"
         normalized = DataCiteClient.normalize_url(url)
         # URL should be properly encoded after normalization (colon stays as %3A)

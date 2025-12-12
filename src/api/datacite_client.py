@@ -890,9 +890,12 @@ class DataCiteClient:
                 publisher = 'GFZ Data Services'
             
             # Build upgraded attributes
+            # Preserve mandatory fields from original metadata
             upgraded = {
                 'url': new_url,
                 'schemaVersion': 'http://datacite.org/schema/kernel-4',
+                'titles': attributes.get('titles', []),
+                'creators': attributes.get('creators', []),
                 'types': types,
                 'publisher': publisher
             }

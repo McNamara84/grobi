@@ -239,6 +239,12 @@ class TestSchemaUpgrade:
         upgrade_payload = json.loads(responses.calls[2].request.body)
         assert upgrade_payload["data"]["attributes"]["types"]["resourceTypeGeneral"] == "Dataset"
         
+        # Verify mandatory fields (titles, creators) are preserved from original metadata
+        assert "titles" in upgrade_payload["data"]["attributes"]
+        assert upgrade_payload["data"]["attributes"]["titles"] == [{"title": "Test Dataset"}]
+        assert "creators" in upgrade_payload["data"]["attributes"]
+        assert upgrade_payload["data"]["attributes"]["creators"] == [{"name": "Test Creator"}]
+        
         # Verify all 3 API calls: PUT (fail) → GET (metadata) → PUT (success)
         assert len(responses.calls) == 3
     
