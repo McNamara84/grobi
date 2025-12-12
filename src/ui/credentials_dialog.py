@@ -360,6 +360,7 @@ class CredentialsDialog(QDialog):
         
         logger.info("Validierung OK - rufe self.accept() auf")
         self.accept()
+        logger.info(f"Nach self.accept(): result()={self.result()}, Accepted={QDialog.Accepted}")
     
     def _browse_csv_file(self):
         """Open file dialog to select CSV file."""
