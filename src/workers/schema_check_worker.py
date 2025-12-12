@@ -73,28 +73,16 @@ class SchemaCheckWorker(QObject):
                 return
             
             total_dois = len(dois_with_schema)
-            self.progress_update.emit(f"{total_dois} DOIs gefunden. Überprüfe Schema-Versionen...")
+            self.progress_update.emit(f"{total_dois} DOIs gefunden. Prüfe alle auf fehlende Pflichtfelder...")
             
-            # Filter DOIs that need checking:
-            # - DOIs with old schema versions (2.x or 3.x)
-            # - DOIs with no/empty schema version (need to be checked too!)
-            # DOIs with Schema 4.x are already validated and can be skipped
+            # Check ALL DOIs for missing required fields
+            # Note: Even DOIs with Schema 4.x header can have missing required fields!
+            # We cannot skip any DOIs based on schema version alone.
             dois_to_check = []
-            schema_4_count = 0
             for doi, schema_version in dois_with_schema:
-                if not schema_version or schema_version.strip() == "":
-                    # No schema version - needs checking
-                    dois_to_check.append((doi, schema_version or "unbekannt"))
-                elif schema_version.startswith("2.") or schema_version.startswith("3.") or \
-                     "kernel-2" in schema_version or "kernel-3" in schema_version:
-                    # Old schema version - needs checking
-                    dois_to_check.append((doi, schema_version))
-                elif schema_version.startswith("4.") or "kernel-4" in schema_version:
-                    # Schema 4.x - already validated, skip
-                    schema_4_count += 1
-                else:
-                    # Unknown schema version - check to be safe
-                    dois_to_check.append((doi, schema_version))
+                # Normalize schema version for display
+                display_schema = schema_version if schema_version else "unbekannt"
+                dois_to_check.append((doi, display_schema))
             
             if self._should_stop:
                 logger.info("Schema check cancelled by user")
@@ -103,15 +91,12 @@ class SchemaCheckWorker(QObject):
             check_count = len(dois_to_check)
             
             if check_count == 0:
-                self.progress_update.emit(
-                    f"[OK] Alle {schema_4_count} DOIs verwenden bereits Schema 4.x"
-                )
+                self.progress_update.emit("[OK] Keine DOIs gefunden.")
                 self.finished.emit([])
                 return
             
             self.progress_update.emit(
-                f"{check_count} DOIs zu prüfen ({schema_4_count} mit Schema 4.x übersprungen). "
-                f"Überprüfe Kompatibilität..."
+                f"{check_count} DOIs werden auf fehlende Pflichtfelder geprüft..."
             )
             
             # Check each DOI for Schema 4 compatibility
@@ -148,11 +133,11 @@ class SchemaCheckWorker(QObject):
             if incompatible_dois:
                 self.progress_update.emit(
                     f"[WARNUNG] {len(incompatible_dois)} von {check_count} DOIs "
-                    f"sind NICHT kompatibel mit Schema 4"
+                    f"haben fehlende Pflichtfelder"
                 )
             else:
                 self.progress_update.emit(
-                    f"[OK] Alle {check_count} geprüften DOIs sind kompatibel mit Schema 4"
+                    f"[OK] Alle {check_count} DOIs haben vollständige Pflichtfelder"
                 )
             
             self.finished.emit(incompatible_dois)
