@@ -108,7 +108,7 @@ class DataCiteClient:
         URLs must be properly encoded according to RFC 3986. This function ensures that:
         - Special characters in query parameters are percent-encoded (e.g., : → %3A)
         - The URL structure (scheme, netloc, path, query, fragment) is preserved
-        - Already encoded characters are not double-encoded
+        - URLs are normalized by decoding and re-encoding to ensure consistent formatting
         
         Args:
             url: The URL to normalize

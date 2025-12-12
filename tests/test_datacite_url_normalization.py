@@ -34,11 +34,11 @@ class TestURLNormalization:
             assert normalized == expected_url, f"Failed for URL: {input_url}"
     
     def test_normalize_url_already_encoded(self):
-        """Test that already encoded URLs are not double-encoded."""
-        # URLs that are already encoded should remain unchanged
+        """Test that already encoded URLs are properly normalized (decoded then re-encoded)."""
+        # URLs that are already encoded are decoded and re-encoded for normalization
         url = "http://example.com/path?id=test%3A123"
         normalized = DataCiteClient.normalize_url(url)
-        # URL should remain properly encoded (colon stays as %3A)
+        # URL should be properly encoded after normalization (colon stays as %3A)
         assert "%3A" in normalized
         assert ":" not in normalized.split("?")[1]  # No unencoded colons in query
     
@@ -143,8 +143,9 @@ class TestURLNormalization:
             
             # Verify colon is encoded
             assert "test%3A123" in sent_url
-            # Verify plus sign is preserved (not converted to %2B or space)
-            assert "foo+bar" in sent_url or "foo%20bar" in sent_url
+            # Verify plus sign handling: '+' is in safe set, so it's preserved during normalization
+            # ('+' represents space in query strings per application/x-www-form-urlencoded)
+            assert "foo+bar" in sent_url
             # Verify ampersand is not encoded
             assert "&" in sent_url
             assert "%26" not in sent_url
@@ -162,5 +163,4 @@ class TestURLNormalization:
         
         assert success is True
         assert "erfolgreich aktualisiert" in message
-        assert success is True
         assert "erfolgreich aktualisiert" in message
