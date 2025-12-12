@@ -1,5 +1,7 @@
 """Tests for DataCite URL normalization."""
 
+import json
+
 import responses
 from src.api.datacite_client import DataCiteClient
 
@@ -137,7 +139,6 @@ class TestURLNormalization:
         
         # Mock successful PUT response
         def request_callback(request):
-            import json
             payload = json.loads(request.body)
             sent_url = payload["data"]["attributes"]["url"]
             

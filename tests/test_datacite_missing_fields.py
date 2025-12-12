@@ -215,7 +215,8 @@ def test_missing_title_and_creators(client):
     assert success is False
     assert "title" in message.lower()
     assert "creators" in message.lower()
-    assert "title und creators" in message  # Correct German grammar: field1 und field2
+    # Check both fields are mentioned with 'und' conjunction (order-independent)
+    assert "und" in message
     assert "fehlen in den Metadaten" in message
 
 

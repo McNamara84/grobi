@@ -866,20 +866,17 @@ class DataCiteClient:
         try:
             attributes = metadata.get('data', {}).get('attributes', {})
             
-            # Check mandatory fields that cannot be auto-filled
-            titles = attributes.get('titles', [])
-            creators = attributes.get('creators', [])
+            # Check mandatory fields that cannot be auto-filled using helper method
+            all_missing = self._check_missing_mandatory_fields(attributes)
+            non_autofillable = [f for f in all_missing if f in ['title', 'creators']]
             
-            if not titles:
-                logger.error("Cannot upgrade to Schema 4: title is missing (mandatory field that cannot be auto-filled)")
-                return None
-            
-            if not creators:
-                logger.error("Cannot upgrade to Schema 4: creators are missing (mandatory field that cannot be auto-filled)")
+            if non_autofillable:
+                fields_str = self._format_missing_fields_list(non_autofillable)
+                logger.error(f"Cannot upgrade to Schema 4: {fields_str} missing (mandatory fields that cannot be auto-filled)")
                 return None
             
             # Handle resourceTypeGeneral (can be auto-filled)
-            types = attributes.get('types', {}).copy()
+            types = copy.deepcopy(attributes.get('types', {}))
             resource_type_general = types.get('resourceTypeGeneral')
             
             if not resource_type_general:
