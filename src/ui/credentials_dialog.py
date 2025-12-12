@@ -243,6 +243,8 @@ class CredentialsDialog(QDialog):
             self.ok_button.setEnabled(False)
         elif self.mode == "schema_check":
             self.ok_button.setText("Schema-Check starten")
+            # Disable button initially for schema_check mode (needs credentials)
+            self.ok_button.setEnabled(False)
         else:
             self.ok_button.setText("DOIs holen")
         
@@ -259,8 +261,8 @@ class CredentialsDialog(QDialog):
         # Set focus to username field
         self.username_input.setFocus()
         
-        # Connect input changes to validation for update modes
-        if self.mode in ["update", "update_authors", "update_publisher", "update_contributors"]:
+        # Connect input changes to validation for update and schema check modes
+        if self.mode in ["update", "update_authors", "update_publisher", "update_contributors", "schema_check"]:
             self.username_input.textChanged.connect(self._check_update_ready)
             self.password_input.textChanged.connect(self._check_update_ready)
         
@@ -372,6 +374,13 @@ class CredentialsDialog(QDialog):
             has_csv = self.csv_file_path is not None
             
             self.ok_button.setEnabled(has_credentials and has_csv)
+        elif self.mode == "schema_check":
+            # Schema check only needs credentials (no CSV file)
+            has_credentials = (
+                bool(self.username_input.text().strip()) and 
+                bool(self.password_input.text().strip())
+            )
+            self.ok_button.setEnabled(has_credentials)
     
     def _preselect_last_used_account(self):
         """Pre-select the last used account if available."""
