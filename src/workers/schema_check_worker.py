@@ -53,6 +53,8 @@ class SchemaCheckWorker(QObject):
             error_occurred: Error message if something goes wrong
         """
         try:
+            logger.info("SchemaCheckWorker.run() gestartet")
+            self.progress_update.emit("DEBUG: run() Methode wurde aufgerufen")
             self.progress_update.emit("Verbindung zur DataCite API wird hergestellt...")
             
             client = DataCiteClient(

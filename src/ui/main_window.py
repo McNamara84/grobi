@@ -2895,13 +2895,18 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QFileDialog
         from src.ui.credentials_dialog import CredentialsDialog
         
+        self._log("Schema-Check Button geklickt")
+        
         # Show credentials dialog in schema check mode
         dialog = CredentialsDialog(self, mode="schema_check")
         
+        self._log("Credentials Dialog wird angezeigt...")
         if dialog.exec():
             username = dialog.get_username()
             password = dialog.get_password()
             use_test_api = dialog.get_use_test_api()
+            
+            self._log(f"Credentials erhalten: Username={username}, Test-API={use_test_api}")
             
             # Ask user where to save the results
             default_filename = f"{username}_schema_check.csv"
@@ -2912,8 +2917,13 @@ class MainWindow(QMainWindow):
                 "CSV Files (*.csv)"
             )
             
+            self._log(f"Speicherpfad ausgewählt: {filepath}")
             if filepath:
                 self._start_schema_check(username, password, use_test_api, filepath)
+            else:
+                self._log("[ABBRUCH] Kein Speicherpfad ausgewählt")
+        else:
+            self._log("[ABBRUCH] Credentials Dialog abgebrochen")
     
     def _start_schema_check(self, username: str, password: str, use_test_api: bool, output_path: str):
         """
@@ -2926,20 +2936,27 @@ class MainWindow(QMainWindow):
             output_path: Path where to save results CSV
         """
         self._log("Starte Schema-Kompatibilitätsprüfung...")
+        self._log(f"DEBUG: Worker wird erstellt mit Username={username}, Test-API={use_test_api}")
         
         # Create worker
         self.schema_check_worker = SchemaCheckWorker(username, password, use_test_api)
         self.schema_check_output_path = output_path
         self.schema_check_username = username
         
+        self._log("DEBUG: Worker erstellt, verbinde Signals...")
+        
         # Connect signals
         self.schema_check_worker.progress_update.connect(self._log)
         self.schema_check_worker.finished.connect(self._on_schema_check_finished)
         self.schema_check_worker.error_occurred.connect(self._on_schema_check_error)
         
+        self._log("DEBUG: Erstelle Thread...")
+        
         # Create thread
         self.schema_check_thread = QThread()
         self.schema_check_worker.moveToThread(self.schema_check_thread)
+        
+        self._log("DEBUG: Verbinde Thread-Signals...")
         
         # Connect thread signals
         self.schema_check_thread.started.connect(self.schema_check_worker.run)
@@ -2954,12 +2971,18 @@ class MainWindow(QMainWindow):
         self.schema_check_thread.finished.connect(self.schema_check_thread.deleteLater)
         self.schema_check_thread.finished.connect(self._cleanup_schema_check_worker)
         
+        self._log("DEBUG: Starte Thread...")
+        
         # Start thread
         self.schema_check_thread.start()
+        
+        self._log("DEBUG: Thread gestartet, deaktiviere Button...")
         
         # Disable button during check
         self.schema_check_btn.setEnabled(False)
         self.progress_bar.setVisible(True)
+        
+        self._log("DEBUG: Schema-Check initialisiert und gestartet")
     
     def _on_schema_check_finished(self, incompatible_dois: list):
         """
