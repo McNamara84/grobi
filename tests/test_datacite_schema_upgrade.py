@@ -272,7 +272,8 @@ class TestSchemaUpgrade:
         assert success is True
         assert "erfolgreich aktualisiert" in message
         # Should NOT mention "kernel-4" upgrade in message
-        assert "Schema" not in message or "kernel-4" not in message
+        assert "kernel-4" not in message
+        assert "Schema" not in message.lower()
         
         # Verify only one API call (no GET for metadata)
         assert len(responses.calls) == 1

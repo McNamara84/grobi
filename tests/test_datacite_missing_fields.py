@@ -7,6 +7,7 @@ Tests the behavior when DOIs have missing mandatory fields:
 - Require title and creators (cannot auto-fill)
 """
 
+import json
 import pytest
 import responses
 from src.api.datacite_client import DataCiteClient
@@ -74,7 +75,6 @@ def test_auto_fill_resource_type_and_publisher(client):
     # Verify the retry PUT was called with auto-filled fields
     assert len(responses.calls) == 3
     retry_request = responses.calls[2].request
-    import json
     payload = json.loads(retry_request.body)
     
     # Check auto-filled resourceTypeGeneral
@@ -271,6 +271,5 @@ def test_doi_with_no_schema_version_gets_upgraded(client):
     # Verify schemaVersion was added
     assert len(responses.calls) == 3
     retry_request = responses.calls[2].request
-    import json
     payload = json.loads(retry_request.body)
     assert payload['data']['attributes']['schemaVersion'] == 'http://datacite.org/schema/kernel-4'

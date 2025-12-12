@@ -1,5 +1,6 @@
 """Tests for DataCite client contributor methods."""
 
+import json
 import pytest
 import responses
 
@@ -357,7 +358,6 @@ class TestUpdateDOIContributors:
         """Test that affiliations are preserved during update."""
         # Capture the request to verify payload
         def request_callback(request):
-            import json
             payload = json.loads(request.body)
             contributors = payload["data"]["attributes"]["contributors"]
             
@@ -407,7 +407,6 @@ class TestUpdateDOIContributors:
     def test_uses_first_contributor_type(self):
         """Test that first contributor type is used when multiple are provided."""
         def request_callback(request):
-            import json
             payload = json.loads(request.body)
             contributors = payload["data"]["attributes"]["contributors"]
             

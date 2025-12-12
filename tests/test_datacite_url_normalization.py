@@ -95,8 +95,9 @@ class TestURLNormalization:
         # Both colons should be encoded
         assert "test%3A123" in normalized
         assert "value%3A456" in normalized
-        # Ampersands should be preserved
-        assert "&" in normalized or "%26" not in normalized
+        # Ampersands should be preserved (not encoded)
+        assert "&" in normalized
+        assert "%26" not in normalized
     
     def test_normalize_url_invalid_url(self):
         """Test that invalid URLs are handled gracefully."""

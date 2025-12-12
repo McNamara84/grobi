@@ -118,17 +118,22 @@ class DataCiteClient:
         Examples:
             >>> normalize_url("http://example.com/path?id=test:123")
             'http://example.com/path?id=test%3A123'
+            
+        Note:
+            This method uses a decode-then-encode strategy to avoid double-encoding.
+            However, this means that intentionally double-encoded sequences (e.g., "%2520" 
+            representing an already-encoded space "%20") will be normalized to their 
+            single-encoded form. This is acceptable for DataCite URLs as double-encoding
+            is typically unintentional and causes issues.
         """
         try:
-            from urllib.parse import unquote
-            
             # Parse the URL into components
             parsed = urlparse(url)
             
             # Decode first, then encode to avoid double-encoding
             # This handles URLs that are already partially or fully encoded
             decoded_query = unquote(parsed.query) if parsed.query else ''
-            decoded_path = unquote(parsed.path, errors='replace') if parsed.path else ''
+            decoded_path = unquote(parsed.path) if parsed.path else ''
             
             # Now encode properly:
             # For query: keep '=' and '&' unencoded (they're query separators)
@@ -812,7 +817,7 @@ class DataCiteClient:
             
             # Handle Funder contributors (deprecated in Schema 4)
             contributors = attributes.get('contributors', [])
-            funding_references = attributes.get('fundingReferences', [])
+            funding_references = attributes.get('fundingReferences', []).copy()
             
             non_funder_contributors = []
             funders_to_migrate = []
