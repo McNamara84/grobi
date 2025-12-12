@@ -253,18 +253,19 @@ class CredentialsDialog(QDialog):
         
         layout.addWidget(button_box)
         
-        # Pre-select last used account AFTER ok_button is created
+        # Connect input changes to validation for update and schema check modes
+        # IMPORTANT: Connect BEFORE pre-selecting account so textChanged triggers
+        if self.mode in ["update", "update_authors", "update_publisher", "update_contributors", "schema_check"]:
+            self.username_input.textChanged.connect(self._check_update_ready)
+            self.password_input.textChanged.connect(self._check_update_ready)
+        
+        # Pre-select last used account AFTER ok_button is created AND signals are connected
         # (needs ok_button for _check_update_ready in update modes)
         if self.credential_manager and self.saved_accounts:
             self._preselect_last_used_account()
         
         # Set focus to username field
         self.username_input.setFocus()
-        
-        # Connect input changes to validation for update and schema check modes
-        if self.mode in ["update", "update_authors", "update_publisher", "update_contributors", "schema_check"]:
-            self.username_input.textChanged.connect(self._check_update_ready)
-            self.password_input.textChanged.connect(self._check_update_ready)
         
         # Log dialog initialization
         logger.info(f"CredentialsDialog initialized: mode={self.mode}, ok_button_enabled={self.ok_button.isEnabled()}")
