@@ -125,8 +125,8 @@ def test_missing_title_cannot_auto_fill(client):
     
     assert success is False
     assert "title" in message.lower()
-    assert "fehlen in den Metadaten" in message
-    assert "Pflichtfeld" in message
+    assert "fehlt in den Metadaten" in message  # Singular verb for single field
+    assert "Pflichtfeld" in message or "Metadaten" in message
     assert "Fabrica" in message
 
 

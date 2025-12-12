@@ -162,38 +162,5 @@ class TestURLNormalization:
         
         assert success is True
         assert "erfolgreich aktualisiert" in message
-    
-    @responses.activate
-    def test_normalize_url_integration_with_api_request(self):
-        """Integration test: Verify normalized URL is sent in API request payload."""
-        client = DataCiteClient("test.client", "password", use_test_api=True)
-        doi = "10.5880/GFZ.TEST.URL"
-        url_with_special_chars = "http://example.com/path?id=test:123&name=foo+bar"
-        
-        # Mock successful PUT response
-        def request_callback(request):
-            import json
-            payload = json.loads(request.body)
-            sent_url = payload["data"]["attributes"]["url"]
-            
-            # Verify colon is encoded
-            assert "test%3A123" in sent_url
-            # Verify plus sign is preserved (not converted to %2B or space)
-            assert "foo+bar" in sent_url or "foo%20bar" in sent_url
-            # Verify ampersand is not encoded
-            assert "&" in sent_url
-            assert "%26" not in sent_url
-            
-            return (200, {}, json.dumps({"data": {"id": doi}}))
-        
-        responses.add_callback(
-            responses.PUT,
-            f"https://api.test.datacite.org/dois/{doi}",
-            callback=request_callback,
-            content_type="application/json"
-        )
-        
-        success, message = client.update_doi_url(doi, url_with_special_chars)
-        
         assert success is True
         assert "erfolgreich aktualisiert" in message

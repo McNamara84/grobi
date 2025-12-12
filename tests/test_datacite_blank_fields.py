@@ -144,12 +144,15 @@ def test_cant_be_blank_error_identifies_multiple_missing_fields():
     success, message = client.update_doi_url(doi, new_url)
     
     assert success is False
+    # Only non-auto-fillable fields (title and creators) should be in the error message
+    # resourceTypeGeneral and publisher are auto-filled now, so they're not reported as errors
     assert "title" in message
     assert "creators" in message
-    assert "resourceTypeGeneral" in message
-    assert "publisher" in message
-    assert "Pflichtfelder fehlen" in message or "kann nicht aktualisiert werden" in message
+    assert "fehlen in den Metadaten" in message  # Plural verb for multiple fields
     assert "Fabrica" in message
+    # These fields are now auto-filled, so they should NOT appear in error message:
+    assert "resourceTypeGeneral" not in message
+    assert "publisher" not in message
 
 
 @responses.activate

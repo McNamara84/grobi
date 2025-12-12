@@ -126,6 +126,10 @@ class DataCiteClient:
             standardized way. Double-encoded sequences (e.g., "%2520") will be normalized to
             their single-encoded form ("%20"). This is intentional behavior to ensure DataCite
             receives properly formatted URLs, as double-encoding typically causes issues.
+            
+            **Important**: If your URL legitimately contains double-encoded sequences (e.g., a
+            query parameter value that is itself a percent-encoded string like "%2520"), this
+            normalization will decode it. Always provide unencoded or single-encoded URLs as input.
         """
         try:
             # Parse the URL into components
@@ -627,8 +631,8 @@ class DataCiteClient:
                         logger.error(f"Validation error for DOI {doi}: {response.text}")
                         return False, error_msg
                 except ValueError as e:  # json.JSONDecodeError is a subclass of ValueError
-                    error_msg = f"Validierungsfehler für DOI {doi}: Ungültige JSON-Antwort vom Server"
-                    logger.error(f"Invalid JSON in validation error response for DOI {doi}: {e}")
+                    error_msg = f"Validierungsfehler für DOI {doi}: Ungültige JSON-Antwort vom Server: {response.text}"
+                    logger.error(f"Invalid JSON in validation error response for DOI {doi}: {e}. Response: {response.text}")
                     return False, error_msg
                 except Exception as e:
                     error_msg = f"Validierungsfehler für DOI {doi}: {response.text}"
@@ -703,9 +707,10 @@ class DataCiteClient:
                 
                 if missing_fields:
                     fields_str = self._format_missing_fields_list(missing_fields)
+                    verb = "fehlt" if len(missing_fields) == 1 else "fehlen"
                     error_msg = (
                         f"DOI {doi} kann nicht automatisch zu Schema 4 aktualisiert werden: "
-                        f"{fields_str} fehlen in den Metadaten. Diese Pflichtfelder können nicht automatisch "
+                        f"{fields_str} {verb} in den Metadaten. Diese Pflichtfelder können nicht automatisch "
                         f"befüllt werden. Bitte ergänze sie manuell über das DataCite Fabrica Interface "
                         f"(https://doi.datacite.org/dois/{doi})."
                     )
@@ -808,13 +813,18 @@ class DataCiteClient:
             attributes = metadata.get('data', {}).get('attributes', {})
             
             # Check which mandatory fields are missing using helper method
-            missing_fields = self._check_missing_mandatory_fields(attributes)
+            all_missing = self._check_missing_mandatory_fields(attributes)
             
-            if missing_fields:
-                fields_str = self._format_missing_fields_list(missing_fields)
+            # Filter for non-auto-fillable fields only (title and creators)
+            # resourceTypeGeneral and publisher can be auto-filled, so we don't report them here
+            non_autofillable = [f for f in all_missing if f in ['title', 'creators']]
+            
+            if non_autofillable:
+                fields_str = self._format_missing_fields_list(non_autofillable)
+                verb = "fehlt" if len(non_autofillable) == 1 else "fehlen"
                 error_msg = (
-                    f"DOI {doi} kann nicht aktualisiert werden: Die folgenden Pflichtfelder fehlen: {fields_str}. "
-                    f"Bitte ergänze diese Felder manuell über das DataCite Fabrica Interface (https://doi.datacite.org/dois/{doi})."
+                    f"DOI {doi} kann nicht aktualisiert werden: {fields_str} {verb} in den Metadaten. "
+                    f"Bitte ergänze diese Pflichtfelder manuell über das DataCite Fabrica Interface (https://doi.datacite.org/dois/{doi})."
                 )
                 logger.error(f"Missing mandatory fields for DOI {doi}: {fields_str}")
                 return False, error_msg
