@@ -1,5 +1,6 @@
 """DataCite API Client for fetching DOIs and metadata."""
 
+import copy
 import logging
 from typing import List, Tuple, Dict, Any, Optional
 from urllib.parse import urlparse, urlunparse, quote, unquote
@@ -482,8 +483,9 @@ class DataCiteClient:
         Returns:
             Tuple of (success: bool, message: str)
             
-        Raises:
-            NetworkError: If connection to API fails
+        Note:
+            May raise NetworkError indirectly through internal API calls if
+            connection to DataCite API fails (timeout or connection errors).
         """
         url = f"{self.base_url}/dois/{doi}"
         
@@ -636,7 +638,12 @@ class DataCiteClient:
                     missing_fields.append('creators')
                 
                 if missing_fields:
-                    fields_str = ' und '.join(missing_fields)
+                    if len(missing_fields) == 1:
+                        fields_str = missing_fields[0]
+                    elif len(missing_fields) == 2:
+                        fields_str = ' und '.join(missing_fields)
+                    else:
+                        fields_str = ', '.join(missing_fields[:-1]) + ' und ' + missing_fields[-1]
                     error_msg = (
                         f"DOI {doi} kann nicht automatisch zu Schema 4 aktualisiert werden: "
                         f"{fields_str} fehlen in den Metadaten. Diese Pflichtfelder können nicht automatisch "
@@ -663,16 +670,25 @@ class DataCiteClient:
             logger.info(f"Retrying DOI {doi} update with Schema 4 metadata")
             
             # Retry with upgraded metadata
-            response = requests.put(
-                url,
-                auth=self.auth,
-                json=upgraded_payload,
-                timeout=self.TIMEOUT,
-                headers={
-                    "Content-Type": "application/vnd.api+json",
-                    "Accept": "application/vnd.api+json"
-                }
-            )
+            try:
+                response = requests.put(
+                    url,
+                    auth=self.auth,
+                    json=upgraded_payload,
+                    timeout=self.TIMEOUT,
+                    headers={
+                        "Content-Type": "application/vnd.api+json",
+                        "Accept": "application/vnd.api+json"
+                    }
+                )
+            except requests.exceptions.Timeout:
+                error_msg = "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut."
+                logger.error(f"Timeout during schema upgrade retry for DOI {doi}")
+                raise NetworkError(error_msg)
+            except requests.exceptions.ConnectionError as e:
+                error_msg = "Verbindung zur DataCite API fehlgeschlagen. Bitte überprüfe deine Internetverbindung."
+                logger.error(f"Connection error during schema upgrade retry: {e}")
+                raise NetworkError(error_msg)
             
             if response.status_code == 200:
                 success_msg = f"DOI {doi} erfolgreich aktualisiert (Schema automatisch auf kernel-4 aktualisiert)"
@@ -703,12 +719,21 @@ class DataCiteClient:
         try:
             # Fetch current metadata to identify missing fields
             url = f"{self.base_url}/dois/{doi}"
-            response = requests.get(
-                url,
-                auth=self.auth,
-                timeout=self.TIMEOUT,
-                headers={"Accept": "application/vnd.api+json"}
-            )
+            try:
+                response = requests.get(
+                    url,
+                    auth=self.auth,
+                    timeout=self.TIMEOUT,
+                    headers={"Accept": "application/vnd.api+json"}
+                )
+            except requests.exceptions.Timeout:
+                error_msg = f"Validierungsfehler für DOI {doi}: {original_error} (Timeout beim Metadaten-Abruf)"
+                logger.error(f"Timeout while fetching metadata for blank field analysis")
+                raise NetworkError(error_msg)
+            except requests.exceptions.ConnectionError as e:
+                error_msg = f"Validierungsfehler für DOI {doi}: {original_error} (Verbindungsfehler beim Metadaten-Abruf)"
+                logger.error(f"Connection error while fetching metadata: {e}")
+                raise NetworkError(error_msg)
             
             if response.status_code != 200:
                 error_msg = f"Validierungsfehler für DOI {doi}: {original_error} (Metadaten konnten nicht abgerufen werden)"
@@ -817,7 +842,7 @@ class DataCiteClient:
             
             # Handle Funder contributors (deprecated in Schema 4)
             contributors = attributes.get('contributors', [])
-            funding_references = attributes.get('fundingReferences', []).copy()
+            funding_references = copy.deepcopy(attributes.get('fundingReferences', []))
             
             non_funder_contributors = []
             funders_to_migrate = []

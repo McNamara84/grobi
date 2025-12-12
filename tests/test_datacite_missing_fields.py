@@ -16,7 +16,7 @@ from src.api.datacite_client import DataCiteClient
 @pytest.fixture
 def client():
     """Create a DataCite client for testing."""
-    return DataCiteClient("test_user", "test_password", use_test_api=False)
+    return DataCiteClient("test_user", "test_password", use_test_api=True)
 
 
 @responses.activate
@@ -28,7 +28,7 @@ def test_auto_fill_resource_type_and_publisher(client):
     # Mock initial PUT with schema error
     responses.add(
         responses.PUT,
-        f"https://api.datacite.org/dois/{doi}",
+        f"https://api.test.datacite.org/dois/{doi}",
         json={
             "errors": [{
                 "title": "DOI 10.1594/gfz.test.001: Schema http://datacite.org/schema/kernel-3 is no longer supported"
@@ -40,7 +40,7 @@ def test_auto_fill_resource_type_and_publisher(client):
     # Mock GET for metadata (missing resourceTypeGeneral and publisher)
     responses.add(
         responses.GET,
-        f"https://api.datacite.org/dois/{doi}",
+        f"https://api.test.datacite.org/dois/{doi}",
         json={
             "data": {
                 "attributes": {
@@ -62,7 +62,7 @@ def test_auto_fill_resource_type_and_publisher(client):
     # Mock successful PUT with auto-filled fields
     responses.add(
         responses.PUT,
-        f"https://api.datacite.org/dois/{doi}",
+        f"https://api.test.datacite.org/dois/{doi}",
         json={"data": {"id": doi}},
         status=200
     )
@@ -94,7 +94,7 @@ def test_missing_title_cannot_auto_fill(client):
     # Mock initial PUT with schema error
     responses.add(
         responses.PUT,
-        f"https://api.datacite.org/dois/{doi}",
+        f"https://api.test.datacite.org/dois/{doi}",
         json={
             "errors": [{
                 "title": "DOI 10.1594/gfz.test.002: Schema http://datacite.org/schema/kernel-3 is no longer supported"
@@ -106,7 +106,7 @@ def test_missing_title_cannot_auto_fill(client):
     # Mock GET for metadata (missing title)
     responses.add(
         responses.GET,
-        f"https://api.datacite.org/dois/{doi}",
+        f"https://api.test.datacite.org/dois/{doi}",
         json={
             "data": {
                 "attributes": {
@@ -138,7 +138,7 @@ def test_missing_creators_cannot_auto_fill(client):
     # Mock initial PUT with schema error
     responses.add(
         responses.PUT,
-        f"https://api.datacite.org/dois/{doi}",
+        f"https://api.test.datacite.org/dois/{doi}",
         json={
             "errors": [{
                 "title": "DOI 10.1594/gfz.test.003: Schema http://datacite.org/schema/kernel-3 is no longer supported"
@@ -150,7 +150,7 @@ def test_missing_creators_cannot_auto_fill(client):
     # Mock GET for metadata (missing creators)
     responses.add(
         responses.GET,
-        f"https://api.datacite.org/dois/{doi}",
+        f"https://api.test.datacite.org/dois/{doi}",
         json={
             "data": {
                 "attributes": {
@@ -182,7 +182,7 @@ def test_missing_title_and_creators(client):
     # Mock initial PUT with schema error
     responses.add(
         responses.PUT,
-        f"https://api.datacite.org/dois/{doi}",
+        f"https://api.test.datacite.org/dois/{doi}",
         json={
             "errors": [{
                 "title": "DOI 10.1594/gfz.test.004: Schema http://datacite.org/schema/kernel-3 is no longer supported"
@@ -194,7 +194,7 @@ def test_missing_title_and_creators(client):
     # Mock GET for metadata (missing both title and creators)
     responses.add(
         responses.GET,
-        f"https://api.datacite.org/dois/{doi}",
+        f"https://api.test.datacite.org/dois/{doi}",
         json={
             "data": {
                 "attributes": {
@@ -226,7 +226,7 @@ def test_doi_with_no_schema_version_gets_upgraded(client):
     # Mock initial PUT with "No matching global declaration" error (missing schemaVersion)
     responses.add(
         responses.PUT,
-        f"https://api.datacite.org/dois/{doi}",
+        f"https://api.test.datacite.org/dois/{doi}",
         json={
             "errors": [{
                 "title": "DOI 10.1594/gfz.test.005: No matching global declaration available for the validation root. at line 2, column 0"
@@ -238,7 +238,7 @@ def test_doi_with_no_schema_version_gets_upgraded(client):
     # Mock GET for metadata (DOI with all required fields but missing schemaVersion)
     responses.add(
         responses.GET,
-        f"https://api.datacite.org/dois/{doi}",
+        f"https://api.test.datacite.org/dois/{doi}",
         json={
             "data": {
                 "attributes": {
@@ -257,7 +257,7 @@ def test_doi_with_no_schema_version_gets_upgraded(client):
     # Mock successful PUT after adding schemaVersion
     responses.add(
         responses.PUT,
-        f"https://api.datacite.org/dois/{doi}",
+        f"https://api.test.datacite.org/dois/{doi}",
         json={"data": {"id": doi}},
         status=200
     )
@@ -273,3 +273,4 @@ def test_doi_with_no_schema_version_gets_upgraded(client):
     retry_request = responses.calls[2].request
     payload = json.loads(retry_request.body)
     assert payload['data']['attributes']['schemaVersion'] == 'http://datacite.org/schema/kernel-4'
+

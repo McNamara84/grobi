@@ -156,8 +156,8 @@ class TestDataCiteClientUpdate:
             assert "Validierungsfehler" in message
             assert "Invalid URL format" in message
     
-    def test_update_doi_url_deprecated_schema_error(self, client):
-        """Test update with deprecated schema error tries automatic upgrade but fails if no resourceTypeGeneral."""
+    def test_update_doi_url_deprecated_schema_auto_upgrade_with_autofill(self, client):
+        """Test update with deprecated schema automatically upgrades to kernel-4 and auto-fills resourceTypeGeneral."""
         # First PUT: Returns schema deprecation error
         mock_put_response = Mock()
         mock_put_response.status_code = 422
