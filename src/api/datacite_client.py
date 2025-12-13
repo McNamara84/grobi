@@ -8047,3 +8047,136 @@ class DataCiteClient:
         else:
             logger.info(f"DOI {doi} is NOT compatible with Schema 4: {missing_fields}")
         return is_compatible, missing_fields
+
+    def upgrade_doi_to_schema_4(self, doi: str, migrate_funders: bool = True) -> Tuple[bool, str]:
+        """
+        Upgrade a DOI's schema version to Schema 4.6.
+        
+        This method:
+        1. Fetches current metadata
+        2. Updates schemaVersion to "http://datacite.org/schema/kernel-4"
+        3. Migrates Funder contributors to fundingReferences (if present)
+        4. Sends the update to DataCite API
+        
+        Args:
+            doi: The DOI identifier to upgrade
+            migrate_funders: Whether to migrate Funder contributors to fundingReferences
+            
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        logger.info(f"Upgrading DOI {doi} to Schema 4")
+        
+        # Fetch current metadata
+        try:
+            metadata = self.get_doi_metadata(doi)
+            if not metadata:
+                return False, f"Metadaten für DOI {doi} konnten nicht abgerufen werden"
+        except Exception as e:
+            return False, f"Fehler beim Abrufen der Metadaten: {str(e)}"
+        
+        attributes = metadata.get("data", {}).get("attributes", {})
+        
+        # Build update payload
+        update_attributes = {
+            "schemaVersion": "http://datacite.org/schema/kernel-4"
+        }
+        
+        # Handle Funder contributors migration
+        if migrate_funders:
+            contributors = attributes.get("contributors", [])
+            funding_references = copy.deepcopy(attributes.get("fundingReferences", []))
+            
+            non_funder_contributors = []
+            funders_migrated = 0
+            
+            for contributor in contributors:
+                if contributor.get("contributorType") == "Funder":
+                    # Migrate to fundingReference
+                    funding_ref = {"funderName": contributor.get("name", "")}
+                    
+                    # Copy name identifier if present
+                    name_identifiers = contributor.get("nameIdentifiers", [])
+                    if name_identifiers:
+                        identifier = name_identifiers[0]
+                        if identifier.get("nameIdentifier"):
+                            funding_ref["funderIdentifier"] = identifier.get("nameIdentifier", "")
+                        if identifier.get("nameIdentifierScheme"):
+                            funding_ref["funderIdentifierType"] = identifier.get("nameIdentifierScheme", "")
+                    
+                    funding_references.append(funding_ref)
+                    funders_migrated += 1
+                else:
+                    non_funder_contributors.append(contributor)
+            
+            # Include updated contributors (without Funders)
+            if contributors:  # Only include if there were contributors originally
+                update_attributes["contributors"] = non_funder_contributors
+            
+            # Include fundingReferences if any exist
+            if funding_references:
+                update_attributes["fundingReferences"] = funding_references
+            
+            if funders_migrated > 0:
+                logger.info(f"Migrated {funders_migrated} Funder contributor(s) to fundingReferences")
+        
+        # Build the update payload
+        payload = {
+            "data": {
+                "type": "dois",
+                "attributes": update_attributes
+            }
+        }
+        
+        # Send update to DataCite API
+        url = f"{self.base_url}/dois/{doi}"
+        
+        try:
+            response = requests.put(
+                url,
+                auth=self.auth,
+                json=payload,
+                timeout=self.TIMEOUT,
+                headers={
+                    "Content-Type": "application/vnd.api+json",
+                    "Accept": "application/vnd.api+json"
+                }
+            )
+            
+            if response.status_code == 200:
+                msg = f"Schema auf 4.6 aktualisiert"
+                if migrate_funders and funders_migrated > 0:
+                    msg += f" ({funders_migrated} Funder migriert)"
+                logger.info(f"Successfully upgraded DOI {doi} to Schema 4")
+                return True, msg
+            
+            elif response.status_code == 401:
+                return False, "Authentifizierung fehlgeschlagen"
+            
+            elif response.status_code == 403:
+                return False, "Keine Berechtigung für diesen DOI"
+            
+            elif response.status_code == 404:
+                return False, "DOI nicht gefunden"
+            
+            elif response.status_code == 422:
+                # Validation error - try to extract details
+                try:
+                    error_data = response.json()
+                    errors = error_data.get("errors", [])
+                    if errors:
+                        error_msg = "; ".join([e.get("title", str(e)) for e in errors])
+                        return False, f"Validierungsfehler: {error_msg}"
+                except:
+                    pass
+                return False, f"Validierungsfehler (HTTP 422)"
+            
+            else:
+                return False, f"HTTP {response.status_code}: {response.text[:200]}"
+                
+        except requests.exceptions.Timeout:
+            return False, "Zeitüberschreitung bei API-Anfrage"
+        except requests.exceptions.ConnectionError:
+            return False, "Verbindungsfehler zur DataCite API"
+        except Exception as e:
+            return False, f"Unerwarteter Fehler: {str(e)}"
