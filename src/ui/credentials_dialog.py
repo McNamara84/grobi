@@ -66,6 +66,10 @@ class CredentialsDialog(QDialog):
             self.setWindowTitle("Autoren-Metadaten aktualisieren")
         elif mode == "update_publisher":
             self.setWindowTitle("Publisher-Metadaten aktualisieren")
+        elif mode == "schema_check":
+            self.setWindowTitle("Schema-Kompatibilität überprüfen")
+        elif mode == "schema_upgrade":
+            self.setWindowTitle("Schema-Upgrade v2/v3 ⇒ v4.6")
         else:
             self.setWindowTitle("DataCite Anmeldung")
         
@@ -108,6 +112,17 @@ class CredentialsDialog(QDialog):
             description_text = (
                 "Gib deine DataCite Zugangsdaten ein und wähle eine CSV-Datei "
                 "mit DOIs und Contributor-Metadaten aus."
+            )
+        elif self.mode == "schema_check":
+            description_text = (
+                "Gib deine DataCite Zugangsdaten ein, um DOIs mit alten Schema-Versionen "
+                "auf Kompatibilität mit Schema 4 zu überprüfen."
+            )
+        elif self.mode == "schema_upgrade":
+            description_text = (
+                "Gib deine DataCite Zugangsdaten ein, um DOIs mit Schema v2/v3 "
+                "auf Schema v4.6 zu aktualisieren. DOIs ohne erforderliche Pflichtfelder "
+                "werden mit Begründung protokolliert."
             )
         else:
             description_text = "Gib deine DataCite Zugangsdaten ein, um DOIs abzurufen."
@@ -213,11 +228,13 @@ class CredentialsDialog(QDialog):
         button_box = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )
-        button_box.accepted.connect(self._validate_and_accept)
         button_box.rejected.connect(self.reject)
         
         # Customize button text based on mode
         self.ok_button = button_box.button(QDialogButtonBox.Ok)
+        # Connect OK button click directly (more reliable than accepted signal)
+        self.ok_button.clicked.connect(self._validate_and_accept)
+        
         if self.mode == "update":
             self.ok_button.setText("Landing Page URLs aktualisieren")
             # Disable button initially for update mode (needs CSV file)
@@ -234,6 +251,14 @@ class CredentialsDialog(QDialog):
             self.ok_button.setText("Contributor-Metadaten aktualisieren")
             # Disable button initially for update_contributors mode (needs CSV file)
             self.ok_button.setEnabled(False)
+        elif self.mode == "schema_check":
+            self.ok_button.setText("Schema-Check starten")
+            # Disable button initially for schema_check mode (needs credentials)
+            self.ok_button.setEnabled(False)
+        elif self.mode == "schema_upgrade":
+            self.ok_button.setText("Schema-Upgrade starten")
+            # Disable button initially for schema_upgrade mode (needs credentials)
+            self.ok_button.setEnabled(False)
         else:
             self.ok_button.setText("DOIs holen")
         
@@ -242,18 +267,19 @@ class CredentialsDialog(QDialog):
         
         layout.addWidget(button_box)
         
-        # Pre-select last used account AFTER ok_button is created
+        # Connect input changes to validation for update and schema check modes
+        # IMPORTANT: Connect BEFORE pre-selecting account so textChanged triggers
+        if self.mode in ["update", "update_authors", "update_publisher", "update_contributors", "schema_check", "schema_upgrade"]:
+            self.username_input.textChanged.connect(self._check_update_ready)
+            self.password_input.textChanged.connect(self._check_update_ready)
+        
+        # Pre-select last used account AFTER ok_button is created AND signals are connected
         # (needs ok_button for _check_update_ready in update modes)
         if self.credential_manager and self.saved_accounts:
             self._preselect_last_used_account()
         
         # Set focus to username field
         self.username_input.setFocus()
-        
-        # Connect input changes to validation for update modes
-        if self.mode in ["update", "update_authors", "update_publisher", "update_contributors"]:
-            self.username_input.textChanged.connect(self._check_update_ready)
-            self.password_input.textChanged.connect(self._check_update_ready)
         
         # Log dialog initialization
         logger.info(f"CredentialsDialog initialized: mode={self.mode}, ok_button_enabled={self.ok_button.isEnabled()}")
@@ -315,24 +341,38 @@ class CredentialsDialog(QDialog):
     
     def _validate_and_accept(self):
         """Validate input before accepting the dialog."""
+        logger.info("_validate_and_accept aufgerufen")
+        
         username = self.username_input.text().strip()
         password = self.password_input.text().strip()
         
+        logger.info(f"Username: '{username}', Password field text: '{password[:3] if password else '(leer)'}...'")
+        
+        # For saved credentials, password field shows masked text but _loaded_password has the real password
+        has_loaded_password = hasattr(self, '_loaded_password') and self._loaded_password
+        has_password = bool(password) or has_loaded_password
+        
+        logger.info(f"has_loaded_password: {has_loaded_password}, has_password: {has_password}")
+        
         if not username:
+            logger.info("Validierung fehlgeschlagen: Username fehlt")
             self.username_input.setFocus()
             self.username_input.setStyleSheet(
                 "QLineEdit { border: 2px solid #d32f2f; }"
             )
             return
         
-        if not password:
+        if not has_password:
+            logger.info("Validierung fehlgeschlagen: Passwort fehlt")
             self.password_input.setFocus()
             self.password_input.setStyleSheet(
                 "QLineEdit { border: 2px solid #d32f2f; }"
             )
             return
         
+        logger.info("Validierung OK - rufe self.accept() auf")
         self.accept()
+        logger.info(f"Nach self.accept(): result()={self.result()}, Accepted={QDialog.Accepted}")
     
     def _browse_csv_file(self):
         """Open file dialog to select CSV file."""
@@ -363,6 +403,13 @@ class CredentialsDialog(QDialog):
             has_csv = self.csv_file_path is not None
             
             self.ok_button.setEnabled(has_credentials and has_csv)
+        elif self.mode in ["schema_check", "schema_upgrade"]:
+            # Schema check/upgrade only needs credentials (no CSV file)
+            has_credentials = (
+                bool(self.username_input.text().strip()) and 
+                bool(self.password_input.text().strip())
+            )
+            self.ok_button.setEnabled(has_credentials)
     
     def _preselect_last_used_account(self):
         """Pre-select the last used account if available."""
@@ -521,6 +568,20 @@ class CredentialsDialog(QDialog):
         
         # Reset to "Neue Zugangsdaten"
         self.account_selector.setCurrentIndex(0)
+    
+    def get_username(self) -> str:
+        """Get the entered username."""
+        return self.username_input.text().strip()
+    
+    def get_password(self) -> str:
+        """Get the password - uses loaded password for saved accounts, otherwise input field."""
+        if self._loaded_password:
+            return self._loaded_password
+        return self.password_input.text().strip()
+    
+    def get_use_test_api(self) -> bool:
+        """Get whether to use test API."""
+        return self.test_api_checkbox.isChecked()
     
     def is_new_credentials(self) -> bool:
         """

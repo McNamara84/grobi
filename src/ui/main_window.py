@@ -23,6 +23,8 @@ from src.workers.update_worker import UpdateWorker
 from src.workers.authors_update_worker import AuthorsUpdateWorker
 from src.workers.publisher_update_worker import PublisherUpdateWorker
 from src.workers.contributors_update_worker import ContributorsUpdateWorker
+from src.workers.schema_check_worker import SchemaCheckWorker
+from src.workers.schema_upgrade_worker import SchemaUpgradeAnalyzeWorker, SchemaUpgradeExecuteWorker, DOIUpgradeInfo
 
 
 logger = logging.getLogger(__name__)
@@ -575,6 +577,34 @@ class MainWindow(QMainWindow):
         
         downloads_group.setLayout(downloads_layout)
         layout.addWidget(downloads_group)
+        
+        # GroupBox 6: Schema Upgrade Check
+        schema_group = QGroupBox("🔍 Schema-Versionen")
+        schema_layout = QVBoxLayout()
+        schema_layout.setSpacing(10)
+        
+        # Info label
+        schema_info = QLabel(
+            "Überprüfe DOIs auf Kompatibilität mit Schema 4.6 oder führe ein Upgrade durch.\n"
+            "DOIs mit fehlenden Pflichtfeldern werden separat gelistet."
+        )
+        schema_info.setWordWrap(True)
+        schema_layout.addWidget(schema_info)
+        
+        # Button for schema check workflow
+        self.schema_check_btn = QPushButton("🔍 Schema-Kompatibilität überprüfen")
+        self.schema_check_btn.setMinimumHeight(40)
+        self.schema_check_btn.clicked.connect(self._on_schema_check_clicked)
+        schema_layout.addWidget(self.schema_check_btn)
+        
+        # Button for schema upgrade workflow
+        self.schema_upgrade_btn = QPushButton("⬆️ Schema-Upgrade v2/v3 ⇒ v4.6 durchführen")
+        self.schema_upgrade_btn.setMinimumHeight(40)
+        self.schema_upgrade_btn.clicked.connect(self._on_schema_upgrade_clicked)
+        schema_layout.addWidget(self.schema_upgrade_btn)
+        
+        schema_group.setLayout(schema_layout)
+        layout.addWidget(schema_group)
         
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -2865,6 +2895,440 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._log(f"[WARNUNG] Log-Datei konnte nicht erstellt werden: {str(e)}")
     
+    # ==================== SCHEMA CHECK METHODS ====================
+    
+    def _on_schema_check_clicked(self):
+        """Handle schema check button click."""
+        from PySide6.QtWidgets import QFileDialog
+        from src.ui.credentials_dialog import CredentialsDialog
+        
+        self._log("Schema-Check Button geklickt")
+        
+        # Show credentials dialog in schema check mode
+        dialog = CredentialsDialog(self, mode="schema_check")
+        
+        self._log("Credentials Dialog wird angezeigt...")
+        if dialog.exec():
+            username = dialog.get_username()
+            password = dialog.get_password()
+            use_test_api = dialog.get_use_test_api()
+            
+            self._log(f"Credentials erhalten: Username={username}, Test-API={use_test_api}")
+            
+            # Ask user where to save the results
+            default_filename = f"{username}_schema_check.csv"
+            filepath, _ = QFileDialog.getSaveFileName(
+                self,
+                "Schema-Check Ergebnisse speichern",
+                default_filename,
+                "CSV Files (*.csv)"
+            )
+            
+            self._log(f"Speicherpfad ausgewählt: {filepath}")
+            if filepath:
+                self._start_schema_check(username, password, use_test_api, filepath)
+            else:
+                self._log("[ABBRUCH] Kein Speicherpfad ausgewählt")
+        else:
+            self._log("[ABBRUCH] Credentials Dialog abgebrochen")
+    
+    def _start_schema_check(self, username: str, password: str, use_test_api: bool, output_path: str):
+        """
+        Start the schema check worker.
+        
+        Args:
+            username: DataCite username
+            password: DataCite password
+            use_test_api: Whether to use test API
+            output_path: Path where to save results CSV
+        """
+        self._log("Starte Schema-Kompatibilitätsprüfung...")
+        self._log(f"DEBUG: Worker wird erstellt mit Username={username}, Test-API={use_test_api}")
+        
+        # Create worker
+        self.schema_check_worker = SchemaCheckWorker(username, password, use_test_api)
+        self.schema_check_output_path = output_path
+        self.schema_check_username = username
+        
+        self._log("DEBUG: Worker erstellt, verbinde Signals...")
+        
+        # Connect signals
+        self.schema_check_worker.progress_update.connect(self._log)
+        self.schema_check_worker.finished.connect(self._on_schema_check_finished)
+        self.schema_check_worker.error_occurred.connect(self._on_schema_check_error)
+        
+        self._log("DEBUG: Erstelle Thread...")
+        
+        # Create thread
+        self.schema_check_thread = QThread()
+        self.schema_check_worker.moveToThread(self.schema_check_thread)
+        
+        self._log("DEBUG: Verbinde Thread-Signals...")
+        
+        # Connect thread signals
+        self.schema_check_thread.started.connect(self.schema_check_worker.run)
+        self.schema_check_worker.finished.connect(self.schema_check_thread.quit)
+        self.schema_check_worker.error_occurred.connect(self.schema_check_thread.quit)
+        
+        # Clean up after worker finishes or errors
+        self.schema_check_worker.finished.connect(self.schema_check_worker.deleteLater)
+        self.schema_check_worker.error_occurred.connect(self.schema_check_worker.deleteLater)
+        
+        # Clean up thread when it finishes
+        self.schema_check_thread.finished.connect(self.schema_check_thread.deleteLater)
+        self.schema_check_thread.finished.connect(self._cleanup_schema_check_worker)
+        
+        self._log("DEBUG: Starte Thread...")
+        
+        # Start thread
+        self.schema_check_thread.start()
+        
+        self._log("DEBUG: Thread gestartet, deaktiviere Button...")
+        
+        # Disable button during check
+        self.schema_check_btn.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        
+        self._log("DEBUG: Schema-Check initialisiert und gestartet")
+    
+    def _on_schema_check_finished(self, incompatible_dois: list):
+        """
+        Called when schema check has finished.
+        
+        Args:
+            incompatible_dois: List of tuples (DOI, schema_version, missing_fields, reason)
+        """
+        from src.utils.csv_exporter import export_schema_check_results_to_csv
+        
+        if not incompatible_dois:
+            self._log("[OK] Alle DOIs sind kompatibel mit Schema 4 oder verwenden bereits Schema 4")
+            QMessageBox.information(
+                self,
+                "Schema-Check abgeschlossen",
+                "Alle DOIs sind kompatibel mit Schema 4 oder verwenden bereits Schema 4.\n\n"
+                "Es wurden keine inkompatiblen DOIs gefunden."
+            )
+            return
+        
+        # Export results to CSV
+        try:
+            # Get directory from output path
+            output_dir = str(Path(self.schema_check_output_path).parent)
+            
+            csv_path = export_schema_check_results_to_csv(
+                incompatible_dois,
+                self.schema_check_username,
+                output_dir
+            )
+            
+            self._log(f"[OK] Schema-Check abgeschlossen. Ergebnisse gespeichert: {csv_path}")
+            
+            QMessageBox.information(
+                self,
+                "Schema-Check abgeschlossen",
+                f"{len(incompatible_dois)} DOIs sind NICHT kompatibel mit Schema 4.\n\n"
+                f"Die Ergebnisse wurden gespeichert:\n{Path(csv_path).name}\n\n"
+                f"Die CSV-Datei enthält Details zu fehlenden Pflichtfeldern."
+            )
+            
+        except Exception as e:
+            self._log(f"[FEHLER] CSV-Export fehlgeschlagen: {e}")
+            QMessageBox.critical(
+                self,
+                "Fehler",
+                f"Fehler beim Speichern der Ergebnisse:\n{e}"
+            )
+    
+    def _on_schema_check_error(self, error_msg: str):
+        """Called when schema check failed."""
+        self._log(f"[FEHLER] {error_msg}")
+        QMessageBox.critical(self, "Fehler", error_msg)
+    
+    def _cleanup_schema_check_worker(self):
+        """Clean up schema check worker and thread."""
+        self.progress_bar.setVisible(False)
+        self.schema_check_btn.setEnabled(True)
+        
+        # Reset references
+        self.schema_check_thread = None
+        self.schema_check_worker = None
+        self.schema_check_output_path = None
+        self.schema_check_username = None
+        
+        self._log("Bereit für nächsten Vorgang.")
+    
+    # ==================== SCHEMA UPGRADE METHODS ====================
+    
+    def _on_schema_upgrade_clicked(self):
+        """Handle schema upgrade button click."""
+        from src.ui.credentials_dialog import CredentialsDialog
+        
+        self._log("Schema-Upgrade Button geklickt")
+        
+        # Show credentials dialog
+        dialog = CredentialsDialog(self, mode="schema_upgrade")
+        
+        if dialog.exec():
+            username = dialog.get_username()
+            password = dialog.get_password()
+            use_test_api = dialog.get_use_test_api()
+            
+            self._log(f"Starte Schema-Upgrade Analyse für '{username}'...")
+            self._start_schema_upgrade_analysis(username, password, use_test_api)
+        else:
+            self._log("[ABBRUCH] Schema-Upgrade abgebrochen")
+    
+    def _start_schema_upgrade_analysis(self, username: str, password: str, use_test_api: bool):
+        """
+        Start the schema upgrade analysis worker.
+        
+        Args:
+            username: DataCite username
+            password: DataCite password
+            use_test_api: Whether to use test API
+        """
+        # Store credentials for later use during upgrade
+        self._upgrade_credentials = {
+            'username': username,
+            'password': password,
+            'use_test_api': use_test_api
+        }
+        
+        # Create worker
+        self.schema_upgrade_analyze_worker = SchemaUpgradeAnalyzeWorker(username, password, use_test_api)
+        
+        # Connect signals
+        self.schema_upgrade_analyze_worker.progress_update.connect(self._log)
+        self.schema_upgrade_analyze_worker.analysis_complete.connect(self._on_schema_upgrade_analysis_complete)
+        self.schema_upgrade_analyze_worker.error_occurred.connect(self._on_schema_upgrade_error)
+        
+        # Create thread
+        self.schema_upgrade_analyze_thread = QThread()
+        self.schema_upgrade_analyze_worker.moveToThread(self.schema_upgrade_analyze_thread)
+        
+        # Connect thread signals
+        self.schema_upgrade_analyze_thread.started.connect(self.schema_upgrade_analyze_worker.run)
+        self.schema_upgrade_analyze_worker.analysis_complete.connect(self.schema_upgrade_analyze_thread.quit)
+        self.schema_upgrade_analyze_worker.error_occurred.connect(self.schema_upgrade_analyze_thread.quit)
+        
+        # Clean up
+        self.schema_upgrade_analyze_worker.analysis_complete.connect(self.schema_upgrade_analyze_worker.deleteLater)
+        self.schema_upgrade_analyze_worker.error_occurred.connect(self.schema_upgrade_analyze_worker.deleteLater)
+        self.schema_upgrade_analyze_thread.finished.connect(self.schema_upgrade_analyze_thread.deleteLater)
+        
+        # Start thread
+        self.schema_upgrade_analyze_thread.start()
+        
+        # Disable buttons during analysis
+        self.schema_check_btn.setEnabled(False)
+        self.schema_upgrade_btn.setEnabled(False)
+        self.progress_bar.setVisible(True)
+    
+    def _on_schema_upgrade_analysis_complete(self, upgradeable: list, not_upgradeable: list, already_current: list):
+        """
+        Called when schema upgrade analysis is complete.
+        
+        Args:
+            upgradeable: List of DOIUpgradeInfo that can be upgraded
+            not_upgradeable: List of DOIUpgradeInfo that cannot be upgraded
+            already_current: List of DOIUpgradeInfo already on current schema
+        """
+        # Re-enable buttons
+        self.schema_check_btn.setEnabled(True)
+        self.schema_upgrade_btn.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        
+        # Show preview dialog
+        from src.ui.schema_upgrade_dialog import SchemaUpgradePreviewDialog
+        
+        dialog = SchemaUpgradePreviewDialog(
+            upgradeable=upgradeable,
+            not_upgradeable=not_upgradeable,
+            already_current=already_current,
+            parent=self
+        )
+        
+        # Connect upgrade signal
+        dialog.upgrade_confirmed.connect(self._on_schema_upgrade_confirmed)
+        
+        dialog.exec()
+    
+    def _on_schema_upgrade_confirmed(self, dois_to_upgrade: list):
+        """
+        Called when user confirms the upgrade.
+        
+        Args:
+            dois_to_upgrade: List of DOIUpgradeInfo to upgrade
+        """
+        if not dois_to_upgrade:
+            self._log("[INFO] Keine DOIs zum Upgrade ausgewählt")
+            return
+        
+        self._log(f"Starte Schema-Upgrade für {len(dois_to_upgrade)} DOIs...")
+        
+        # Create execute worker
+        self.schema_upgrade_execute_worker = SchemaUpgradeExecuteWorker(
+            username=self._upgrade_credentials['username'],
+            password=self._upgrade_credentials['password'],
+            use_test_api=self._upgrade_credentials['use_test_api'],
+            dois_to_upgrade=dois_to_upgrade
+        )
+        
+        # Connect signals
+        self.schema_upgrade_execute_worker.progress_update.connect(self._log)
+        self.schema_upgrade_execute_worker.doi_upgraded.connect(self._on_doi_upgraded)
+        self.schema_upgrade_execute_worker.upgrade_complete.connect(self._on_schema_upgrade_complete)
+        self.schema_upgrade_execute_worker.error_occurred.connect(self._on_schema_upgrade_error)
+        
+        # Create thread
+        self.schema_upgrade_execute_thread = QThread()
+        self.schema_upgrade_execute_worker.moveToThread(self.schema_upgrade_execute_thread)
+        
+        # Connect thread signals
+        self.schema_upgrade_execute_thread.started.connect(self.schema_upgrade_execute_worker.run)
+        self.schema_upgrade_execute_worker.upgrade_complete.connect(self.schema_upgrade_execute_thread.quit)
+        self.schema_upgrade_execute_worker.error_occurred.connect(self.schema_upgrade_execute_thread.quit)
+        
+        # Clean up
+        self.schema_upgrade_execute_worker.upgrade_complete.connect(self.schema_upgrade_execute_worker.deleteLater)
+        self.schema_upgrade_execute_worker.error_occurred.connect(self.schema_upgrade_execute_worker.deleteLater)
+        self.schema_upgrade_execute_thread.finished.connect(self.schema_upgrade_execute_thread.deleteLater)
+        self.schema_upgrade_execute_thread.finished.connect(self._cleanup_schema_upgrade_worker)
+        
+        # Start thread
+        self.schema_upgrade_execute_thread.start()
+        
+        # Disable buttons during upgrade
+        self.schema_check_btn.setEnabled(False)
+        self.schema_upgrade_btn.setEnabled(False)
+        self.progress_bar.setVisible(True)
+    
+    def _on_doi_upgraded(self, doi: str, success: bool, message: str):
+        """
+        Called after each DOI is upgraded.
+        
+        Args:
+            doi: The DOI that was processed
+            success: Whether the upgrade was successful
+            message: Success or error message
+        """
+        # This is mainly for real-time logging, already handled in worker
+        pass
+    
+    def _on_schema_upgrade_complete(self, successful: list, failed: list):
+        """
+        Called when all upgrades are complete.
+        
+        Args:
+            successful: List of (doi, message) tuples for successful upgrades
+            failed: List of (doi, error_message) tuples for failed upgrades
+        """
+        # Re-enable buttons
+        self.schema_check_btn.setEnabled(True)
+        self.schema_upgrade_btn.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        
+        # Create summary log
+        self._log("=" * 50)
+        self._log("SCHEMA-UPGRADE ZUSAMMENFASSUNG")
+        self._log("=" * 50)
+        self._log(f"Erfolgreich: {len(successful)}")
+        self._log(f"Fehlgeschlagen: {len(failed)}")
+        
+        if failed:
+            self._log("")
+            self._log("Fehlgeschlagene DOIs:")
+            for doi, error in failed:
+                self._log(f"  - {doi}: {error}")
+        
+        # Save log file
+        self._save_schema_upgrade_log(successful, failed)
+        
+        # Show summary dialog
+        if failed:
+            QMessageBox.warning(
+                self,
+                "Schema-Upgrade abgeschlossen",
+                f"Upgrade abgeschlossen.\n\n"
+                f"Erfolgreich: {len(successful)}\n"
+                f"Fehlgeschlagen: {len(failed)}\n\n"
+                f"Details wurden in die Log-Datei geschrieben."
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Schema-Upgrade abgeschlossen",
+                f"Alle {len(successful)} DOIs wurden erfolgreich auf Schema 4.6 aktualisiert!"
+            )
+    
+    def _on_schema_upgrade_error(self, error_msg: str):
+        """Called when schema upgrade failed."""
+        self._log(f"[FEHLER] {error_msg}")
+        self.schema_check_btn.setEnabled(True)
+        self.schema_upgrade_btn.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        QMessageBox.critical(self, "Fehler", error_msg)
+    
+    def _cleanup_schema_upgrade_worker(self):
+        """Clean up schema upgrade worker and thread."""
+        self.progress_bar.setVisible(False)
+        self.schema_check_btn.setEnabled(True)
+        self.schema_upgrade_btn.setEnabled(True)
+        
+        # Reset references
+        self.schema_upgrade_execute_thread = None
+        self.schema_upgrade_execute_worker = None
+        self._upgrade_credentials = None
+        
+        self._log("Bereit für nächsten Vorgang.")
+    
+    def _save_schema_upgrade_log(self, successful: list, failed: list):
+        """
+        Save schema upgrade results to log file.
+        
+        Args:
+            successful: List of (doi, message) tuples
+            failed: List of (doi, error_message) tuples
+        """
+        from datetime import datetime
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_filename = f"schema_upgrade_log_{timestamp}.txt"
+        
+        try:
+            with open(log_filename, 'w', encoding='utf-8') as f:
+                f.write("=" * 70 + "\n")
+                f.write("GROBI Schema-Upgrade Log\n")
+                f.write(f"Datum: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("=" * 70 + "\n\n")
+                
+                f.write(f"Erfolgreich: {len(successful)}\n")
+                f.write(f"Fehlgeschlagen: {len(failed)}\n\n")
+                
+                if successful:
+                    f.write("=" * 70 + "\n")
+                    f.write("ERFOLGREICH AKTUALISIERTE DOIs:\n")
+                    f.write("=" * 70 + "\n")
+                    for doi, message in successful:
+                        f.write(f"  ✓ {doi}: {message}\n")
+                    f.write("\n")
+                
+                if failed:
+                    f.write("=" * 70 + "\n")
+                    f.write("FEHLGESCHLAGENE DOIs:\n")
+                    f.write("=" * 70 + "\n")
+                    for doi, error in failed:
+                        f.write(f"  ✗ {doi}\n")
+                        f.write(f"    Fehler: {error}\n")
+                    f.write("\n")
+                
+                f.write("=" * 70 + "\n")
+            
+            self._log(f"[OK] Log-Datei erstellt: {log_filename}")
+            
+        except Exception as e:
+            self._log(f"[WARNUNG] Log-Datei konnte nicht erstellt werden: {str(e)}")
+    
     # ==================== DOWNLOAD URLs METHODS ====================
     
     def _on_export_download_urls_clicked(self):
@@ -3065,5 +3529,29 @@ class MainWindow(QMainWindow):
             self._log("Warte auf Abschluss des Download-URL Exports...")
             self.download_url_thread.quit()
             self.download_url_thread.wait(3000)  # Wait max 3 seconds
+        
+        # If schema check thread is running, stop worker and wait for it to finish
+        if hasattr(self, 'schema_check_thread') and self.schema_check_thread is not None and self.schema_check_thread.isRunning():
+            self._log("Warte auf Abschluss des Schema-Checks...")
+            if self.schema_check_worker is not None:
+                self.schema_check_worker.stop()
+            self.schema_check_thread.quit()
+            self.schema_check_thread.wait(3000)  # Wait max 3 seconds
+        
+        # If schema upgrade analyze thread is running, stop worker and wait
+        if hasattr(self, 'schema_upgrade_analyze_thread') and self.schema_upgrade_analyze_thread is not None and self.schema_upgrade_analyze_thread.isRunning():
+            self._log("Warte auf Abschluss der Schema-Upgrade Analyse...")
+            if hasattr(self, 'schema_upgrade_analyze_worker') and self.schema_upgrade_analyze_worker is not None:
+                self.schema_upgrade_analyze_worker.stop()
+            self.schema_upgrade_analyze_thread.quit()
+            self.schema_upgrade_analyze_thread.wait(3000)
+        
+        # If schema upgrade execute thread is running, stop worker and wait
+        if hasattr(self, 'schema_upgrade_execute_thread') and self.schema_upgrade_execute_thread is not None and self.schema_upgrade_execute_thread.isRunning():
+            self._log("Warte auf Abschluss des Schema-Upgrades...")
+            if hasattr(self, 'schema_upgrade_execute_worker') and self.schema_upgrade_execute_worker is not None:
+                self.schema_upgrade_execute_worker.stop()
+            self.schema_upgrade_execute_thread.quit()
+            self.schema_upgrade_execute_thread.wait(3000)
         
         event.accept()
