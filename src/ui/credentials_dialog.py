@@ -68,6 +68,8 @@ class CredentialsDialog(QDialog):
             self.setWindowTitle("Publisher-Metadaten aktualisieren")
         elif mode == "schema_check":
             self.setWindowTitle("Schema-Kompatibilität überprüfen")
+        elif mode == "schema_upgrade":
+            self.setWindowTitle("Schema-Upgrade v2/v3 ⇒ v4.6")
         else:
             self.setWindowTitle("DataCite Anmeldung")
         
@@ -115,6 +117,12 @@ class CredentialsDialog(QDialog):
             description_text = (
                 "Gib deine DataCite Zugangsdaten ein, um DOIs mit alten Schema-Versionen "
                 "auf Kompatibilität mit Schema 4 zu überprüfen."
+            )
+        elif self.mode == "schema_upgrade":
+            description_text = (
+                "Gib deine DataCite Zugangsdaten ein, um DOIs mit Schema v2/v3 "
+                "auf Schema v4.6 zu aktualisieren. DOIs ohne erforderliche Pflichtfelder "
+                "werden mit Begründung protokolliert."
             )
         else:
             description_text = "Gib deine DataCite Zugangsdaten ein, um DOIs abzurufen."
@@ -247,6 +255,10 @@ class CredentialsDialog(QDialog):
             self.ok_button.setText("Schema-Check starten")
             # Disable button initially for schema_check mode (needs credentials)
             self.ok_button.setEnabled(False)
+        elif self.mode == "schema_upgrade":
+            self.ok_button.setText("Schema-Upgrade starten")
+            # Disable button initially for schema_upgrade mode (needs credentials)
+            self.ok_button.setEnabled(False)
         else:
             self.ok_button.setText("DOIs holen")
         
@@ -257,7 +269,7 @@ class CredentialsDialog(QDialog):
         
         # Connect input changes to validation for update and schema check modes
         # IMPORTANT: Connect BEFORE pre-selecting account so textChanged triggers
-        if self.mode in ["update", "update_authors", "update_publisher", "update_contributors", "schema_check"]:
+        if self.mode in ["update", "update_authors", "update_publisher", "update_contributors", "schema_check", "schema_upgrade"]:
             self.username_input.textChanged.connect(self._check_update_ready)
             self.password_input.textChanged.connect(self._check_update_ready)
         
@@ -391,8 +403,8 @@ class CredentialsDialog(QDialog):
             has_csv = self.csv_file_path is not None
             
             self.ok_button.setEnabled(has_credentials and has_csv)
-        elif self.mode == "schema_check":
-            # Schema check only needs credentials (no CSV file)
+        elif self.mode in ["schema_check", "schema_upgrade"]:
+            # Schema check/upgrade only needs credentials (no CSV file)
             has_credentials = (
                 bool(self.username_input.text().strip()) and 
                 bool(self.password_input.text().strip())

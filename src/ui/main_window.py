@@ -3066,7 +3066,7 @@ class MainWindow(QMainWindow):
         self._log("Schema-Upgrade Button geklickt")
         
         # Show credentials dialog
-        dialog = CredentialsDialog(self, mode="schema_check")
+        dialog = CredentialsDialog(self, mode="schema_upgrade")
         
         if dialog.exec():
             username = dialog.get_username()
