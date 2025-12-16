@@ -1099,3 +1099,125 @@ class SumarioPMDClient:
         except pymysql.Error as e:
             logger.error(f"Database error fetching DOIs with downloads: {e}")
             raise DatabaseError(f"Failed to fetch DOIs with downloads: {e}") from e
+
+    def get_file_by_doi_and_filename(self, doi: str, filename: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a file entry by DOI and filename.
+        
+        Args:
+            doi: The DOI identifier (e.g., "10.1594/GFZ.SDDB.1004")
+            filename: The filename (e.g., "data.csv")
+            
+        Returns:
+            Dictionary with file data or None if not found.
+            Keys: resource_id, name, url, description, filemimetype, size
+            
+        Raises:
+            DatabaseError: If query fails
+        """
+        query = """
+            SELECT 
+                f.resource_id,
+                f.name,
+                f.url,
+                f.description,
+                f.filemimetype,
+                f.size
+            FROM file f
+            INNER JOIN resource r ON r.id = f.resource_id
+            WHERE r.identifier = %s AND f.name = %s
+        """
+        
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(query, (doi, filename))
+                    result = cursor.fetchone()
+                    
+                    if result:
+                        logger.debug(f"Found file entry for DOI={doi}, filename={filename}")
+                        return result
+                    else:
+                        logger.debug(f"No file entry found for DOI={doi}, filename={filename}")
+                        return None
+                    
+        except pymysql.Error as e:
+            logger.error(f"Database error fetching file for DOI={doi}, filename={filename}: {e}")
+            raise DatabaseError(f"Failed to fetch file entry: {e}") from e
+
+    def update_file_entry(
+        self, 
+        resource_id: int, 
+        filename: str, 
+        url: Optional[str] = None,
+        description: Optional[str] = None,
+        filemimetype: Optional[str] = None,
+        size: Optional[int] = None
+    ) -> bool:
+        """
+        Update a file entry in the database.
+        
+        Identified by resource_id + filename (unique combination).
+        Only updates fields that are provided (not None).
+        
+        Args:
+            resource_id: Resource ID from resource table
+            filename: Filename (identifies the file within the resource)
+            url: New download URL (optional)
+            description: New description (optional)
+            filemimetype: New MIME type / format (optional)
+            size: New file size in bytes (optional)
+            
+        Returns:
+            True if update was successful, False if no rows affected
+            
+        Raises:
+            DatabaseError: If update fails
+        """
+        # Build dynamic UPDATE query based on provided fields
+        updates = []
+        params = []
+        
+        if url is not None:
+            updates.append("url = %s")
+            params.append(url)
+        if description is not None:
+            updates.append("description = %s")
+            params.append(description)
+        if filemimetype is not None:
+            updates.append("filemimetype = %s")
+            params.append(filemimetype)
+        if size is not None:
+            updates.append("size = %s")
+            params.append(size)
+        
+        if not updates:
+            logger.warning(f"No fields to update for resource_id={resource_id}, filename={filename}")
+            return False
+        
+        # Add WHERE clause parameters
+        params.extend([resource_id, filename])
+        
+        query = f"""
+            UPDATE file
+            SET {', '.join(updates)}
+            WHERE resource_id = %s AND name = %s
+        """
+        
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(query, params)
+                    conn.commit()
+                    
+                    rows_affected = cursor.rowcount
+                    if rows_affected > 0:
+                        logger.info(f"Updated file entry: resource_id={resource_id}, filename={filename}")
+                        return True
+                    else:
+                        logger.warning(f"No rows updated for resource_id={resource_id}, filename={filename}")
+                        return False
+                    
+        except pymysql.Error as e:
+            logger.error(f"Database error updating file: {e}")
+            raise DatabaseError(f"Failed to update file entry: {e}") from e
