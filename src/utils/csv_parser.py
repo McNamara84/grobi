@@ -853,7 +853,7 @@ class CSVParser:
                 missing_headers = [h for h in required_headers if h not in reader.fieldnames]
                 if missing_headers:
                     raise CSVParseError(
-                        f"CSV-Datei fehlen erforderliche Header: {missing_headers}. "
+                        f"In der CSV-Datei fehlen erforderliche Header: {missing_headers}. "
                         f"Gefunden: {reader.fieldnames}"
                     )
                 

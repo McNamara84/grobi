@@ -3080,10 +3080,10 @@ class MainWindow(QMainWindow):
         )
         
         # Connect signals
-        self.download_url_update_worker.progress.connect(self._on_download_url_update_progress)
+        self.download_url_update_worker.progress_update.connect(self._on_download_url_update_progress)
         self.download_url_update_worker.entry_updated.connect(self._on_download_url_entry_updated)
         self.download_url_update_worker.finished.connect(self._on_download_url_update_finished)
-        self.download_url_update_worker.error.connect(self._on_download_url_update_error)
+        self.download_url_update_worker.error_occurred.connect(self._on_download_url_update_error)
         
         # Create thread
         self.download_url_update_thread = QThread()
@@ -3092,11 +3092,11 @@ class MainWindow(QMainWindow):
         # Connect thread signals
         self.download_url_update_thread.started.connect(self.download_url_update_worker.run)
         self.download_url_update_worker.finished.connect(self.download_url_update_thread.quit)
-        self.download_url_update_worker.error.connect(self.download_url_update_thread.quit)
+        self.download_url_update_worker.error_occurred.connect(self.download_url_update_thread.quit)
         
         # Clean up after worker finishes or errors
         self.download_url_update_worker.finished.connect(self.download_url_update_worker.deleteLater)
-        self.download_url_update_worker.error.connect(self.download_url_update_worker.deleteLater)
+        self.download_url_update_worker.error_occurred.connect(self.download_url_update_worker.deleteLater)
         
         # Clean up thread when it finishes
         self.download_url_update_thread.finished.connect(self.download_url_update_thread.deleteLater)

@@ -13,11 +13,11 @@ logger = logging.getLogger(__name__)
 class DownloadURLUpdateWorker(QObject):
     """Worker for updating download URLs in the database from a CSV file."""
     
-    # Signals
-    progress = Signal(int, int, str)  # current, total, message
+    # Signals (following project naming pattern)
+    progress_update = Signal(int, int, str)  # current, total, message
     entry_updated = Signal(str, str, bool, str)  # doi, filename, success, message
     finished = Signal(int, int, int, list, list)  # success_count, error_count, skipped_count, error_list, skipped_details
-    error = Signal(str)  # error_message
+    error_occurred = Signal(str)  # error_message
     
     def __init__(
         self, 
@@ -60,25 +60,25 @@ class DownloadURLUpdateWorker(QObject):
         
         try:
             # Step 1: Parse CSV file
-            self.progress.emit(0, 0, "CSV-Datei wird gelesen...")
+            self.progress_update.emit(0, 0, "CSV-Datei wird gelesen...")
             
             try:
                 entries = CSVParser.parse_download_urls_csv(self.csv_path)
             except (CSVParseError, FileNotFoundError) as e:
                 error_msg = f"Fehler beim Lesen der CSV-Datei: {str(e)}"
                 logger.error(error_msg)
-                self.error.emit(error_msg)
+                self.error_occurred.emit(error_msg)
                 return
             
             if not entries:
-                self.error.emit("Keine gültigen Einträge in der CSV-Datei gefunden.")
+                self.error_occurred.emit("Keine gültigen Einträge in der CSV-Datei gefunden.")
                 return
             
             total_entries = len(entries)
-            self.progress.emit(0, total_entries, f"{total_entries} Einträge gefunden")
+            self.progress_update.emit(0, total_entries, f"{total_entries} Einträge gefunden")
             
             # Step 2: Connect to database
-            self.progress.emit(0, total_entries, "Verbindung zur Datenbank wird hergestellt...")
+            self.progress_update.emit(0, total_entries, "Verbindung zur Datenbank wird hergestellt...")
             
             try:
                 db_client = SumarioPMDClient(
@@ -90,23 +90,23 @@ class DownloadURLUpdateWorker(QObject):
                 
                 success, message = db_client.test_connection()
                 if not success:
-                    self.error.emit(f"Datenbankverbindung fehlgeschlagen: {message}")
+                    self.error_occurred.emit(f"Datenbankverbindung fehlgeschlagen: {message}")
                     return
                     
             except DBConnectionError as e:
-                self.error.emit(f"Datenbankverbindung fehlgeschlagen: {str(e)}")
+                self.error_occurred.emit(f"Datenbankverbindung fehlgeschlagen: {str(e)}")
                 return
             
             # Step 3: Process each entry
             for idx, entry in enumerate(entries, start=1):
                 if self._is_cancelled:
-                    self.progress.emit(idx, total_entries, "Abgebrochen durch Benutzer")
+                    self.progress_update.emit(idx, total_entries, "Abgebrochen durch Benutzer")
                     break
                 
                 doi = entry['doi']
                 filename = entry['filename']
                 
-                self.progress.emit(idx, total_entries, f"Verarbeite {doi} / {filename}")
+                self.progress_update.emit(idx, total_entries, f"Verarbeite {doi} / {filename}")
                 
                 try:
                     result = self._process_entry(db_client, entry)
@@ -139,7 +139,7 @@ class DownloadURLUpdateWorker(QObject):
                     self.entry_updated.emit(doi, filename, False, f"Fehler: {str(e)}")
             
             # Step 4: Emit results
-            self.progress.emit(
+            self.progress_update.emit(
                 total_entries, 
                 total_entries, 
                 f"Fertig: {success_count} aktualisiert, {skipped_count} übersprungen, {error_count} Fehler"
@@ -150,7 +150,7 @@ class DownloadURLUpdateWorker(QObject):
         except Exception as e:
             error_msg = f"Unerwarteter Fehler: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            self.error.emit(error_msg)
+            self.error_occurred.emit(error_msg)
     
     def _process_entry(self, db_client: SumarioPMDClient, entry: Dict) -> str:
         """
