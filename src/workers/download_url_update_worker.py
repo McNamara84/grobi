@@ -43,15 +43,16 @@ class DownloadURLUpdateWorker(QObject):
         self.db_name = db_name
         self.db_user = db_user
         self.db_password = db_password
-        self._is_cancelled = False
+        self._is_running = False
     
-    def cancel(self):
+    def stop(self):
         """Request cancellation of the update process."""
-        self._is_cancelled = True
+        self._is_running = False
         logger.info("Download URL update cancelled by user")
     
     def run(self):
         """Execute the download URL update process."""
+        self._is_running = True
         success_count = 0
         error_count = 0
         skipped_count = 0
@@ -99,7 +100,7 @@ class DownloadURLUpdateWorker(QObject):
             
             # Step 3: Process each entry
             for idx, entry in enumerate(entries, start=1):
-                if self._is_cancelled:
+                if not self._is_running:
                     self.progress_update.emit(idx, total_entries, "Abgebrochen durch Benutzer")
                     break
                 

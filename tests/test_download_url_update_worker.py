@@ -1,7 +1,7 @@
 """Tests for DownloadURLUpdateWorker."""
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import tempfile
 import os
 
@@ -44,13 +44,13 @@ class TestDownloadURLUpdateWorker:
         assert worker.db_name == "test_db"
         assert worker.db_user == "test_user"
         assert worker.db_password == "test_pass"
-        assert worker._is_cancelled is False
+        assert worker._is_running is False
     
-    def test_worker_cancel(self, worker):
-        """Test cancellation request."""
-        assert worker._is_cancelled is False
-        worker.cancel()
-        assert worker._is_cancelled is True
+    def test_worker_stop(self, worker):
+        """Test stop request."""
+        worker._is_running = True
+        worker.stop()
+        assert worker._is_running is False
     
     def test_worker_run_success_with_updates(self, worker):
         """Test successful worker run with updates performed."""
@@ -259,13 +259,13 @@ class TestDownloadURLUpdateWorker:
         mock_client = Mock()
         mock_client.test_connection.return_value = (True, "Connected")
         
-        # First entry processing triggers cancellation
-        def cancel_on_first_call(*args):
-            worker.cancel()
+        # First entry processing triggers stop
+        def stop_on_first_call(*args):
+            worker.stop()
             return {'resource_id': 1, 'name': 'data.csv', 'url': 'https://old.org', 
                     'description': 'Old', 'filemimetype': 'text/csv', 'size': 100}
         
-        mock_client.get_file_by_doi_and_filename.side_effect = cancel_on_first_call
+        mock_client.get_file_by_doi_and_filename.side_effect = stop_on_first_call
         mock_client.update_file_entry.return_value = True
         
         progress_signals = []

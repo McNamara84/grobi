@@ -316,7 +316,6 @@ class TestUpdateFileEntry:
             # Check that only url is in the query
             call_args = mock_cursor.execute.call_args
             query = call_args[0][0]
-            params = call_args[0][1]
             
             assert 'url = %s' in query
             assert 'description = %s' not in query

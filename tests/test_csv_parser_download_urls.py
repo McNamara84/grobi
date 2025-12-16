@@ -108,7 +108,7 @@ class TestParseDownloadUrlsCsv:
             csv_path = f.name
         
         try:
-            with pytest.raises(CSVParseError, match="leer oder hat keine Header"):
+            with pytest.raises(CSVParseError, match="CSV-Datei ist leer oder hat keine Header-Zeile"):
                 CSVParser.parse_download_urls_csv(csv_path)
         finally:
             os.unlink(csv_path)
@@ -164,19 +164,6 @@ class TestParseDownloadUrlsCsv:
     
     def test_parse_download_urls_csv_utf8_encoding_error(self):
         """Test parsing CSV with non-UTF-8 encoding."""
-        with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as f:
-            # Write data with Latin-1 encoding (non-UTF-8)
-            f.write("DOI,Filename,Download_URL,Description,Format,Size_Bytes\n".encode('latin-1'))
-            f.write("10.1594/GFZ.SDDB.1004,data.csv,https://example.org/data.csv,Beschreibung mit Ümläuten,text/csv,1000\n".encode('latin-1'))
-            csv_path = f.name
-        
-        try:
-            # This should work since Latin-1 encoded ASCII is compatible
-            # But let's write actual non-UTF-8 bytes
-            pass
-        finally:
-            os.unlink(csv_path)
-        
         # Create file with actual invalid UTF-8 bytes
         with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as f:
             f.write(b"DOI,Filename,Download_URL,Description,Format,Size_Bytes\n")

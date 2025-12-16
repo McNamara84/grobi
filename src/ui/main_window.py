@@ -3245,7 +3245,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'download_url_update_thread') and self.download_url_update_thread is not None and self.download_url_update_thread.isRunning():
             self._log("Warte auf Abschluss des Download-URL Updates...")
             if hasattr(self, 'download_url_update_worker') and self.download_url_update_worker is not None:
-                self.download_url_update_worker.cancel()
+                self.download_url_update_worker.stop()
             self.download_url_update_thread.quit()
             self.download_url_update_thread.wait(3000)  # Wait max 3 seconds
         
