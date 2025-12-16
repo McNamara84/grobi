@@ -802,3 +802,114 @@ class CSVParser:
         
         return bool(email_pattern.match(email))
 
+    @staticmethod
+    def parse_download_urls_csv(filepath: str) -> List[Dict]:
+        """
+        Parse CSV file containing DOI download URL data for updates.
+        
+        Expected CSV format:
+        - Header row: DOI,Filename,Download_URL,Description,Format,Size_Bytes
+        - Data rows: 10.1594/GFZ.SDDB.1004,data.csv,https://...,Download data,text/csv,62207
+        
+        Args:
+            filepath: Path to the CSV file
+            
+        Returns:
+            List of dictionaries with keys:
+            - doi: str
+            - filename: str
+            - download_url: str
+            - description: str
+            - format: str
+            - size_bytes: int
+            
+        Raises:
+            CSVParseError: If file cannot be read or has invalid format
+            FileNotFoundError: If file does not exist
+        """
+        file_path = Path(filepath)
+        
+        # Check if file exists
+        if not file_path.exists():
+            raise FileNotFoundError(f"CSV-Datei nicht gefunden: {filepath}")
+        
+        # Check if file is readable
+        if not file_path.is_file():
+            raise CSVParseError(f"Pfad ist keine Datei: {filepath}")
+        
+        logger.info(f"Parsing download URLs CSV file: {filepath}")
+        
+        entries = []
+        required_headers = ['DOI', 'Filename', 'Download_URL', 'Description', 'Format', 'Size_Bytes']
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as csvfile:
+                reader = csv.DictReader(csvfile)
+                
+                # Validate headers
+                if not reader.fieldnames:
+                    raise CSVParseError("CSV-Datei ist leer oder hat keine Header-Zeile.")
+                
+                missing_headers = [h for h in required_headers if h not in reader.fieldnames]
+                if missing_headers:
+                    raise CSVParseError(
+                        f"In der CSV-Datei fehlen erforderliche Header: {missing_headers}. "
+                        f"Gefunden: {reader.fieldnames}"
+                    )
+                
+                # Parse rows
+                for row_num, row in enumerate(reader, start=2):  # Start at 2 (line 1 is header)
+                    doi = row.get('DOI', '').strip()
+                    filename = row.get('Filename', '').strip()
+                    download_url = row.get('Download_URL', '').strip()
+                    description = row.get('Description', '').strip()
+                    format_str = row.get('Format', '').strip()
+                    size_str = row.get('Size_Bytes', '').strip()
+                    
+                    # Skip empty rows
+                    if not doi and not filename:
+                        continue
+                    
+                    # Validate DOI
+                    if not doi:
+                        logger.warning(f"Zeile {row_num}: DOI fehlt - überspringe Zeile")
+                        continue
+                    
+                    if not CSVParser.DOI_PATTERN.match(doi):
+                        logger.warning(f"Zeile {row_num}: Ungültiges DOI-Format '{doi}' - überspringe Zeile")
+                        continue
+                    
+                    # Validate filename (required as identifier)
+                    if not filename:
+                        logger.warning(f"Zeile {row_num}: Filename fehlt für DOI '{doi}' - überspringe Zeile")
+                        continue
+                    
+                    # Parse size_bytes (default to 0 if empty or invalid)
+                    try:
+                        size_bytes = int(size_str) if size_str else 0
+                        if size_bytes < 0:
+                            logger.warning(f"Zeile {row_num}: Negative Dateigröße korrigiert auf 0")
+                            size_bytes = 0
+                    except ValueError:
+                        logger.warning(f"Zeile {row_num}: Ungültige Dateigröße '{size_str}' - verwende 0")
+                        size_bytes = 0
+                    
+                    entries.append({
+                        'doi': doi,
+                        'filename': filename,
+                        'download_url': download_url,
+                        'description': description,
+                        'format': format_str,
+                        'size_bytes': size_bytes
+                    })
+                
+                logger.info(f"Parsed {len(entries)} download URL entries from CSV")
+                return entries
+                
+        except UnicodeDecodeError as e:
+            raise CSVParseError(
+                f"Datei ist nicht UTF-8 kodiert. Bitte als UTF-8 speichern. Fehler: {e}"
+            )
+        except csv.Error as e:
+            raise CSVParseError(f"CSV-Parsing-Fehler: {e}")
+

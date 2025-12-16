@@ -1,3 +1,11 @@
+# Debug/Validation scripts with credentials - DO NOT COMMIT
+validate_schema_check.py
+check_schema_debug.py
+check_one_doi.py
+check_champ_dois.py
+check_contrib_types.py
+check_incompatible.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

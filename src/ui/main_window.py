@@ -359,6 +359,10 @@ class MainWindow(QMainWindow):
         self.contributors_update_thread = None
         self.contributors_update_worker = None
         
+        # Thread and worker for download URL update
+        self.download_url_update_thread = None
+        self.download_url_update_worker = None
+        
         # Track current username for CSV detection
         self._current_username = None
         
@@ -572,6 +576,11 @@ class MainWindow(QMainWindow):
         self.export_download_urls_btn.setMinimumHeight(40)
         self.export_download_urls_btn.clicked.connect(self._on_export_download_urls_clicked)
         downloads_layout.addWidget(self.export_download_urls_btn)
+        
+        self.update_download_urls_btn = QPushButton("📤 Download-URLs aktualisieren")
+        self.update_download_urls_btn.setMinimumHeight(40)
+        self.update_download_urls_btn.clicked.connect(self._on_update_download_urls_clicked)
+        downloads_layout.addWidget(self.update_download_urls_btn)
         
         downloads_group.setLayout(downloads_layout)
         layout.addWidget(downloads_group)
@@ -3003,6 +3012,172 @@ class MainWindow(QMainWindow):
         
         self._log("Bereit für nächsten Vorgang.")
     
+    # =========================================================================
+    # Download URL Update Methods
+    # =========================================================================
+    
+    def _on_update_download_urls_clicked(self):
+        """Handle update download URLs button click."""
+        from PySide6.QtWidgets import QFileDialog
+        
+        # Check if database is configured
+        settings = QSettings("GFZ", "GROBI")
+        db_enabled = settings.value("database/enabled", False, type=bool)
+        
+        if not db_enabled:
+            QMessageBox.warning(
+                self,
+                "Datenbank nicht konfiguriert",
+                "Die Datenbank-Verbindung ist nicht aktiviert.\n\n"
+                "Bitte konfiguriere die Datenbank-Verbindung in den Einstellungen "
+                "(Einstellungen → Datenbank-Verbindung)."
+            )
+            return
+        
+        # Load DB credentials
+        from src.utils.credential_manager import load_db_credentials
+        
+        db_creds = load_db_credentials()
+        if not db_creds:
+            QMessageBox.warning(
+                self,
+                "Keine DB-Credentials",
+                "Keine Datenbank-Zugangsdaten gespeichert.\n\n"
+                "Bitte konfiguriere die Datenbank in den Einstellungen."
+            )
+            return
+        
+        # Select CSV file
+        filepath, _ = QFileDialog.getOpenFileName(
+            self,
+            "CSV-Datei mit Download-URLs auswählen",
+            "",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        
+        if not filepath:
+            return  # User cancelled
+        
+        self._log(f"CSV-Datei ausgewählt: {filepath}")
+        
+        # Start worker
+        self._start_download_url_update(filepath, db_creds)
+    
+    def _start_download_url_update(self, csv_path: str, db_creds: dict):
+        """Start worker to update download URLs in database."""
+        self._log("Starte Download-URL Update...")
+        
+        # Import worker
+        from src.workers.download_url_update_worker import DownloadURLUpdateWorker
+        
+        # Create worker
+        self.download_url_update_worker = DownloadURLUpdateWorker(
+            csv_path=csv_path,
+            db_host=db_creds['host'],
+            db_name=db_creds['database'],
+            db_user=db_creds['username'],
+            db_password=db_creds['password']
+        )
+        
+        # Connect signals
+        self.download_url_update_worker.progress_update.connect(self._on_download_url_update_progress)
+        self.download_url_update_worker.entry_updated.connect(self._on_download_url_entry_updated)
+        self.download_url_update_worker.finished.connect(self._on_download_url_update_finished)
+        self.download_url_update_worker.error_occurred.connect(self._on_download_url_update_error)
+        
+        # Create thread
+        self.download_url_update_thread = QThread()
+        self.download_url_update_worker.moveToThread(self.download_url_update_thread)
+        
+        # Connect thread signals
+        self.download_url_update_thread.started.connect(self.download_url_update_worker.run)
+        self.download_url_update_worker.finished.connect(self.download_url_update_thread.quit)
+        self.download_url_update_worker.error_occurred.connect(self.download_url_update_thread.quit)
+        
+        # Clean up after worker finishes or errors
+        self.download_url_update_worker.finished.connect(self.download_url_update_worker.deleteLater)
+        self.download_url_update_worker.error_occurred.connect(self.download_url_update_worker.deleteLater)
+        
+        # Clean up thread when it finishes
+        self.download_url_update_thread.finished.connect(self.download_url_update_thread.deleteLater)
+        self.download_url_update_thread.finished.connect(self._cleanup_download_url_update_worker)
+        
+        # Start thread
+        self.download_url_update_thread.start()
+        
+        # Disable buttons during update
+        self.update_download_urls_btn.setEnabled(False)
+        self.export_download_urls_btn.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setMaximum(0)  # Indeterminate initially
+    
+    def _on_download_url_update_progress(self, current: int, total: int, message: str):
+        """Handle progress updates from download URL update worker."""
+        if total > 0:
+            self.progress_bar.setMaximum(total)
+            self.progress_bar.setValue(current)
+        self._log(message)
+    
+    def _on_download_url_entry_updated(self, doi: str, filename: str, success: bool, message: str):
+        """Handle individual entry update result."""
+        status = "[OK]" if success else "[FEHLER]"
+        self._log(f"{status} {doi} / {filename}: {message}")
+    
+    def _on_download_url_update_finished(
+        self, 
+        success_count: int, 
+        error_count: int, 
+        skipped_count: int,
+        error_list: list,
+        skipped_details: list
+    ):
+        """Handle download URL update completion."""
+        total = success_count + error_count + skipped_count
+        
+        self._log(f"[OK] Download-URL Update abgeschlossen:")
+        self._log(f"     Aktualisiert: {success_count}")
+        self._log(f"     Übersprungen: {skipped_count}")
+        self._log(f"     Fehler: {error_count}")
+        
+        # Build result message
+        result_msg = (
+            f"Download-URL Update abgeschlossen:\n\n"
+            f"Verarbeitet: {total} Einträge\n"
+            f"Aktualisiert: {success_count}\n"
+            f"Übersprungen (keine Änderungen): {skipped_count}\n"
+            f"Fehler: {error_count}"
+        )
+        
+        if error_count > 0:
+            result_msg += "\n\nFehler-Details:\n"
+            for err in error_list[:10]:  # Show max 10 errors
+                result_msg += f"• {err}\n"
+            if len(error_list) > 10:
+                result_msg += f"... und {len(error_list) - 10} weitere Fehler"
+        
+        if error_count > 0:
+            QMessageBox.warning(self, "Update mit Fehlern abgeschlossen", result_msg)
+        else:
+            QMessageBox.information(self, "Update erfolgreich", result_msg)
+    
+    def _on_download_url_update_error(self, error_msg: str):
+        """Handle download URL update error."""
+        self._log(f"[FEHLER] {error_msg}")
+        QMessageBox.critical(self, "Fehler", error_msg)
+    
+    def _cleanup_download_url_update_worker(self):
+        """Clean up download URL update worker and thread."""
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setMaximum(0)
+        self.update_download_urls_btn.setEnabled(True)
+        self.export_download_urls_btn.setEnabled(True)
+        
+        # Reset references
+        self.download_url_update_thread = None
+        self.download_url_update_worker = None
+        
+        self._log("Bereit für nächsten Vorgang.")
+    
     def closeEvent(self, event):
         """
         Handle window close event.
@@ -3065,5 +3240,13 @@ class MainWindow(QMainWindow):
             self._log("Warte auf Abschluss des Download-URL Exports...")
             self.download_url_thread.quit()
             self.download_url_thread.wait(3000)  # Wait max 3 seconds
+        
+        # If download URL update thread is running, cancel and wait
+        if hasattr(self, 'download_url_update_thread') and self.download_url_update_thread is not None and self.download_url_update_thread.isRunning():
+            self._log("Warte auf Abschluss des Download-URL Updates...")
+            if hasattr(self, 'download_url_update_worker') and self.download_url_update_worker is not None:
+                self.download_url_update_worker.stop()
+            self.download_url_update_thread.quit()
+            self.download_url_update_thread.wait(3000)  # Wait max 3 seconds
         
         event.accept()
