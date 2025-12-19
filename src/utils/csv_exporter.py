@@ -492,3 +492,74 @@ def validate_csv_format(filepath: str) -> bool:
         logger.error(f"Error validating CSV {filepath}: {e}")
         return False
 
+
+def export_pending_dois(
+    data: List[Tuple[str, str, str]],
+    output_path: str
+) -> None:
+    """
+    Export pending DOIs to a CSV file with UTF-8 BOM encoding.
+    
+    Creates a CSV file with columns: DOI, Title, First Author
+    Uses UTF-8 with BOM for Excel compatibility.
+    
+    Args:
+        data: List of tuples containing (DOI, Title, First Author)
+        output_path: Full path to the output CSV file
+        
+    Raises:
+        CSVExportError: If export fails due to permissions, disk space, etc.
+    """
+    logger.info(f"Exporting {len(data)} pending DOIs to {output_path}")
+    
+    # Check if directory exists and is writable
+    try:
+        output_dir = Path(output_path).parent
+        if not output_dir.exists():
+            output_dir.mkdir(parents=True, exist_ok=True)
+            logger.debug(f"Created output directory: {output_dir}")
+        
+        # Test write permissions
+        if not os.access(output_dir, os.W_OK):
+            error_msg = f"Keine Schreibrechte für Verzeichnis: {output_dir}"
+            logger.error(error_msg)
+            raise CSVExportError(error_msg)
+            
+    except PermissionError as e:
+        error_msg = f"Keine Berechtigung zum Erstellen des Verzeichnisses: {output_dir}"
+        logger.error(f"Permission error: {e}")
+        raise CSVExportError(error_msg)
+    except OSError as e:
+        error_msg = f"Fehler beim Erstellen des Verzeichnisses: {str(e)}"
+        logger.error(f"OS error: {e}")
+        raise CSVExportError(error_msg)
+    
+    # Write CSV file with UTF-8 BOM
+    try:
+        with open(output_path, 'w', newline='', encoding='utf-8-sig') as csvfile:
+            writer = csv.writer(csvfile)
+            
+            # Write header
+            writer.writerow(['DOI', 'Title', 'First Author'])
+            
+            # Write data rows
+            for doi, title, first_author in data:
+                writer.writerow([doi, title, first_author])
+        
+        logger.info(f"Successfully exported {len(data)} pending DOIs to {output_path}")
+        
+    except PermissionError as e:
+        error_msg = f"Keine Berechtigung zum Schreiben der Datei: {output_path}"
+        logger.error(f"Permission error writing file: {e}")
+        raise CSVExportError(error_msg)
+    
+    except OSError as e:
+        error_msg = f"Die CSV-Datei konnte nicht gespeichert werden: {str(e)}"
+        logger.error(f"OS error writing file: {e}")
+        raise CSVExportError(error_msg)
+    
+    except Exception as e:
+        error_msg = f"Unerwarteter Fehler beim Speichern der CSV-Datei: {str(e)}"
+        logger.error(f"Unexpected error: {e}")
+        raise CSVExportError(error_msg)
+

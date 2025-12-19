@@ -1221,3 +1221,55 @@ class SumarioPMDClient:
         except pymysql.Error as e:
             logger.error(f"Database error updating file: {e}")
             raise DatabaseError(f"Failed to update file entry: {e}") from e
+
+    def fetch_pending_dois(self) -> List[Tuple[str, str, str]]:
+        """
+        Fetch all DOIs with status 'pending' along with title and first author.
+        
+        Returns:
+            List of tuples (doi, title, first_author) where:
+            - doi: DOI identifier (may be empty string if None in DB)
+            - title: Main title of the resource
+            - first_author: First author in "Lastname, Firstname" format
+            
+        Raises:
+            DatabaseError: If query fails
+        """
+        query = """
+            SELECT 
+                COALESCE(r.identifier, '') AS doi,
+                COALESCE(t.title, '') AS title,
+                CASE 
+                    WHEN ra.lastname IS NOT NULL AND ra.firstname IS NOT NULL 
+                    THEN CONCAT(ra.lastname, ', ', ra.firstname)
+                    ELSE COALESCE(ra.name, '')
+                END AS first_author
+            FROM resource r
+            LEFT JOIN title t ON t.resource_id = r.id AND t.titletype IS NULL
+            LEFT JOIN role ro ON ro.resourceagent_resource_id = r.id 
+                AND ro.role = 'Creator' AND ro.resourceagent_order = 1
+            LEFT JOIN resourceagent ra ON ra.resource_id = r.id 
+                AND ra.order = ro.resourceagent_order
+            WHERE r.publicstatus = 'pending'
+            ORDER BY r.identifier
+        """
+        
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(query)
+                    results = cursor.fetchall()
+                    
+                    # Convert from dict to tuple format
+                    pending_dois = [
+                        (row['doi'], row['title'], row['first_author'])
+                        for row in results
+                    ]
+                    
+                    logger.info(f"Fetched {len(pending_dois)} pending DOIs from database")
+                    return pending_dois
+                    
+        except pymysql.Error as e:
+            logger.error(f"Database error fetching pending DOIs: {e}")
+            raise DatabaseError(f"Failed to fetch pending DOIs: {e}") from e
+
