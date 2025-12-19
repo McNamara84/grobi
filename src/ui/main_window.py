@@ -23,6 +23,7 @@ from src.workers.update_worker import UpdateWorker
 from src.workers.authors_update_worker import AuthorsUpdateWorker
 from src.workers.publisher_update_worker import PublisherUpdateWorker
 from src.workers.contributors_update_worker import ContributorsUpdateWorker
+from src.workers.pending_export_worker import PendingExportWorker
 
 
 logger = logging.getLogger(__name__)
@@ -584,6 +585,24 @@ class MainWindow(QMainWindow):
         
         downloads_group.setLayout(downloads_layout)
         layout.addWidget(downloads_group)
+        
+        # GroupBox 6: Pending DOIs Export (SUMARIOPMD Database)
+        pending_group = QGroupBox("⏳ Pending DOIs (Datenbank)")
+        pending_layout = QVBoxLayout()
+        pending_layout.setSpacing(10)
+        
+        # Button for pending DOIs export
+        self.export_pending_btn = QPushButton("📥 Pending DOIs exportieren")
+        self.export_pending_btn.setMinimumHeight(40)
+        self.export_pending_btn.setToolTip(
+            "Exportiert alle DOIs mit Status 'pending' aus der SUMARIOPMD-Datenbank.\n"
+            "Enthält DOI, Titel und Erstautor."
+        )
+        self.export_pending_btn.clicked.connect(self._on_export_pending_clicked)
+        pending_layout.addWidget(self.export_pending_btn)
+        
+        pending_group.setLayout(pending_layout)
+        layout.addWidget(pending_group)
         
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -3178,6 +3197,134 @@ class MainWindow(QMainWindow):
         
         self._log("Bereit für nächsten Vorgang.")
     
+    # =========================================================================
+    # Pending DOIs Export Methods (SUMARIOPMD Database)
+    # =========================================================================
+    
+    def _on_export_pending_clicked(self):
+        """Handle export pending DOIs button click."""
+        from PySide6.QtWidgets import QFileDialog
+        from src.utils.credential_manager import load_db_credentials
+        
+        # Check if database credentials are configured
+        try:
+            db_creds = load_db_credentials()
+        except Exception as e:
+            self._log(f"[FEHLER] Datenbank-Zugangsdaten nicht verfügbar: {e}")
+            QMessageBox.warning(
+                self,
+                "Datenbank nicht konfiguriert",
+                "Die Datenbank-Zugangsdaten sind nicht konfiguriert.\n\n"
+                "Bitte konfigurieren Sie die SUMARIOPMD-Datenbank unter:\n"
+                "Einstellungen → Datenbank"
+            )
+            return
+        
+        if db_creds is None:
+            self._log("[FEHLER] Keine Datenbank-Zugangsdaten gespeichert")
+            QMessageBox.warning(
+                self,
+                "Datenbank nicht konfiguriert",
+                "Die Datenbank-Zugangsdaten sind nicht konfiguriert.\n\n"
+                "Bitte konfigurieren Sie die SUMARIOPMD-Datenbank unter:\n"
+                "Einstellungen → Datenbank"
+            )
+            return
+        
+        # Ask for save location
+        default_filename = "pending_dois.csv"
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Pending DOIs speichern",
+            default_filename,
+            "CSV Files (*.csv)"
+        )
+        
+        if not filepath:
+            self._log("Export abgebrochen.")
+            return
+        
+        self._log(f"Starte Export der pending DOIs aus {db_creds['database']}...")
+        
+        # Disable button and show progress
+        self.export_pending_btn.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        
+        # Create worker and thread
+        self.pending_export_worker = PendingExportWorker(
+            db_host=db_creds['host'],
+            db_name=db_creds['database'],
+            db_user=db_creds['username'],
+            db_password=db_creds['password'],
+            output_path=filepath
+        )
+        self.pending_export_thread = QThread()
+        self.pending_export_worker.moveToThread(self.pending_export_thread)
+        
+        # Connect signals
+        self.pending_export_thread.started.connect(self.pending_export_worker.run)
+        self.pending_export_worker.progress.connect(self._log)
+        self.pending_export_worker.progress_count.connect(self._on_pending_export_progress)
+        self.pending_export_worker.finished.connect(self._on_pending_export_finished)
+        self.pending_export_worker.error.connect(self._on_pending_export_error)
+        
+        # Clean up after worker finishes or errors
+        self.pending_export_worker.finished.connect(self.pending_export_worker.deleteLater)
+        self.pending_export_worker.error.connect(self.pending_export_worker.deleteLater)
+        self.pending_export_worker.finished.connect(self.pending_export_thread.quit)
+        self.pending_export_worker.error.connect(self.pending_export_thread.quit)
+        
+        # Clean up thread when it finishes
+        self.pending_export_thread.finished.connect(self.pending_export_thread.deleteLater)
+        self.pending_export_thread.finished.connect(self._cleanup_pending_export_worker)
+        
+        # Start the thread
+        self.pending_export_thread.start()
+    
+    def _on_pending_export_progress(self, current: int, total: int):
+        """Update progress bar for pending export."""
+        self.progress_bar.setMaximum(total)
+        self.progress_bar.setValue(current)
+    
+    def _on_pending_export_finished(self, filepath: str, count: int):
+        """Handle successful pending DOIs export."""
+        if count == 0:
+            QMessageBox.information(
+                self,
+                "Keine Daten",
+                "Es wurden keine pending DOIs in der Datenbank gefunden."
+            )
+            return
+        
+        self._log(f"[OK] {count} pending DOIs nach {Path(filepath).name} exportiert")
+        QMessageBox.information(
+            self,
+            "Export erfolgreich",
+            f"Pending DOIs wurden erfolgreich exportiert:\n\n"
+            f"Datei: {Path(filepath).name}\n"
+            f"Anzahl: {count} DOIs"
+        )
+    
+    def _on_pending_export_error(self, error_msg: str):
+        """Handle pending export error."""
+        self._log(f"[FEHLER] {error_msg}")
+        QMessageBox.critical(self, "Fehler", error_msg)
+    
+    def _cleanup_pending_export_worker(self):
+        """Clean up pending export worker and thread."""
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setMaximum(0)
+        self.export_pending_btn.setEnabled(True)
+        
+        # Reset references
+        self.pending_export_thread = None
+        self.pending_export_worker = None
+        
+        self._log("Bereit für nächsten Vorgang.")
+    
     def closeEvent(self, event):
         """
         Handle window close event.
@@ -3248,5 +3395,13 @@ class MainWindow(QMainWindow):
                 self.download_url_update_worker.stop()
             self.download_url_update_thread.quit()
             self.download_url_update_thread.wait(3000)  # Wait max 3 seconds
+        
+        # If pending export thread is running, wait for it to finish
+        if hasattr(self, 'pending_export_thread') and self.pending_export_thread is not None and self.pending_export_thread.isRunning():
+            self._log("Warte auf Abschluss des Pending-DOIs Exports...")
+            if hasattr(self, 'pending_export_worker') and self.pending_export_worker is not None:
+                self.pending_export_worker.stop()
+            self.pending_export_thread.quit()
+            self.pending_export_thread.wait(3000)  # Wait max 3 seconds
         
         event.accept()
