@@ -3,7 +3,6 @@
 import csv
 import os
 import pytest
-from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
 from src.db.sumariopmd_client import SumarioPMDClient, DatabaseError
@@ -264,7 +263,7 @@ class TestPendingExportWorker:
     
     @patch('src.workers.pending_export_worker.SumarioPMDClient')
     @patch('src.workers.pending_export_worker.export_pending_dois')
-    def test_worker_emits_progress_signals(self, mock_export, mock_client_class, qtbot):
+    def test_worker_emits_progress_signals(self, mock_export, mock_client_class):
         """Test that worker emits progress signals correctly."""
         from src.workers.pending_export_worker import PendingExportWorker
         
@@ -300,7 +299,7 @@ class TestPendingExportWorker:
     
     @patch('src.workers.pending_export_worker.SumarioPMDClient')
     @patch('src.workers.pending_export_worker.export_pending_dois')
-    def test_worker_emits_finished_signal_on_success(self, mock_export, mock_client_class, qtbot):
+    def test_worker_emits_finished_signal_on_success(self, mock_export, mock_client_class):
         """Test that worker emits finished signal with correct data on success."""
         from src.workers.pending_export_worker import PendingExportWorker
         
@@ -333,7 +332,7 @@ class TestPendingExportWorker:
         assert finished_data[0][1] == 2
     
     @patch('src.workers.pending_export_worker.SumarioPMDClient')
-    def test_worker_emits_error_signal_on_db_error(self, mock_client_class, qtbot):
+    def test_worker_emits_error_signal_on_db_error(self, mock_client_class):
         """Test that worker emits error signal on database error."""
         from src.workers.pending_export_worker import PendingExportWorker
         from src.db.sumariopmd_client import ConnectionError

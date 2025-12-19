@@ -3206,6 +3206,20 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QFileDialog
         from src.utils.credential_manager import load_db_credentials
         
+        # Check if database is enabled in settings
+        settings = QSettings("GFZ", "GROBI")
+        db_enabled = settings.value("database/enabled", False, type=bool)
+        
+        if not db_enabled:
+            QMessageBox.warning(
+                self,
+                "Datenbank nicht aktiviert",
+                "Die Datenbank-Verbindung ist nicht aktiviert.\n\n"
+                "Bitte aktivieren Sie die Datenbank-Verbindung in den Einstellungen "
+                "(Einstellungen → Datenbank-Verbindung)."
+            )
+            return
+        
         # Check if database credentials are configured
         try:
             db_creds = load_db_credentials()
