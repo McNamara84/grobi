@@ -62,6 +62,10 @@ class PendingExportWorker(QObject):
             self.progress.emit("Verbindung zur Datenbank wird hergestellt...")
             self.progress_count.emit(0, 100)
             
+            if not self._is_running:
+                self.progress.emit("Export abgebrochen.")
+                return
+            
             try:
                 client = SumarioPMDClient(
                     host=self.db_host,
@@ -73,6 +77,11 @@ class PendingExportWorker(QObject):
                 error_msg = f"Datenbankverbindung fehlgeschlagen: {str(e)}"
                 logger.error(error_msg)
                 self.error.emit(error_msg)
+                return
+            
+            # Check for cancellation before fetching
+            if not self._is_running:
+                self.progress.emit("Export abgebrochen.")
                 return
             
             # Step 2: Fetch pending DOIs
@@ -94,6 +103,11 @@ class PendingExportWorker(QObject):
             
             self.progress_count.emit(50, 100)
             self.progress.emit(f"{len(pending_data)} pending DOIs gefunden...")
+            
+            # Check for cancellation before exporting
+            if not self._is_running:
+                self.progress.emit("Export abgebrochen.")
+                return
             
             # Step 3: Export to CSV
             self.progress.emit("CSV-Datei wird erstellt...")

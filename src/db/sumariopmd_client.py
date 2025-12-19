@@ -1245,11 +1245,11 @@ class SumarioPMDClient:
                     ELSE COALESCE(ra.name, '')
                 END AS first_author
             FROM resource r
-            LEFT JOIN title t ON r.id = t.resource_id AND t.titletype IS NULL
-            LEFT JOIN role ro ON r.id = ro.resourceagent_resource_id 
+            LEFT JOIN title t ON t.resource_id = r.id AND t.titletype IS NULL
+            LEFT JOIN role ro ON ro.resourceagent_resource_id = r.id 
                 AND ro.role = 'Creator' AND ro.resourceagent_order = 1
-            LEFT JOIN resourceagent ra ON ro.resourceagent_resource_id = ra.resource_id 
-                AND ro.resourceagent_order = ra.order
+            LEFT JOIN resourceagent ra ON ra.resource_id = r.id 
+                AND ra.order = ro.resourceagent_order
             WHERE r.publicstatus = 'pending'
             ORDER BY r.identifier
         """
