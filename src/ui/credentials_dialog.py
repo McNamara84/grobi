@@ -66,6 +66,8 @@ class CredentialsDialog(QDialog):
             self.setWindowTitle("Autoren-Metadaten aktualisieren")
         elif mode == "update_publisher":
             self.setWindowTitle("Publisher-Metadaten aktualisieren")
+        elif mode == "fuji_check":
+            self.setWindowTitle("F-UJI FAIR Assessment")
         else:
             self.setWindowTitle("DataCite Anmeldung")
         
@@ -108,6 +110,11 @@ class CredentialsDialog(QDialog):
             description_text = (
                 "Gib deine DataCite Zugangsdaten ein und wähle eine CSV-Datei "
                 "mit DOIs und Contributor-Metadaten aus."
+            )
+        elif self.mode == "fuji_check":
+            description_text = (
+                "Gib deine DataCite Zugangsdaten ein, um alle DOIs abzurufen "
+                "und nach FAIR-Kriterien zu bewerten."
             )
         else:
             description_text = "Gib deine DataCite Zugangsdaten ein, um DOIs abzurufen."
@@ -234,6 +241,8 @@ class CredentialsDialog(QDialog):
             self.ok_button.setText("Contributor-Metadaten aktualisieren")
             # Disable button initially for update_contributors mode (needs CSV file)
             self.ok_button.setEnabled(False)
+        elif self.mode == "fuji_check":
+            self.ok_button.setText("FAIR Check starten")
         else:
             self.ok_button.setText("DOIs holen")
         
