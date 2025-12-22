@@ -134,7 +134,7 @@ class FujiResultsWindow(QMainWindow):
         Start a new assessment run.
         
         Args:
-            total_dois: Total number of DOIs to assess
+            total_dois: Total number of DOIs to assess (0 for streaming mode)
         """
         self.total_dois = total_dois
         self.completed_count = 0
@@ -146,11 +146,66 @@ class FujiResultsWindow(QMainWindow):
         self.tiles.clear()
         
         self.action_button.setText("Abbrechen")
-        self.info_label.setText(f"Bewerte {total_dois} DOIs nach FAIR-Kriterien...")
+        if total_dois > 0:
+            self.info_label.setText(f"Bewerte {total_dois} DOIs nach FAIR-Kriterien...")
+        else:
+            self.info_label.setText("Lade DOIs und starte Bewertung...")
         self._update_status()
         
         logger.info(f"Starting FAIR assessment for {total_dois} DOIs")
     
+    def start_streaming_assessment(self):
+        """
+        Start assessment in streaming mode (DOIs arrive incrementally).
+        """
+        self.total_dois = 0  # Will be updated as DOIs arrive
+        self.completed_count = 0
+        self.error_count = 0
+        self._is_running = True
+        
+        # Clear existing tiles
+        self.flow_layout.clear()
+        self.tiles.clear()
+        
+        self.action_button.setText("Abbrechen")
+        self.info_label.setText("Lade DOIs und starte Bewertung...")
+        self.status_bar.showMessage("Lade DOIs...")
+        
+        logger.info("Starting streaming FAIR assessment")
+    
+    def set_total_dois(self, total: int):
+        """
+        Update the total DOI count (used in streaming mode).
+        
+        Args:
+            total: Total number of DOIs
+        """
+        self.total_dois = total
+        self._update_status()
+    
+    @Slot(str)
+    def add_pending_tile(self, doi: str):
+        """
+        Add a tile for a DOI that's pending assessment (streaming mode).
+        
+        Args:
+            doi: The DOI identifier
+        """
+        if doi not in self.tiles:
+            tile = FujiTile(doi, -1)  # -1 = pending/not yet assessed
+            tile.clicked.connect(self._on_tile_clicked)
+            
+            # Calculate tile size
+            tile_size = self._calculate_tile_size()
+            tile.set_tile_size(tile_size)
+            
+            self.tiles[doi] = tile
+            self.flow_layout.addWidget(tile)
+            
+            # Update total count for streaming
+            self.total_dois = len(self.tiles)
+            self._update_status()
+
     @Slot(str, float)
     def add_result(self, doi: str, score_percent: float):
         """
@@ -160,11 +215,20 @@ class FujiResultsWindow(QMainWindow):
             doi: The DOI identifier
             score_percent: FAIR score (0-100) or -1 for error
         """
-        if doi in self.tiles:
-            # Update existing tile
+        tile_existed = doi in self.tiles
+        
+        if tile_existed:
+            # Update existing tile (from streaming mode)
+            old_score = self.tiles[doi].score_percent
             self.tiles[doi].set_score(score_percent)
+            
+            # Only count if this is a new assessment (was pending: -1)
+            if old_score < 0:
+                self.completed_count += 1
+                if score_percent < 0:
+                    self.error_count += 1
         else:
-            # Create new tile
+            # Create new tile (non-streaming mode)
             tile = FujiTile(doi, score_percent)
             tile.clicked.connect(self._on_tile_clicked)
             
@@ -174,17 +238,17 @@ class FujiResultsWindow(QMainWindow):
             
             self.tiles[doi] = tile
             self.flow_layout.addWidget(tile)
-        
-        # Update counters
-        self.completed_count += 1
-        if score_percent < 0:
-            self.error_count += 1
+            
+            # Update counters
+            self.completed_count += 1
+            if score_percent < 0:
+                self.error_count += 1
         
         self._update_status()
         self._recalculate_tile_sizes()
         
         # Check if complete
-        if self.completed_count >= self.total_dois:
+        if self.completed_count >= self.total_dois and self.total_dois > 0:
             self._on_assessment_complete()
     
     def _calculate_tile_size(self) -> int:
@@ -227,7 +291,10 @@ class FujiResultsWindow(QMainWindow):
     def _update_status(self):
         """Update the status bar."""
         if self._is_running:
-            msg = f"{self.completed_count} von {self.total_dois} DOIs bewertet"
+            if self.total_dois > 0:
+                msg = f"{self.completed_count} von {self.total_dois} DOIs bewertet"
+            else:
+                msg = f"{len(self.tiles)} DOIs geladen, {self.completed_count} bewertet"
             if self.error_count > 0:
                 msg += f" ({self.error_count} Fehler)"
             self.status_bar.showMessage(msg)

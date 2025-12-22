@@ -222,21 +222,32 @@ class FujiClient:
         try:
             summary = data.get('summary', {})
             
-            # Try different score field names (API versions vary)
-            score_earned = summary.get('score_earned', 0)
-            score_total = summary.get('score_total', 0)
+            # F-UJI returns dictionaries with FAIR principle breakdown
+            # The overall score is in the "FAIR" key
+            score_earned_data = summary.get('score_earned', {})
+            score_total_data = summary.get('score_total', {})
+            score_percent_data = summary.get('score_percent', {})
             
-            # Some versions use different field names
-            if score_total == 0:
-                score_earned = summary.get('earned', 0)
-                score_total = summary.get('total', 0)
-            
-            # Calculate percentage
-            if score_total > 0:
-                score_percent = (score_earned / score_total) * 100
+            # Extract FAIR totals - handle both dict and int formats
+            if isinstance(score_earned_data, dict):
+                score_earned = score_earned_data.get('FAIR', 0)
             else:
-                # Try to get percent directly
-                score_percent = summary.get('score_percent', 0)
+                score_earned = score_earned_data or 0
+                
+            if isinstance(score_total_data, dict):
+                score_total = score_total_data.get('FAIR', 0)
+            else:
+                score_total = score_total_data or 0
+            
+            # Get percentage - prefer direct value if available
+            if isinstance(score_percent_data, dict):
+                score_percent = score_percent_data.get('FAIR', 0)
+            else:
+                score_percent = score_percent_data or 0
+            
+            # Fallback calculation if percent not available
+            if score_percent == 0 and score_total > 0:
+                score_percent = (score_earned / score_total) * 100
             
             metrics_count = data.get('total_metrics', len(data.get('results', [])))
             

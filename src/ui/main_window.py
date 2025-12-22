@@ -26,7 +26,7 @@ from src.workers.authors_update_worker import AuthorsUpdateWorker
 from src.workers.publisher_update_worker import PublisherUpdateWorker
 from src.workers.contributors_update_worker import ContributorsUpdateWorker
 from src.workers.pending_export_worker import PendingExportWorker
-from src.workers.fuji_worker import FujiAssessmentThread
+from src.workers.fuji_worker import FujiAssessmentThread, StreamingFujiThread
 
 
 logger = logging.getLogger(__name__)
@@ -3399,47 +3399,37 @@ class MainWindow(QMainWindow):
         # Disable button during operation
         self.fuji_check_btn.setEnabled(False)
         self.progress_bar.setVisible(True)
-        self._log("Starte F-UJI FAIR Assessment...")
-        self._log("Rufe DOIs von DataCite ab...")
+        self._log("Starte F-UJI FAIR Assessment (Streaming-Modus)...")
         
-        # First fetch all DOIs from DataCite
+        # Offer to save credentials if new
+        if credentials_are_new:
+            api_type = "test" if use_test_api else "production"
+            self._offer_save_credentials(username, password, api_type)
+        
         try:
-            client = DataCiteClient(username, password, use_test_api)
-            dois_with_urls = client.fetch_all_dois()
+            # Create DataCite client for streaming
+            datacite_client = DataCiteClient(username, password, use_test_api)
             
-            if not dois_with_urls:
-                self._log("[FEHLER] Keine DOIs gefunden.")
-                QMessageBox.warning(
-                    self,
-                    "Keine DOIs",
-                    "Es wurden keine DOIs für diesen Account gefunden."
-                )
-                self._cleanup_fuji_check()
-                return
-            
-            # Extract just the DOIs
-            dois = [doi for doi, url in dois_with_urls]
-            self._log(f"[OK] {len(dois)} DOIs gefunden. Starte FAIR Assessment...")
-            
-            # Offer to save credentials if new
-            if credentials_are_new:
-                api_type = "test" if use_test_api else "production"
-                self._offer_save_credentials(username, password, api_type)
-            
-            # Open results window
+            # Open results window in streaming mode
             self.fuji_results_window = FujiResultsWindow(self, self.theme_manager)
-            self.fuji_results_window.start_assessment(len(dois))
+            self.fuji_results_window.start_streaming_assessment()
             self.fuji_results_window.assessment_cancelled.connect(self._on_fuji_cancelled)
             self.fuji_results_window.closed.connect(self._cleanup_fuji_check)
             self.fuji_results_window.show()
             
-            # Start assessment thread
-            self.fuji_thread = FujiAssessmentThread(dois, max_workers=5)
+            # Start streaming assessment thread
+            self.fuji_thread = StreamingFujiThread(datacite_client, max_workers=5)
+            
+            # Connect signals for streaming mode
+            self.fuji_thread.worker.doi_discovered.connect(self.fuji_results_window.add_pending_tile)
             self.fuji_thread.worker.doi_assessed.connect(self.fuji_results_window.add_result)
+            self.fuji_thread.worker.fetch_complete.connect(self.fuji_results_window.set_total_dois)
             self.fuji_thread.worker.progress.connect(self._log)
             self.fuji_thread.worker.error.connect(self._on_fuji_error)
             self.fuji_thread.worker.finished.connect(self._on_fuji_finished)
             self.fuji_thread.start()
+            
+            self._log("DOI-Abruf und Bewertung laufen parallel...")
             
         except AuthenticationError as e:
             self._log(f"[FEHLER] Authentifizierung fehlgeschlagen: {e}")
