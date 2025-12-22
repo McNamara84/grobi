@@ -295,25 +295,23 @@ class StreamingFujiWorker(QObject):
     def _fetch_dois(self):
         """Fetch DOIs from DataCite, pushing to queue."""
         try:
-            page = 1
+            page_num = 1
             total_fetched = 0
+            next_url = None  # None for first page
             
             while not self._cancelled:
-                # Fetch one page
+                # Fetch one page using cursor-based pagination
                 try:
-                    result = self.datacite_client._fetch_page(page)
-                    dois_on_page = result.get('data', [])
+                    # _fetch_page returns (dois_list, next_url)
+                    dois_with_urls, next_url = self.datacite_client._fetch_page(next_url)
                     
-                    if not dois_on_page:
+                    if not dois_with_urls:
                         break
                     
-                    # Process each DOI
-                    for item in dois_on_page:
+                    # Process each DOI (dois_with_urls is list of (doi, url) tuples)
+                    for doi, url in dois_with_urls:
                         if self._cancelled:
                             break
-                        
-                        attrs = item.get('attributes', {})
-                        doi = attrs.get('doi')
                         
                         if doi:
                             # Emit discovery signal and queue for assessment
@@ -321,20 +319,17 @@ class StreamingFujiWorker(QObject):
                             self._doi_queue.put(doi)
                             total_fetched += 1
                     
-                    self.progress.emit(f"Seite {page}: {total_fetched} DOIs geladen, Bewertung läuft...")
+                    self.progress.emit(f"Seite {page_num}: {total_fetched} DOIs geladen, Bewertung läuft...")
                     
-                    # Check if more pages
-                    meta = result.get('meta', {})
-                    total_count = meta.get('total', 0)
-                    
-                    if total_fetched >= total_count:
+                    # Check if more pages (next_url is None when no more pages)
+                    if next_url is None:
                         break
                     
-                    page += 1
+                    page_num += 1
                     
                 except Exception as e:
-                    logger.error(f"Error fetching page {page}: {e}")
-                    self.error.emit(f"Fehler beim Abrufen von Seite {page}: {str(e)}")
+                    logger.error(f"Error fetching page {page_num}: {e}")
+                    self.error.emit(f"Fehler beim Abrufen von Seite {page_num}: {str(e)}")
                     break
             
             self._total_dois = total_fetched
