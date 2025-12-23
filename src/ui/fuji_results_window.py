@@ -2,6 +2,7 @@
 
 import csv
 import logging
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, TextIO
@@ -19,6 +20,10 @@ from src.ui.fuji_tile import FujiTile
 
 
 logger = logging.getLogger(__name__)
+
+# Tile size constraints (in pixels)
+MIN_TILE_SIZE = 50
+MAX_TILE_SIZE = 150
 
 
 class FujiResultsWindow(QMainWindow):
@@ -57,6 +62,7 @@ class FujiResultsWindow(QMainWindow):
         self._csv_file: Optional[TextIO] = None
         self._csv_writer: Optional[csv.writer] = None
         self._csv_path: Optional[Path] = None
+        self._csv_lock = threading.Lock()  # Thread-safe CSV operations
         
         self._setup_ui()
         self._apply_styles()
@@ -286,25 +292,32 @@ class FujiResultsWindow(QMainWindow):
             self._on_assessment_complete()
     
     def _update_average_score(self):
-        """Update the live average score display."""
+        """Update the live average score display.
+        
+        Uses the same color scheme as FujiTile for visual consistency:
+        - Red (139, 0, 0) for 0%
+        - Yellow (255, 255, 0) for 50%  
+        - Green (0, 100, 0) for 100%
+        """
         scores = [t.score_percent for t in self.tiles.values() if t.score_percent >= 0]
         if scores:
             avg_score = sum(scores) / len(scores)
             self.avg_score_label.setText(f"{avg_score:.1f}%")
             
-            # Color based on score: red (0) -> yellow (50) -> green (100)
+            # Color gradient matching FujiTile constants
+            # FujiTile uses: COLOR_RED(139,0,0), COLOR_YELLOW(255,255,0), COLOR_GREEN(0,100,0)
             if avg_score < 50:
                 # Red to yellow gradient
                 ratio = avg_score / 50
-                r = 255
-                g = int(200 * ratio)
+                r = int(139 + (255 - 139) * ratio)  # 139 -> 255
+                g = int(0 + 255 * ratio)             # 0 -> 255
                 b = 0
             else:
                 # Yellow to green gradient
                 ratio = (avg_score - 50) / 50
-                r = int(255 * (1 - ratio))
-                g = 200
-                b = int(50 * ratio)
+                r = int(255 * (1 - ratio))           # 255 -> 0
+                g = int(255 - (255 - 100) * ratio)   # 255 -> 100
+                b = 0
             
             self.avg_score_label.setStyleSheet(f"color: rgb({r}, {g}, {b});")
         else:
@@ -336,8 +349,8 @@ class FujiResultsWindow(QMainWindow):
         # Calculate tile size
         tile_size = (available_width - (min_columns - 1) * 8) // min_columns
         
-        # Clamp to reasonable range
-        tile_size = max(50, min(150, tile_size))
+        # Clamp to reasonable range using defined constants
+        tile_size = max(MIN_TILE_SIZE, min(MAX_TILE_SIZE, tile_size))
         
         return tile_size
     
@@ -398,42 +411,50 @@ class FujiResultsWindow(QMainWindow):
                 try:
                     temp_file.close()
                 except Exception:
-                    pass  # Ignore errors during cleanup
+                    # Silently ignore close errors during cleanup - the file
+                    # initialization already failed, so logging additional
+                    # errors would be noise. The primary error is already logged.
+                    pass
     
     def _write_csv_row(self, doi: str, score_percent: float):
-        """Write a single result row to the CSV file."""
-        if self._csv_writer is None:
-            return
+        """Write a single result row to the CSV file.
         
-        try:
-            if score_percent < 0:
-                bewertung = "Fehler"
-            else:
-                bewertung = f"{score_percent:.1f}"
+        Thread-safe: Uses lock to prevent race conditions with _close_csv().
+        """
+        with self._csv_lock:
+            if self._csv_writer is None or self._csv_file is None:
+                return
             
-            self._csv_writer.writerow([doi, bewertung])
-            self._csv_file.flush()  # Flush immediately for real-time writing
-        except Exception as e:
-            logger.error(f"Failed to write CSV row for {doi}: {e}")
+            try:
+                if score_percent < 0:
+                    bewertung = "Fehler"
+                else:
+                    bewertung = f"{score_percent:.1f}"
+                
+                self._csv_writer.writerow([doi, bewertung])
+                self._csv_file.flush()  # Flush immediately for real-time writing
+            except Exception as e:
+                logger.error(f"Failed to write CSV row for {doi}: {e}")
     
     def _close_csv(self):
         """Close the CSV file and return the path.
         
+        Thread-safe: Uses lock to prevent race conditions with _write_csv_row().
+        
         Returns:
             Path to the CSV file, or None if no file was created.
         """
-        if self._csv_file is not None:
-            try:
-                # Check if file is already closed before attempting to close
-                if not self._csv_file.closed:
+        with self._csv_lock:
+            if self._csv_file is not None and not self._csv_file.closed:
+                try:
                     self._csv_file.close()
-                logger.info(f"CSV export completed: {self._csv_path}")
-            except Exception as e:
-                logger.error(f"Failed to close CSV file: {e}")
-            finally:
-                # Always clear references to prevent double-close attempts
-                self._csv_file = None
-                self._csv_writer = None
+                    logger.info(f"CSV export completed: {self._csv_path}")
+                except Exception as e:
+                    logger.error(f"Failed to close CSV file: {e}")
+                finally:
+                    # Always clear references to prevent double-close attempts
+                    self._csv_file = None
+                    self._csv_writer = None
         
         return self._csv_path
     

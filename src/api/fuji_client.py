@@ -1,6 +1,7 @@
 """F-UJI API Client for FAIR assessments."""
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
@@ -55,16 +56,27 @@ class FujiClient:
     DEFAULT_ENDPOINT = "https://fuji.rz-vm182.gfz.de/fuji/api/v1"
     
     # Default credentials for the F-UJI API.
-    # These are intentionally public credentials for the publicly accessible
+    # These can be overridden via environment variables FUJI_USERNAME and FUJI_PASSWORD.
+    # The defaults are intentionally public credentials for the publicly accessible
     # F-UJI demonstration/testing service. The F-UJI API does not handle
     # sensitive data and these credentials are documented in F-UJI's
     # official setup instructions (see: https://github.com/pangaea-data-publisher/fuji).
-    # For production deployments with custom F-UJI instances, credentials
-    # can be overridden via the constructor parameters.
-    DEFAULT_USERNAME = "marvel"
-    DEFAULT_PASSWORD = "wonderwoman"
+    # For production deployments with custom F-UJI instances, use environment
+    # variables or constructor parameters to override.
+    _DEFAULT_USERNAME = "marvel"
+    _DEFAULT_PASSWORD = "wonderwoman"
     
     TIMEOUT = 120  # Assessment can take a while
+    
+    @classmethod
+    def get_default_username(cls) -> str:
+        """Get default username from environment or fallback."""
+        return os.environ.get("FUJI_USERNAME", cls._DEFAULT_USERNAME)
+    
+    @classmethod
+    def get_default_password(cls) -> str:
+        """Get default password from environment or fallback."""
+        return os.environ.get("FUJI_PASSWORD", cls._DEFAULT_PASSWORD)
     
     def __init__(
         self,
@@ -77,12 +89,13 @@ class FujiClient:
         
         Args:
             endpoint: F-UJI API endpoint URL (default: GFZ server)
-            username: API username (default: marvel)
-            password: API password (default: wonderwoman)
+            username: API username (default: from FUJI_USERNAME env or 'marvel')
+            username: API username (default: from FUJI_USERNAME env or 'marvel')
+            password: API password (default: from FUJI_PASSWORD env or 'wonderwoman')
         """
         self.endpoint = (endpoint or self.DEFAULT_ENDPOINT).rstrip('/')
-        self.username = username or self.DEFAULT_USERNAME
-        self.password = password or self.DEFAULT_PASSWORD
+        self.username = username or self.get_default_username()
+        self.password = password or self.get_default_password()
         self.auth = HTTPBasicAuth(self.username, self.password)
         
         logger.info(f"F-UJI client initialized with endpoint: {self.endpoint}")

@@ -85,20 +85,30 @@ class FujiAssessmentWorker(QObject):
         
         try:
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                # Submit all DOIs
+                # Submit all DOIs and track futures
                 future_to_doi = {
                     executor.submit(self._assess_single_doi, doi): doi
                     for doi in self.dois
                 }
+                # Keep list of futures for cancellation
+                pending_futures = list(future_to_doi.keys())
                 
                 # Process completed assessments
                 for future in as_completed(future_to_doi):
                     if self._cancelled:
-                        # Cancel remaining futures
-                        for f in future_to_doi:
-                            f.cancel()
+                        # Cancel remaining pending futures
+                        # Note: Already-running futures cannot be cancelled
+                        for f in pending_futures:
+                            if not f.done():
+                                f.cancel()
+                        # Shutdown executor without waiting
+                        executor.shutdown(wait=False, cancel_futures=True)
                         logger.info("Assessment cancelled, stopping workers")
                         break
+                    
+                    # Remove from pending list
+                    if future in pending_futures:
+                        pending_futures.remove(future)
                     
                     doi = future_to_doi[future]
                     
@@ -380,17 +390,18 @@ class StreamingFujiWorker(QObject):
             # Wait for remaining futures and process their results
             for future in futures:
                 if not self._cancelled:
-                    try:
-                        future.result()  # Wait for completion
-                    except Exception as e:
-                        logger.error(f"Error waiting for future: {e}")
-                    # Process the result (handles its own exceptions)
+                    # _process_result handles both waiting and processing
+                    # to avoid duplicate future.result() calls
                     self._process_result(future)
     
     def _process_result(self, future):
-        """Process a completed assessment future."""
+        """Process a completed assessment future.
+        
+        Waits for the future to complete if needed, then processes the result.
+        Safe to call multiple times - result() caches the value.
+        """
         try:
-            result = future.result()
+            result = future.result()  # Waits if not complete, returns cached value if already done
             self.doi_assessed.emit(result.doi, result.score_percent)
             
             with self._lock:

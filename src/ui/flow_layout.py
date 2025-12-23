@@ -32,14 +32,18 @@ class FlowLayout(QLayout):
             self.setContentsMargins(margin, margin, margin, margin)
     
     def __del__(self):
-        """Clean up layout items and their widgets."""
-        # Properly delete widgets before removing layout items
+        """Clean up layout items.
+        
+        Note: We rely on Qt's parent-child ownership model for widget cleanup.
+        Explicitly setting parent to None releases ownership before removal.
+        """
         while self._item_list:
             item = self._item_list.pop(0)
             if item:
                 widget = item.widget()
                 if widget:
-                    widget.deleteLater()
+                    # Release from parent ownership for proper cleanup
+                    widget.setParent(None)
     
     def addItem(self, item):
         """Add an item to the layout."""

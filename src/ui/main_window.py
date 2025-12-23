@@ -3385,14 +3385,14 @@ class MainWindow(QMainWindow):
         # Get credentials from dialog attributes
         username = dialog.username_input.text().strip()
         # Use loaded password if available, otherwise get from input
-        if dialog._loaded_password:
-            password = dialog._loaded_password
+        if dialog.loaded_password:
+            password = dialog.loaded_password
         else:
             password = dialog.password_input.text().strip()
         use_test_api = dialog.test_api_checkbox.isChecked()
         
         # Check if credentials are new (not from saved account)
-        credentials_are_new = not dialog._loaded_password
+        credentials_are_new = dialog.is_new_credentials
         
         logger.info(f"Credentials obtained for user: {username}")
         

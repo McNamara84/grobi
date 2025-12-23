@@ -70,8 +70,9 @@ class TestFujiClientInit:
     def test_default_endpoint(self, default_client):
         """Test that default endpoint is set correctly."""
         assert default_client.endpoint == FujiClient.DEFAULT_ENDPOINT
-        assert default_client.username == FujiClient.DEFAULT_USERNAME
-        assert default_client.password == FujiClient.DEFAULT_PASSWORD
+        # Use class methods to get defaults (which check environment variables)
+        assert default_client.username == FujiClient.get_default_username()
+        assert default_client.password == FujiClient.get_default_password()
     
     def test_endpoint_trailing_slash_removed(self):
         """Test that trailing slash is removed from endpoint."""
