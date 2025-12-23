@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox, QDialog
 )
 from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt, QSettings
-from PySide6.QtGui import QFont, QIcon, QAction, QDesktopServices, QPixmap
+from PySide6.QtGui import QFont, QIcon, QAction, QDesktopServices, QPixmap, QGuiApplication
 
 from src.ui.credentials_dialog import CredentialsDialog
 from src.ui.save_credentials_dialog import SaveCredentialsDialog
