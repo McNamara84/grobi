@@ -16,6 +16,16 @@ class CSVParseError(Exception):
     pass
 
 
+class SPDXValidationError(CSVParseError):
+    """Raised when SPDX identifier validation fails."""
+    pass
+
+
+class LanguageCodeError(CSVParseError):
+    """Raised when ISO 639-1 language code validation fails."""
+    pass
+
+
 class CSVParser:
     """Parser and validator for CSV files containing DOI and Landing Page URL data."""
     
@@ -913,8 +923,10 @@ class CSVParser:
         except csv.Error as e:
             raise CSVParseError(f"CSV-Parsing-Fehler: {e}")
 
-    # Valid SPDX license identifiers (common ones)
-    # Full list at https://spdx.org/licenses/
+    # Curated subset of valid SPDX license identifiers commonly used at GFZ Data Services.
+    # This is NOT the complete SPDX list - only licenses typically used for research data.
+    # Full official list available at: https://spdx.org/licenses/
+    # Validation is case-insensitive (identifiers are normalized to uppercase for comparison).
     VALID_SPDX_IDENTIFIERS = {
         # Creative Commons licenses
         "CC0-1.0", "CC-BY-1.0", "CC-BY-2.0", "CC-BY-2.5", "CC-BY-3.0", "CC-BY-4.0",
@@ -1091,9 +1103,9 @@ class CSVParser:
                         )
                     
                     # Validate SPDX identifier (if provided)
-                    if rights_identifier and rights_identifier_scheme.upper() == 'SPDX':
+                    if rights_identifier and rights_identifier_scheme.strip().upper() == 'SPDX':
                         if not CSVParser.validate_spdx_identifier(rights_identifier):
-                            raise CSVParseError(
+                            raise SPDXValidationError(
                                 f"Zeile {row_num}: Ungültiger SPDX-Identifier '{rights_identifier}' für DOI '{doi}'. "
                                 f"Gültige SPDX-Identifier findest du unter https://spdx.org/licenses/"
                             )
@@ -1101,7 +1113,7 @@ class CSVParser:
                     # Validate language code (if provided)
                     if lang:
                         if not CSVParser.validate_language_code(lang):
-                            raise CSVParseError(
+                            raise LanguageCodeError(
                                 f"Zeile {row_num}: Ungültiger Sprachcode '{lang}' für DOI '{doi}'. "
                                 f"Erlaubt sind ISO 639-1 Codes (z.B. 'en', 'de', 'fr')."
                             )
@@ -1140,7 +1152,7 @@ class CSVParser:
                             'lang': lang
                         }
                         rights_by_doi[doi].append(rights_data)
-                        display_text = rights_identifier if rights_identifier else (rights_text[:30] + '...' if len(rights_text) > 30 else rights_text) if rights_text else 'empty'
+                        display_text = rights_identifier if rights_identifier else (rights_text[:30] + '...' if len(rights_text) > 30 else rights_text) if rights_text else '(leer)'
                         logger.debug(f"Parsed rights for {doi}: {display_text}")
         
         except csv.Error as e:

@@ -21,6 +21,7 @@ from src.ui.fuji_results_window import FujiResultsWindow
 from src.api.datacite_client import DataCiteClient, DataCiteAPIError, AuthenticationError, NetworkError
 from src.api.fuji_client import FujiClient
 from src.utils.csv_exporter import export_dois_to_csv, export_dois_with_creators_to_csv, export_dois_with_publisher_to_csv, export_dois_with_contributors_to_csv, export_dois_with_rights_to_csv, CSVExportError
+from src.utils.csv_parser import SPDXValidationError, LanguageCodeError
 from src.workers.update_worker import UpdateWorker
 from src.workers.authors_update_worker import AuthorsUpdateWorker
 from src.workers.publisher_update_worker import PublisherUpdateWorker
@@ -434,6 +435,9 @@ class MainWindow(QMainWindow):
         # Thread and worker for rights update
         self.rights_update_thread = None
         self.rights_update_worker = None
+        
+        # Flag to prevent double dialogs on rights update errors
+        self._rights_update_had_critical_error = False
         
         # F-UJI FAIR Assessment
         self.fuji_thread = None
@@ -3814,7 +3818,7 @@ class MainWindow(QMainWindow):
         
         # If total is 0 and there's a critical error flag, don't show success dialog
         # (the error dialog was already shown by _on_rights_update_error)
-        if total == 0 and hasattr(self, '_rights_update_had_critical_error') and self._rights_update_had_critical_error:
+        if total == 0 and self._rights_update_had_critical_error:
             # Reset flag and skip success dialog
             self._rights_update_had_critical_error = False
             self._log("Rights-Update wurde aufgrund eines Fehlers abgebrochen.")

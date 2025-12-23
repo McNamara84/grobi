@@ -4,7 +4,7 @@ import pytest
 import tempfile
 import os
 
-from src.utils.csv_parser import CSVParser, CSVParseError
+from src.utils.csv_parser import CSVParser, CSVParseError, SPDXValidationError, LanguageCodeError
 
 
 class TestSPDXValidation:
@@ -204,7 +204,7 @@ class TestParseRightsUpdateCSV:
             csv_path = f.name
 
         try:
-            with pytest.raises(CSVParseError) as exc_info:
+            with pytest.raises(SPDXValidationError) as exc_info:
                 CSVParser.parse_rights_update_csv(csv_path)
             assert "SPDX" in str(exc_info.value)
             assert "INVALID-LICENSE" in str(exc_info.value)
@@ -221,7 +221,7 @@ class TestParseRightsUpdateCSV:
             csv_path = f.name
 
         try:
-            with pytest.raises(CSVParseError) as exc_info:
+            with pytest.raises(LanguageCodeError) as exc_info:
                 CSVParser.parse_rights_update_csv(csv_path)
             assert "Sprachcode" in str(exc_info.value) or "lang" in str(exc_info.value).lower()
         finally:

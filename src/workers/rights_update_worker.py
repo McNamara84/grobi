@@ -15,7 +15,14 @@ def _normalize_rights_entry(r: dict) -> tuple:
     Create a hashable tuple from rights dict for comparison.
     
     Normalizes all fields to lowercase and strips whitespace for
-    case-insensitive, order-independent comparison.
+    case-insensitive, order-independent comparison. This normalization is
+    intentional for comparison purposes only - the actual API submission
+    preserves the original case from the CSV file.
+    
+    Note: DataCite API may return fields with different casing than what was
+    submitted (e.g., SPDX identifiers are often normalized to lowercase by
+    DataCite). This function ensures that such differences don't cause
+    false-positive change detection.
     
     Args:
         r: Rights dictionary with fields like 'rights', 'rightsUri', etc.
