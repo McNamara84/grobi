@@ -22,12 +22,14 @@ def qapp():
 
 @pytest.fixture
 def window(qapp):
-    """Create a FujiResultsWindow."""
-    win = FujiResultsWindow()
-    yield win
-    # Ensure _is_running is False to avoid QMessageBox dialog on close
-    win._is_running = False
-    win.close()
+    """Create a FujiResultsWindow with mocked dialogs for CI compatibility."""
+    # Mock QMessageBox.question to avoid blocking dialogs in CI
+    with patch.object(QMessageBox, 'question', return_value=QMessageBox.No):
+        win = FujiResultsWindow()
+        yield win
+        # Ensure _is_running is False to avoid QMessageBox dialog on close
+        win._is_running = False
+        win.close()
 
 
 class TestFujiResultsWindowInit:
