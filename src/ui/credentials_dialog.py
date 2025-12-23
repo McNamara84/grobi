@@ -1,6 +1,7 @@
 """Credentials Dialog for DataCite API authentication."""
 
 from pathlib import Path
+from typing import Optional
 import logging
 
 from PySide6.QtWidgets import (
@@ -45,7 +46,7 @@ class CredentialsDialog(QDialog):
         self.selected_account_id = None
         self._loaded_password = None  # Stores password when loading from saved account
         self._is_new_credentials = True  # Initialize flag, updated when account is loaded
-        
+    
         try:
             self.credential_manager = CredentialManager()
             self.saved_accounts = self.credential_manager.list_accounts()
@@ -66,6 +67,8 @@ class CredentialsDialog(QDialog):
             self.setWindowTitle("Autoren-Metadaten aktualisieren")
         elif mode == "update_publisher":
             self.setWindowTitle("Publisher-Metadaten aktualisieren")
+        elif mode == "fuji_check":
+            self.setWindowTitle("F-UJI FAIR Assessment")
         else:
             self.setWindowTitle("DataCite Anmeldung")
         
@@ -75,6 +78,24 @@ class CredentialsDialog(QDialog):
         self._setup_ui()
         self._apply_styles()
     
+    @property
+    def loaded_password(self) -> Optional[str]:
+        """Get the password loaded from a saved account.
+        
+        Returns:
+            The password if loaded from saved account, None otherwise.
+        """
+        return self._loaded_password
+    
+    @property
+    def is_new_credentials(self) -> bool:
+        """Check if credentials are new (not from saved account).
+        
+        Returns:
+            True if credentials are new, False if loaded from saved account.
+        """
+        return self._is_new_credentials
+
     def _setup_ui(self):
         """Set up the user interface."""
         layout = QVBoxLayout(self)
@@ -108,6 +129,11 @@ class CredentialsDialog(QDialog):
             description_text = (
                 "Gib deine DataCite Zugangsdaten ein und wähle eine CSV-Datei "
                 "mit DOIs und Contributor-Metadaten aus."
+            )
+        elif self.mode == "fuji_check":
+            description_text = (
+                "Gib deine DataCite Zugangsdaten ein, um alle DOIs abzurufen "
+                "und nach FAIR-Kriterien zu bewerten."
             )
         else:
             description_text = "Gib deine DataCite Zugangsdaten ein, um DOIs abzurufen."
@@ -234,6 +260,8 @@ class CredentialsDialog(QDialog):
             self.ok_button.setText("Contributor-Metadaten aktualisieren")
             # Disable button initially for update_contributors mode (needs CSV file)
             self.ok_button.setEnabled(False)
+        elif self.mode == "fuji_check":
+            self.ok_button.setText("FAIR Check starten")
         else:
             self.ok_button.setText("DOIs holen")
         

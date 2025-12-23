@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox
+    QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox, QDialog
 )
 from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt, QSettings
 from PySide6.QtGui import QFont, QIcon, QAction, QDesktopServices, QPixmap, QGuiApplication
@@ -17,13 +17,16 @@ from src.ui.save_credentials_dialog import SaveCredentialsDialog
 from src.ui.about_dialog import AboutDialog
 from src.ui.csv_splitter_dialog import CSVSplitterDialog
 from src.ui.theme_manager import ThemeManager, Theme
+from src.ui.fuji_results_window import FujiResultsWindow
 from src.api.datacite_client import DataCiteClient, DataCiteAPIError, AuthenticationError, NetworkError
+from src.api.fuji_client import FujiClient
 from src.utils.csv_exporter import export_dois_to_csv, export_dois_with_creators_to_csv, export_dois_with_publisher_to_csv, export_dois_with_contributors_to_csv, CSVExportError
 from src.workers.update_worker import UpdateWorker
 from src.workers.authors_update_worker import AuthorsUpdateWorker
 from src.workers.publisher_update_worker import PublisherUpdateWorker
 from src.workers.contributors_update_worker import ContributorsUpdateWorker
 from src.workers.pending_export_worker import PendingExportWorker
+from src.workers.fuji_worker import FujiAssessmentThread, StreamingFujiThread
 
 
 logger = logging.getLogger(__name__)
@@ -364,6 +367,10 @@ class MainWindow(QMainWindow):
         self.download_url_update_thread = None
         self.download_url_update_worker = None
         
+        # F-UJI FAIR Assessment
+        self.fuji_thread = None
+        self.fuji_results_window = None
+        
         # Track current username for CSV detection
         self._current_username = None
         
@@ -603,6 +610,24 @@ class MainWindow(QMainWindow):
         
         pending_group.setLayout(pending_layout)
         layout.addWidget(pending_group)
+        
+        # GroupBox 7: F-UJI FAIR Assessment
+        fuji_group = QGroupBox("🎯 F-UJI FAIR Assessment")
+        fuji_layout = QVBoxLayout()
+        fuji_layout.setSpacing(10)
+        
+        # Button for FAIR check
+        self.fuji_check_btn = QPushButton("🔍 FAIR Check starten")
+        self.fuji_check_btn.setMinimumHeight(40)
+        self.fuji_check_btn.setToolTip(
+            "Bewertet alle DOIs des DataCite-Accounts nach FAIR-Kriterien.\n"
+            "Verwendet den F-UJI FAIR Assessment Service."
+        )
+        self.fuji_check_btn.clicked.connect(self._on_fuji_check_clicked)
+        fuji_layout.addWidget(self.fuji_check_btn)
+        
+        fuji_group.setLayout(fuji_layout)
+        layout.addWidget(fuji_group)
         
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -3339,6 +3364,129 @@ class MainWindow(QMainWindow):
         
         self._log("Bereit für nächsten Vorgang.")
     
+    # =========================================================================
+    # F-UJI FAIR Assessment Methods
+    # =========================================================================
+    
+    def _on_fuji_check_clicked(self):
+        """Handle F-UJI FAIR Check button click."""
+        logger.info("F-UJI Check button clicked")
+        self._log("F-UJI Check wird gestartet...")
+        
+        # Show credentials dialog in fuji_check mode
+        dialog = CredentialsDialog(self, mode="fuji_check")
+        logger.info("CredentialsDialog created, showing now...")
+        
+        if dialog.exec() != QDialog.Accepted:
+            logger.info("Dialog cancelled by user")
+            self._log("F-UJI Check abgebrochen.")
+            return
+        
+        # Get credentials from dialog attributes
+        username = dialog.username_input.text().strip()
+        # Use loaded password if available, otherwise get from input
+        if dialog.loaded_password:
+            password = dialog.loaded_password
+        else:
+            password = dialog.password_input.text().strip()
+        use_test_api = dialog.test_api_checkbox.isChecked()
+        
+        # Check if credentials are new (not from saved account)
+        credentials_are_new = dialog.is_new_credentials
+        
+        logger.info(f"Credentials obtained for user: {username}")
+        
+        # Disable button during operation
+        self.fuji_check_btn.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self._log("Starte F-UJI FAIR Assessment (Streaming-Modus)...")
+        
+        # Offer to save credentials if new
+        if credentials_are_new:
+            api_type = "test" if use_test_api else "production"
+            self._offer_save_credentials(username, password, api_type)
+        
+        try:
+            # Create DataCite client for streaming
+            datacite_client = DataCiteClient(username, password, use_test_api)
+            
+            # Open results window in streaming mode
+            self.fuji_results_window = FujiResultsWindow(self, self.theme_manager)
+            self.fuji_results_window.start_streaming_assessment()
+            self.fuji_results_window.assessment_cancelled.connect(self._on_fuji_cancelled)
+            self.fuji_results_window.closed.connect(self._cleanup_fuji_check)
+            self.fuji_results_window.show()
+            
+            try:
+                # Start streaming assessment thread
+                self.fuji_thread = StreamingFujiThread(datacite_client, max_workers=5)
+                
+                # Connect signals for streaming mode
+                self.fuji_thread.worker.doi_discovered.connect(self.fuji_results_window.add_pending_tile)
+                self.fuji_thread.worker.doi_assessed.connect(self.fuji_results_window.add_result)
+                self.fuji_thread.worker.fetch_complete.connect(self.fuji_results_window.set_total_dois)
+                self.fuji_thread.worker.progress.connect(self._log)
+                self.fuji_thread.worker.error.connect(self._on_fuji_error)
+                self.fuji_thread.worker.finished.connect(self._on_fuji_finished)
+                self.fuji_thread.start()
+                
+                self._log("DOI-Abruf und Bewertung laufen parallel...")
+            except Exception as e:
+                # Thread setup failed after window was created - close window
+                if self.fuji_results_window:
+                    self.fuji_results_window.close()
+                raise
+            
+        except AuthenticationError as e:
+            self._log(f"[FEHLER] Authentifizierung fehlgeschlagen: {e}")
+            QMessageBox.critical(self, "Authentifizierungsfehler", str(e))
+            self._cleanup_fuji_check()
+        except NetworkError as e:
+            self._log(f"[FEHLER] Netzwerkfehler: {e}")
+            QMessageBox.critical(self, "Netzwerkfehler", str(e))
+            self._cleanup_fuji_check()
+        except DataCiteAPIError as e:
+            self._log(f"[FEHLER] API-Fehler: {e}")
+            QMessageBox.critical(self, "API-Fehler", str(e))
+            self._cleanup_fuji_check()
+        except Exception as e:
+            self._log(f"[FEHLER] Unerwarteter Fehler: {e}")
+            logger.exception("Unexpected error in FUJI check")
+            QMessageBox.critical(self, "Fehler", f"Unerwarteter Fehler: {e}")
+            self._cleanup_fuji_check()
+    
+    def _on_fuji_cancelled(self):
+        """Handle FAIR assessment cancellation."""
+        if self.fuji_thread and self.fuji_thread.isRunning():
+            self.fuji_thread.cancel()
+            self.fuji_thread.quit()
+            self.fuji_thread.wait(3000)
+        self._log("FAIR Assessment abgebrochen.")
+    
+    def _on_fuji_error(self, error_msg: str):
+        """Handle FAIR assessment error."""
+        self._log(f"[FEHLER] {error_msg}")
+        QMessageBox.warning(self, "F-UJI Fehler", error_msg)
+    
+    def _on_fuji_finished(self):
+        """Handle FAIR assessment completion."""
+        self._log("[OK] FAIR Assessment abgeschlossen.")
+        self.progress_bar.setVisible(False)
+        self.fuji_check_btn.setEnabled(True)
+    
+    def _cleanup_fuji_check(self):
+        """Clean up F-UJI check resources."""
+        self.progress_bar.setVisible(False)
+        self.fuji_check_btn.setEnabled(True)
+        
+        if self.fuji_thread and self.fuji_thread.isRunning():
+            self.fuji_thread.cancel()
+            self.fuji_thread.quit()
+            self.fuji_thread.wait(3000)
+        
+        self.fuji_thread = None
+        self._log("Bereit für nächsten Vorgang.")
+    
     def closeEvent(self, event):
         """
         Handle window close event.
@@ -3417,5 +3565,12 @@ class MainWindow(QMainWindow):
                 self.pending_export_worker.stop()
             self.pending_export_thread.quit()
             self.pending_export_thread.wait(3000)  # Wait max 3 seconds
+        
+        # If F-UJI assessment thread is running, cancel and wait
+        if self.fuji_thread is not None and self.fuji_thread.isRunning():
+            self._log("Warte auf Abschluss des FAIR Assessments...")
+            self.fuji_thread.cancel()
+            self.fuji_thread.quit()
+            self.fuji_thread.wait(3000)  # Wait max 3 seconds
         
         event.accept()

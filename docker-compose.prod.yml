@@ -1,0 +1,32 @@
+# F-UJI FAIR assessment server deployment for GFZ infrastructure.
+# Requires existing Traefik reverse proxy with 'traefik' Docker network.
+# Used by GROBI's F-UJI Check feature to assess DOI metadata quality.
+services:
+  fuji:
+    image: ghcr.io/pangaea-data-publisher/fuji:latest
+    container_name: fuji-fair-assessment
+    restart: unless-stopped
+    environment:
+      TIKA_LOG_PATH: /tmp
+      PYTHONUNBUFFERED: "1"
+      TZ: Europe/Berlin
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:1071/fuji/api/v1/metrics/0.5')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - frontend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.fuji-router.rule=Host(`fuji.rz-vm182.gfz.de`)"
+      - "traefik.http.routers.fuji-router.entrypoints=https"
+      - "traefik.http.routers.fuji-router.tls=true"
+      - "traefik.http.services.fuji-service.loadbalancer.server.port=1071"
+      - "traefik.docker.network=traefik"
+
+networks:
+  frontend:
+    external:
+      name: traefik
