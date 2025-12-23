@@ -90,7 +90,6 @@ class FujiClient:
         Args:
             endpoint: F-UJI API endpoint URL (default: GFZ server)
             username: API username (default: from FUJI_USERNAME env or 'marvel')
-            username: API username (default: from FUJI_USERNAME env or 'marvel')
             password: API password (default: from FUJI_PASSWORD env or 'wonderwoman')
         """
         self.endpoint = (endpoint or self.DEFAULT_ENDPOINT).rstrip('/')
@@ -186,6 +185,7 @@ class FujiClient:
                     if 'detail' in error_detail:
                         error_msg = f"{error_msg} - {error_detail['detail']}"
                 except Exception:
+                    # JSON parsing failed - use generic error message already set above
                     pass
                 
                 return FujiResult(

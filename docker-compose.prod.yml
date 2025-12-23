@@ -1,4 +1,6 @@
-# For deployment of F-UJI
+# F-UJI FAIR assessment server deployment for GFZ infrastructure.
+# Requires existing Traefik reverse proxy with 'traefik' Docker network.
+# Used by GROBI's F-UJI Check feature to assess DOI metadata quality.
 services:
   fuji:
     image: ghcr.io/pangaea-data-publisher/fuji:latest

@@ -149,9 +149,8 @@ class FujiResultsWindow(QMainWindow):
     
     def _apply_styles(self):
         """Apply theme-aware styles."""
-        if self.theme_manager:
-            # Theme manager will handle styling
-            pass
+        # Theme-aware styling intentionally left for future ThemeManager integration.
+        # Currently using only default stylesheet below.
         
         # Default styling for scroll area
         self.scroll_area.setStyleSheet("""
@@ -289,6 +288,8 @@ class FujiResultsWindow(QMainWindow):
         
         # Check if complete
         if self.completed_count >= self.total_dois and self.total_dois > 0:
+            if self.completed_count > self.total_dois:
+                logger.warning(f"Received more results ({self.completed_count}) than expected DOIs ({self.total_dois})")
             self._on_assessment_complete()
     
     def _update_average_score(self):

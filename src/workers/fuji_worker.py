@@ -390,15 +390,13 @@ class StreamingFujiWorker(QObject):
             # Wait for remaining futures and process their results
             for future in futures:
                 if not self._cancelled:
-                    # _process_result handles both waiting and processing
-                    # to avoid duplicate future.result() calls
                     self._process_result(future)
     
     def _process_result(self, future):
-        """Process a completed assessment future.
+        """Process an assessment future.
         
-        Waits for the future to complete if needed, then processes the result.
-        Safe to call multiple times - result() caches the value.
+        Waits for the future to complete if needed. Note that future.result()
+        is safe to call on already-completed futures as it returns immediately.
         """
         try:
             result = future.result()  # Waits if not complete, returns cached value if already done

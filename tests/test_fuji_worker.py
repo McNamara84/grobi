@@ -259,7 +259,6 @@ class TestFujiWorkerIntegration:
         worker.finished.connect(lambda: finished_called.__setitem__(0, True))
         
         # Run worker
-        import threading
         thread = threading.Thread(target=worker.run)
         thread.start()
         thread.join(timeout=10)
