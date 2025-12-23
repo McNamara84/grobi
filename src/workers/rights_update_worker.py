@@ -10,6 +10,29 @@ from src.utils.csv_parser import CSVParser, CSVParseError
 logger = logging.getLogger(__name__)
 
 
+def _normalize_rights_entry(r: dict) -> tuple:
+    """
+    Create a hashable tuple from rights dict for comparison.
+    
+    Normalizes all fields to lowercase and strips whitespace for
+    case-insensitive, order-independent comparison.
+    
+    Args:
+        r: Rights dictionary with fields like 'rights', 'rightsUri', etc.
+        
+    Returns:
+        Tuple of normalized field values for set-based comparison.
+    """
+    return (
+        r.get("rights", "").strip().lower(),
+        r.get("rightsUri", "").strip().lower(),
+        r.get("schemeUri", "").strip().lower(),
+        r.get("rightsIdentifier", "").strip().lower(),
+        r.get("rightsIdentifierScheme", "").strip().lower(),
+        r.get("lang", "").strip().lower()
+    )
+
+
 class RightsUpdateWorker(QObject):
     """Worker for updating DOI rights in a separate thread."""
     
@@ -241,20 +264,9 @@ class RightsUpdateWorker(QObject):
         if len(current_rights) == 0:
             return False, "Keine Rights vorhanden"
         
-        def normalize_rights(r: dict) -> tuple:
-            """Create a hashable tuple from rights dict for comparison."""
-            return (
-                r.get("rights", "").strip().lower(),
-                r.get("rightsUri", "").strip().lower(),
-                r.get("schemeUri", "").strip().lower(),
-                r.get("rightsIdentifier", "").strip().lower(),
-                r.get("rightsIdentifierScheme", "").strip().lower(),
-                r.get("lang", "").strip().lower()
-            )
-        
         # Create normalized sets for order-independent comparison
-        current_normalized = set(normalize_rights(r) for r in current_rights)
-        csv_normalized = set(normalize_rights(r) for r in csv_rights)
+        current_normalized = set(_normalize_rights_entry(r) for r in current_rights)
+        csv_normalized = set(_normalize_rights_entry(r) for r in csv_rights)
         
         # Compare sets
         if current_normalized == csv_normalized:
