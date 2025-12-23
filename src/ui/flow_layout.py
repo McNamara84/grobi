@@ -32,10 +32,14 @@ class FlowLayout(QLayout):
             self.setContentsMargins(margin, margin, margin, margin)
     
     def __del__(self):
-        """Clean up layout items."""
-        item = self.takeAt(0)
-        while item:
-            item = self.takeAt(0)
+        """Clean up layout items and their widgets."""
+        # Properly delete widgets before removing layout items
+        while self._item_list:
+            item = self._item_list.pop(0)
+            if item:
+                widget = item.widget()
+                if widget:
+                    widget.deleteLater()
     
     def addItem(self, item):
         """Add an item to the layout."""

@@ -3,8 +3,8 @@
 import logging
 import queue
 import threading
-from concurrent.futures import ThreadPoolExecutor
-from typing import List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List
 
 from PySide6.QtCore import QObject, Signal, QThread
 
@@ -175,6 +175,9 @@ class FujiAssessmentThread(QThread):
         thread.worker.doi_assessed.connect(on_doi_assessed)
         thread.worker.finished.connect(on_finished)
         thread.start()
+    
+    Note: The worker is created separately and moved to this thread,
+    following Qt's recommended threading pattern.
     """
     
     def __init__(
@@ -195,16 +198,25 @@ class FujiAssessmentThread(QThread):
         """
         super().__init__(parent)
         
-        self.worker = FujiAssessmentWorker(dois, fuji_client, max_workers)
-        self.worker.moveToThread(self)
+        # Create worker without parent so it can be moved to this thread
+        self._worker = FujiAssessmentWorker(dois, fuji_client, max_workers)
+        # Worker stays in main thread until run() is called
+        # This avoids the incorrect moveToThread(self) pattern
+    
+    @property
+    def worker(self):
+        """Access the worker for signal connections."""
+        return self._worker
     
     def run(self):
-        """Run the worker."""
-        self.worker.run()
+        """Run the worker in this thread's context."""
+        # Worker.run() is called from within QThread.run()
+        # so it executes in this thread's context
+        self._worker.run()
     
     def cancel(self):
         """Cancel the assessment."""
-        self.worker.cancel()
+        self._worker.cancel()
 
 
 class StreamingFujiWorker(QObject):
@@ -365,10 +377,14 @@ class StreamingFujiWorker(QObject):
                     futures.remove(future)
                     self._process_result(future)
             
-            # Wait for remaining futures
+            # Wait for remaining futures and process their results
             for future in futures:
                 if not self._cancelled:
-                    future.result()  # Wait for completion
+                    try:
+                        future.result()  # Wait for completion
+                    except Exception as e:
+                        logger.error(f"Error waiting for future: {e}")
+                    # Process the result (handles its own exceptions)
                     self._process_result(future)
     
     def _process_result(self, future):
@@ -419,6 +435,9 @@ class StreamingFujiThread(QThread):
         thread.worker.doi_assessed.connect(on_assessed)
         thread.worker.finished.connect(on_finished)
         thread.start()
+    
+    Note: The worker is created separately and its run() method is called
+    from within QThread.run(), following Qt's recommended threading pattern.
     """
     
     def __init__(
@@ -430,13 +449,20 @@ class StreamingFujiThread(QThread):
     ):
         super().__init__(parent)
         
-        self.worker = StreamingFujiWorker(datacite_client, fuji_client, max_workers)
-        self.worker.moveToThread(self)
+        # Create worker without parent so it can be properly managed
+        self._worker = StreamingFujiWorker(datacite_client, fuji_client, max_workers)
+        # Worker's run() is called from within QThread.run()
+        # so it executes in this thread's context
+    
+    @property
+    def worker(self):
+        """Access the worker for signal connections."""
+        return self._worker
     
     def run(self):
-        """Run the worker."""
-        self.worker.run()
+        """Run the worker in this thread's context."""
+        self._worker.run()
     
     def cancel(self):
         """Cancel the assessment."""
-        self.worker.cancel()
+        self._worker.cancel()

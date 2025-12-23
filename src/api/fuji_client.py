@@ -53,6 +53,14 @@ class FujiClient:
     
     # Default GFZ F-UJI server
     DEFAULT_ENDPOINT = "https://fuji.rz-vm182.gfz.de/fuji/api/v1"
+    
+    # Default credentials for the F-UJI API.
+    # These are intentionally public credentials for the publicly accessible
+    # F-UJI demonstration/testing service. The F-UJI API does not handle
+    # sensitive data and these credentials are documented in F-UJI's
+    # official setup instructions (see: https://github.com/pangaea-data-publisher/fuji).
+    # For production deployments with custom F-UJI instances, credentials
+    # can be overridden via the constructor parameters.
     DEFAULT_USERNAME = "marvel"
     DEFAULT_PASSWORD = "wonderwoman"
     

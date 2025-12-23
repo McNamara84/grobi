@@ -365,6 +365,7 @@ class FujiResultsWindow(QMainWindow):
     
     def _init_csv_export(self):
         """Initialize CSV export file."""
+        temp_file = None
         try:
             # Create filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -375,11 +376,15 @@ class FujiResultsWindow(QMainWindow):
             self._csv_path = downloads_dir / f"fuji_results_{timestamp}.csv"
             
             # Open file with UTF-8 BOM for Excel compatibility
-            self._csv_file = open(self._csv_path, 'w', newline='', encoding='utf-8-sig')
-            self._csv_writer = csv.writer(self._csv_file, delimiter=';')
+            temp_file = open(self._csv_path, 'w', newline='', encoding='utf-8-sig')
+            self._csv_writer = csv.writer(temp_file, delimiter=';')
             
             # Write header
             self._csv_writer.writerow(['DOI', 'Bewertung'])
+            
+            # Only assign to instance variable after successful initialization
+            self._csv_file = temp_file
+            temp_file = None  # Prevent cleanup in finally block
             
             logger.info(f"CSV export initialized: {self._csv_path}")
         except Exception as e:
@@ -387,6 +392,13 @@ class FujiResultsWindow(QMainWindow):
             self._csv_file = None
             self._csv_writer = None
             self._csv_path = None
+        finally:
+            # Close file handle if initialization failed after opening
+            if temp_file is not None:
+                try:
+                    temp_file.close()
+                except Exception:
+                    pass  # Ignore errors during cleanup
     
     def _write_csv_row(self, doi: str, score_percent: float):
         """Write a single result row to the CSV file."""
@@ -405,13 +417,23 @@ class FujiResultsWindow(QMainWindow):
             logger.error(f"Failed to write CSV row for {doi}: {e}")
     
     def _close_csv(self):
-        """Close the CSV file and return the path."""
+        """Close the CSV file and return the path.
+        
+        Returns:
+            Path to the CSV file, or None if no file was created.
+        """
         if self._csv_file is not None:
             try:
-                self._csv_file.close()
+                # Check if file is already closed before attempting to close
+                if not self._csv_file.closed:
+                    self._csv_file.close()
                 logger.info(f"CSV export completed: {self._csv_path}")
             except Exception as e:
                 logger.error(f"Failed to close CSV file: {e}")
+            finally:
+                # Always clear references to prevent double-close attempts
+                self._csv_file = None
+                self._csv_writer = None
         
         return self._csv_path
     
@@ -427,9 +449,13 @@ class FujiResultsWindow(QMainWindow):
         
         success_count = self.completed_count - self.error_count
         
-        # Calculate average score
+        # Calculate average score - handle empty scores list
         scores = [t.score_percent for t in self.tiles.values() if t.score_percent >= 0]
-        avg_score = sum(scores) / len(scores) if scores else 0
+        if scores:
+            avg_score = sum(scores) / len(scores)
+        else:
+            avg_score = 0.0
+            logger.warning("No successful assessments - average score defaults to 0")
         
         # Build info text
         info_text = (
@@ -518,7 +544,3 @@ class FujiResultsWindow(QMainWindow):
         
         self.closed.emit()
         event.accept()
-
-    def _on_cancel_during_close(self):
-        """Handle cancel during close (placeholder for cleanup)."""
-        _ = self.completed_count - self.error_count  # Used in _on_action_button_clicked

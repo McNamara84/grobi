@@ -3417,19 +3417,25 @@ class MainWindow(QMainWindow):
             self.fuji_results_window.closed.connect(self._cleanup_fuji_check)
             self.fuji_results_window.show()
             
-            # Start streaming assessment thread
-            self.fuji_thread = StreamingFujiThread(datacite_client, max_workers=5)
-            
-            # Connect signals for streaming mode
-            self.fuji_thread.worker.doi_discovered.connect(self.fuji_results_window.add_pending_tile)
-            self.fuji_thread.worker.doi_assessed.connect(self.fuji_results_window.add_result)
-            self.fuji_thread.worker.fetch_complete.connect(self.fuji_results_window.set_total_dois)
-            self.fuji_thread.worker.progress.connect(self._log)
-            self.fuji_thread.worker.error.connect(self._on_fuji_error)
-            self.fuji_thread.worker.finished.connect(self._on_fuji_finished)
-            self.fuji_thread.start()
-            
-            self._log("DOI-Abruf und Bewertung laufen parallel...")
+            try:
+                # Start streaming assessment thread
+                self.fuji_thread = StreamingFujiThread(datacite_client, max_workers=5)
+                
+                # Connect signals for streaming mode
+                self.fuji_thread.worker.doi_discovered.connect(self.fuji_results_window.add_pending_tile)
+                self.fuji_thread.worker.doi_assessed.connect(self.fuji_results_window.add_result)
+                self.fuji_thread.worker.fetch_complete.connect(self.fuji_results_window.set_total_dois)
+                self.fuji_thread.worker.progress.connect(self._log)
+                self.fuji_thread.worker.error.connect(self._on_fuji_error)
+                self.fuji_thread.worker.finished.connect(self._on_fuji_finished)
+                self.fuji_thread.start()
+                
+                self._log("DOI-Abruf und Bewertung laufen parallel...")
+            except Exception as e:
+                # Thread setup failed after window was created - close window
+                if self.fuji_results_window:
+                    self.fuji_results_window.close()
+                raise
             
         except AuthenticationError as e:
             self._log(f"[FEHLER] Authentifizierung fehlgeschlagen: {e}")
