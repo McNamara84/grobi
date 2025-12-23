@@ -2633,3 +2633,301 @@ class DataCiteClient:
             error_msg = f"Netzwerkfehler bei DOI {doi}: {str(e)}"
             logger.error(f"Request exception during update: {e}")
             raise NetworkError(error_msg)
+
+    def fetch_all_dois_with_rights(self) -> List[Tuple[str, str, str, str, str, str, str]]:
+        """
+        Fetch all DOIs with rights information from DataCite API.
+        Uses cursor-based pagination to retrieve all records without limitation.
+        
+        Returns one row per rights entry. DOIs with multiple rights entries
+        will appear multiple times. DOIs without rights will have one row
+        with empty rights fields to allow identifying missing rights.
+        
+        Returns:
+            List of tuples containing:
+            (DOI, rights, rightsUri, schemeUri, rightsIdentifier, 
+             rightsIdentifierScheme, lang)
+            
+        Raises:
+            AuthenticationError: If credentials are invalid
+            NetworkError: If connection to API fails
+            DataCiteAPIError: For other API errors
+        """
+        all_rights_data = []
+        next_url = None  # Start with None to use initial cursor
+        page_count = 0
+        
+        logger.info(f"Starting to fetch DOIs with rights for client: {self.username} (using cursor pagination)")
+        
+        while True:
+            try:
+                page_count += 1
+                rights_data, next_url = self._fetch_page_with_rights(next_url)
+                all_rights_data.extend(rights_data)
+                
+                logger.info(f"Fetched page {page_count}: {len(rights_data)} rights entries (Total: {len(all_rights_data)})")
+                
+                if not next_url:
+                    break
+                
+            except requests.exceptions.Timeout:
+                error_msg = "Die Anfrage hat zu lange gedauert. Bitte versuche es erneut."
+                logger.error(f"Timeout on page {page_count}")
+                raise DataCiteAPIError(error_msg)
+            
+            except requests.exceptions.ConnectionError as e:
+                error_msg = "Verbindung zur DataCite API fehlgeschlagen. Bitte ueberprüfe deine Internetverbindung."
+                logger.error(f"Connection error: {e}")
+                raise NetworkError(error_msg)
+            
+            except requests.exceptions.RequestException as e:
+                error_msg = f"Netzwerkfehler bei der Kommunikation mit DataCite: {str(e)}"
+                logger.error(f"Request exception: {e}")
+                raise NetworkError(error_msg)
+        
+        logger.info(f"Successfully fetched {len(all_rights_data)} rights entries in total")
+        return all_rights_data
+
+    def _fetch_page_with_rights(self, next_url: Optional[str] = None) -> Tuple[List[Tuple[str, str, str, str, str, str, str]], Optional[str]]:
+        """
+        Fetch a single page of DOIs with rights information from the API using cursor-based pagination.
+        
+        Args:
+            next_url: Full URL for next page (from previous response), or None for first page
+            
+        Returns:
+            Tuple of (list of rights tuples, next_url for pagination or None if no more pages)
+            Each tuple contains: (DOI, rights, rightsUri, schemeUri, rightsIdentifier,
+                                 rightsIdentifierScheme, lang)
+            
+        Raises:
+            AuthenticationError: If credentials are invalid
+            DataCiteAPIError: For other API errors
+        """
+        if next_url:
+            # Use the complete next URL from the API response
+            url = next_url
+            params = None
+            logger.debug(f"Requesting next page with rights: {url}")
+        else:
+            # First page: use cursor=1
+            url = f"{self.base_url}/dois"
+            params = {
+                "client-id": self.username,
+                "page[size]": self.PAGE_SIZE,
+                "page[cursor]": 1
+            }
+            logger.debug(f"Requesting first page with rights: {url} with params: {params}")
+        
+        response = requests.get(
+            url,
+            auth=self.auth,
+            params=params,
+            timeout=self.TIMEOUT,
+            headers={"Accept": "application/vnd.api+json"}
+        )
+        
+        # Handle authentication errors
+        if response.status_code == 401:
+            error_msg = "Anmeldung fehlgeschlagen. Bitte überprüfe deinen Benutzernamen und dein Passwort."
+            logger.error(f"Authentication failed for user: {self.username}")
+            raise AuthenticationError(error_msg)
+        
+        # Handle rate limiting
+        if response.status_code == 429:
+            error_msg = "Zu viele Anfragen. Bitte warte einen Moment und versuche es erneut."
+            logger.error("Rate limit exceeded")
+            raise DataCiteAPIError(error_msg)
+        
+        # Handle other HTTP errors
+        if response.status_code != 200:
+            error_msg = f"DataCite API Fehler (HTTP {response.status_code}): {response.text}"
+            logger.error(f"API error: {response.status_code} - {response.text}")
+            raise DataCiteAPIError(error_msg)
+        
+        # Parse JSON response
+        try:
+            data = response.json()
+        except ValueError as e:
+            error_msg = "Ungültige Antwort von der DataCite API (kein gültiges JSON)."
+            logger.error(f"Invalid JSON response: {e}")
+            raise DataCiteAPIError(error_msg)
+        
+        # Extract DOIs and rights information
+        rights_entries = []
+        if "data" in data and isinstance(data["data"], list):
+            for item in data["data"]:
+                try:
+                    doi = item.get("id")
+                    if not doi:
+                        logger.warning("DOI entry without ID, skipping")
+                        continue
+                    
+                    attributes = item.get("attributes", {})
+                    rights_list = attributes.get("rightsList", [])
+                    
+                    # If no rights, add entry with empty fields
+                    if not rights_list:
+                        entry = (doi, "", "", "", "", "", "")
+                        rights_entries.append(entry)
+                        logger.debug(f"DOI {doi} has no rights, adding empty entry")
+                        continue
+                    
+                    # Process each rights entry
+                    for rights_item in rights_list:
+                        rights_text = rights_item.get("rights", "")
+                        rights_uri = rights_item.get("rightsUri", "")
+                        scheme_uri = rights_item.get("schemeUri", "")
+                        rights_identifier = rights_item.get("rightsIdentifier", "")
+                        rights_identifier_scheme = rights_item.get("rightsIdentifierScheme", "")
+                        lang = rights_item.get("lang", "")
+                        
+                        # Create tuple entry
+                        entry = (
+                            doi,
+                            rights_text,
+                            rights_uri,
+                            scheme_uri,
+                            rights_identifier,
+                            rights_identifier_scheme,
+                            lang
+                        )
+                        rights_entries.append(entry)
+                        
+                except (KeyError, AttributeError, TypeError) as e:
+                    logger.warning(f"Error parsing rights data for DOI {item.get('id', 'unknown')}: {e}")
+                    continue
+        
+        # Extract next page URL from response
+        next_page_url = None
+        if "links" in data and "next" in data["links"]:
+            next_page_url = data["links"]["next"]
+            logger.debug(f"Next page URL: {next_page_url}")
+        
+        return rights_entries, next_page_url
+
+    def update_doi_rights(self, doi: str, rights_list: List[Dict[str, str]]) -> Tuple[bool, str]:
+        """
+        Update the rights for a specific DOI via DataCite API.
+        
+        This method replaces all existing rights with the provided list.
+        An empty list will remove all rights from the DOI.
+        
+        Args:
+            doi: The DOI to update
+            rights_list: List of rights dictionaries, each containing:
+                - rights: Rights text (e.g., "Creative Commons Attribution 4.0 International")
+                - rightsUri: URI of the license
+                - schemeUri: URI of the identifier scheme
+                - rightsIdentifier: Short identifier (e.g., "CC-BY-4.0")
+                - rightsIdentifierScheme: Name of the scheme (e.g., "SPDX")
+                - lang: Language code (e.g., "en")
+        
+        Returns:
+            Tuple of (success: bool, message: str)
+            
+        Raises:
+            NetworkError: If connection to API fails
+        """
+        logger.info(f"Updating rights for DOI {doi} with {len(rights_list)} rights entries")
+        
+        # Log warning if removing all rights
+        if not rights_list:
+            logger.warning(f"DOI {doi}: Removing all rights entries (empty rights list provided)")
+        
+        url = f"{self.base_url}/dois/{doi}"
+        
+        # Build rightsList for API payload (only include non-empty fields)
+        api_rights_list = []
+        for rights_item in rights_list:
+            rights_entry = {}
+            
+            if rights_item.get("rights"):
+                rights_entry["rights"] = rights_item["rights"]
+            if rights_item.get("rightsUri"):
+                rights_entry["rightsUri"] = rights_item["rightsUri"]
+            if rights_item.get("schemeUri"):
+                rights_entry["schemeUri"] = rights_item["schemeUri"]
+            if rights_item.get("rightsIdentifier"):
+                rights_entry["rightsIdentifier"] = rights_item["rightsIdentifier"]
+            if rights_item.get("rightsIdentifierScheme"):
+                rights_entry["rightsIdentifierScheme"] = rights_item["rightsIdentifierScheme"]
+            if rights_item.get("lang"):
+                rights_entry["lang"] = rights_item["lang"]
+            
+            # Only add if at least one field is set
+            if rights_entry:
+                api_rights_list.append(rights_entry)
+        
+        # Prepare payload
+        payload = {
+            "data": {
+                "type": "dois",
+                "attributes": {
+                    "rightsList": api_rights_list
+                }
+            }
+        }
+        
+        try:
+            response = requests.put(
+                url,
+                auth=self.auth,
+                json=payload,
+                timeout=self.TIMEOUT,
+                headers={
+                    "Content-Type": "application/vnd.api+json",
+                    "Accept": "application/vnd.api+json"
+                }
+            )
+            
+            # Handle different response codes
+            if response.status_code == 200:
+                logger.info(f"Successfully updated rights for DOI {doi}")
+                return True, f"DOI {doi}: Rights erfolgreich aktualisiert"
+            
+            elif response.status_code == 401:
+                error_msg = f"Authentifizierung fehlgeschlagen für DOI {doi}"
+                logger.error(f"Authentication failed for DOI update: {doi}")
+                return False, error_msg
+            
+            elif response.status_code == 403:
+                error_msg = f"Keine Berechtigung für DOI {doi} (gehört möglicherweise einem anderen Client)"
+                logger.error(f"Forbidden: No permission to update DOI {doi}")
+                return False, error_msg
+            
+            elif response.status_code == 404:
+                error_msg = f"DOI {doi} nicht gefunden"
+                logger.error(f"DOI not found: {doi}")
+                return False, error_msg
+            
+            elif response.status_code == 422:
+                # Unprocessable Entity - validation error
+                error_msg = f"Validierungsfehler für DOI {doi}: {response.text}"
+                logger.error(f"Validation error for DOI {doi}: {response.text}")
+                return False, error_msg
+            
+            elif response.status_code == 429:
+                error_msg = "Zu viele Anfragen - Rate Limit erreicht"
+                logger.error("Rate limit exceeded during update")
+                return False, error_msg
+            
+            else:
+                error_msg = f"API Fehler (HTTP {response.status_code}): {response.text}"
+                logger.error(f"Unexpected status code {response.status_code} for DOI {doi}: {response.text}")
+                return False, error_msg
+                
+        except requests.exceptions.Timeout:
+            error_msg = f"Zeitüberschreitung bei DOI {doi}"
+            logger.error(f"Timeout updating DOI {doi}")
+            return False, error_msg
+        
+        except requests.exceptions.ConnectionError as e:
+            error_msg = "Verbindungsfehler zur DataCite API"
+            logger.error(f"Connection error during update: {e}")
+            raise NetworkError(error_msg)
+        
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Netzwerkfehler bei DOI {doi}: {str(e)}"
+            logger.error(f"Request exception during update: {e}")
+            raise NetworkError(error_msg)

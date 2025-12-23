@@ -20,11 +20,12 @@ from src.ui.theme_manager import ThemeManager, Theme
 from src.ui.fuji_results_window import FujiResultsWindow
 from src.api.datacite_client import DataCiteClient, DataCiteAPIError, AuthenticationError, NetworkError
 from src.api.fuji_client import FujiClient
-from src.utils.csv_exporter import export_dois_to_csv, export_dois_with_creators_to_csv, export_dois_with_publisher_to_csv, export_dois_with_contributors_to_csv, CSVExportError
+from src.utils.csv_exporter import export_dois_to_csv, export_dois_with_creators_to_csv, export_dois_with_publisher_to_csv, export_dois_with_contributors_to_csv, export_dois_with_rights_to_csv, CSVExportError
 from src.workers.update_worker import UpdateWorker
 from src.workers.authors_update_worker import AuthorsUpdateWorker
 from src.workers.publisher_update_worker import PublisherUpdateWorker
 from src.workers.contributors_update_worker import ContributorsUpdateWorker
+from src.workers.rights_update_worker import RightsUpdateWorker
 from src.workers.pending_export_worker import PendingExportWorker
 from src.workers.fuji_worker import FujiAssessmentThread, StreamingFujiThread
 
@@ -307,6 +308,65 @@ class DOIContributorFetchWorker(QObject):
             self.error.emit(f"Unerwarteter Fehler: {str(e)}")
 
 
+class DOIRightsFetchWorker(QObject):
+    """Worker for fetching DOIs with rights information in a separate thread."""
+    
+    # Signals
+    progress = Signal(str)  # Progress message
+    finished = Signal(list, str)  # List of rights tuples and username
+    error = Signal(str)  # Error message
+    request_save_credentials = Signal(str, str, str)  # username, password, api_type
+    
+    def __init__(self, username, password, use_test_api, credentials_are_new=False):
+        """
+        Initialize the worker.
+        
+        Args:
+            username: DataCite username
+            password: DataCite password
+            use_test_api: Whether to use test API
+            credentials_are_new: Whether these are newly entered credentials (not from saved account)
+        """
+        super().__init__()
+        self.username = username
+        self.password = password
+        self.use_test_api = use_test_api
+        self.credentials_are_new = credentials_are_new
+    
+    def run(self):
+        """Fetch DOIs with rights information from DataCite API."""
+        try:
+            self.progress.emit("Verbindung zur DataCite API wird hergestellt...")
+            
+            client = DataCiteClient(
+                self.username,
+                self.password,
+                self.use_test_api
+            )
+            
+            self.progress.emit("DOIs und Rights werden abgerufen...")
+            rights_data = client.fetch_all_dois_with_rights()
+            
+            # If credentials are new and API call was successful, offer to save them
+            if self.credentials_are_new and rights_data:
+                api_type = "test" if self.use_test_api else "production"
+                self.request_save_credentials.emit(self.username, self.password, api_type)
+            
+            # Count unique DOIs for better user feedback
+            unique_dois = len(set(row[0] for row in rights_data))
+            self.progress.emit(f"[OK] {unique_dois} DOIs mit {len(rights_data)} Rights-Einträgen erfolgreich abgerufen")
+            self.finished.emit(rights_data, self.username)
+            
+        except AuthenticationError as e:
+            self.error.emit(str(e))
+        except NetworkError as e:
+            self.error.emit(str(e))
+        except DataCiteAPIError as e:
+            self.error.emit(str(e))
+        except Exception as e:
+            self.error.emit(f"Unerwarteter Fehler: {str(e)}")
+
+
 class MainWindow(QMainWindow):
     """Main application window."""
     
@@ -366,6 +426,14 @@ class MainWindow(QMainWindow):
         # Thread and worker for download URL update
         self.download_url_update_thread = None
         self.download_url_update_worker = None
+        
+        # Thread and worker for DOI rights fetch
+        self.rights_thread = None
+        self.rights_worker = None
+        
+        # Thread and worker for rights update
+        self.rights_update_thread = None
+        self.rights_update_worker = None
         
         # F-UJI FAIR Assessment
         self.fuji_thread = None
@@ -574,7 +642,31 @@ class MainWindow(QMainWindow):
         contributors_group.setLayout(contributors_layout)
         layout.addWidget(contributors_group)
         
-        # GroupBox 5: Download URLs
+        # GroupBox 5: Rights Metadata
+        rights_group = QGroupBox("⚖️ Rights-Metadaten")
+        rights_layout = QVBoxLayout()
+        rights_layout.setSpacing(10)
+        
+        # Status label for rights
+        self.rights_status_label = QLabel("⚪ Keine CSV-Datei gefunden")
+        rights_layout.addWidget(self.rights_status_label)
+        
+        # Buttons for rights workflow
+        self.load_rights_button = QPushButton("📥 DOIs und Rights exportieren")
+        self.load_rights_button.setMinimumHeight(40)
+        self.load_rights_button.clicked.connect(self._on_load_rights_clicked)
+        rights_layout.addWidget(self.load_rights_button)
+        
+        self.update_rights_button = QPushButton("🔄 Rights aktualisieren")
+        self.update_rights_button.setMinimumHeight(40)
+        self.update_rights_button.setEnabled(False)  # Initially disabled
+        self.update_rights_button.clicked.connect(self._on_update_rights_clicked)
+        rights_layout.addWidget(self.update_rights_button)
+        
+        rights_group.setLayout(rights_layout)
+        layout.addWidget(rights_group)
+        
+        # GroupBox 6: Download URLs
         downloads_group = QGroupBox("📦 Download-URLs")
         downloads_layout = QVBoxLayout()
         downloads_layout.setSpacing(10)
@@ -593,7 +685,7 @@ class MainWindow(QMainWindow):
         downloads_group.setLayout(downloads_layout)
         layout.addWidget(downloads_group)
         
-        # GroupBox 6: Pending DOIs Export (SUMARIOPMD Database)
+        # GroupBox 7: Pending DOIs Export (SUMARIOPMD Database)
         pending_group = QGroupBox("⏳ Pending DOIs (Datenbank)")
         pending_layout = QVBoxLayout()
         pending_layout.setSpacing(10)
@@ -611,7 +703,7 @@ class MainWindow(QMainWindow):
         pending_group.setLayout(pending_layout)
         layout.addWidget(pending_group)
         
-        # GroupBox 7: F-UJI FAIR Assessment
+        # GroupBox 8: F-UJI FAIR Assessment
         fuji_group = QGroupBox("🎯 F-UJI FAIR Assessment")
         fuji_layout = QVBoxLayout()
         fuji_layout.setSpacing(10)
@@ -731,12 +823,17 @@ class MainWindow(QMainWindow):
         contributors_csv_found = False
         contributors_csv_name = None
         
+        # Check for rights CSV
+        rights_csv_found = False
+        rights_csv_name = None
+        
         # If we have a username, check for specific files
         if self._current_username:
             urls_csv_path = output_dir / f"{self._current_username}_urls.csv"
             authors_csv_path = output_dir / f"{self._current_username}_authors.csv"
             publisher_csv_path = output_dir / f"{self._current_username}_publishers.csv"
             contributors_csv_path = output_dir / f"{self._current_username}_contributors.csv"
+            rights_csv_path = output_dir / f"{self._current_username}_rights.csv"
             
             if urls_csv_path.exists():
                 urls_csv_found = True
@@ -753,12 +850,17 @@ class MainWindow(QMainWindow):
             if contributors_csv_path.exists():
                 contributors_csv_found = True
                 contributors_csv_name = contributors_csv_path.name
+            
+            if rights_csv_path.exists():
+                rights_csv_found = True
+                rights_csv_name = rights_csv_path.name
         else:
             # Check for any *_urls.csv, *_authors.csv and *_publishers.csv filesntributors.csv files
             urls_files = list(output_dir.glob("*_urls.csv"))
             authors_files = list(output_dir.glob("*_authors.csv"))
             publisher_files = list(output_dir.glob("*_publishers.csv"))
             contributors_files = list(output_dir.glob("*_contributors.csv"))
+            rights_files = list(output_dir.glob("*_rights.csv"))
             
             if urls_files:
                 urls_csv_found = True
@@ -775,6 +877,10 @@ class MainWindow(QMainWindow):
             if contributors_files:
                 contributors_csv_found = True
                 contributors_csv_name = contributors_files[0].name
+            
+            if rights_files:
+                rights_csv_found = True
+                rights_csv_name = rights_files[0].name
         
         # Update URLs status
         if urls_csv_found:
@@ -807,6 +913,14 @@ class MainWindow(QMainWindow):
         else:
             self.contributors_status_label.setText("⚪ Keine CSV-Datei gefunden")
             self.update_contributors_button.setEnabled(False)
+        
+        # Update rights status
+        if rights_csv_found:
+            self.rights_status_label.setText(f"🟢 CSV bereit: {rights_csv_name}")
+            self.update_rights_button.setEnabled(True)
+        else:
+            self.rights_status_label.setText("⚪ Keine CSV-Datei gefunden")
+            self.update_rights_button.setEnabled(False)
     
     def _log(self, message):
         """
@@ -829,10 +943,12 @@ class MainWindow(QMainWindow):
         self.load_authors_button.setEnabled(enabled)
         self.load_publisher_button.setEnabled(enabled)
         self.load_contributors_button.setEnabled(enabled)
+        self.load_rights_button.setEnabled(enabled)
         self.update_button.setEnabled(enabled)
         self.update_authors_button.setEnabled(enabled)
         self.update_publisher_button.setEnabled(enabled)
         self.update_contributors_button.setEnabled(enabled)
+        self.update_rights_button.setEnabled(enabled)
     
     def _format_error_list(self, items: list, max_items: int = 10, bullet: str = "") -> str:
         """
@@ -3487,6 +3603,348 @@ class MainWindow(QMainWindow):
         self.fuji_thread = None
         self._log("Bereit für nächsten Vorgang.")
     
+    # ==================== RIGHTS METHODS ====================
+    
+    def _on_load_rights_clicked(self):
+        """Handle load rights button click."""
+        # Show credentials dialog
+        dialog = CredentialsDialog(self, mode="load")
+        credentials = dialog.get_credentials()
+        
+        if credentials is None:
+            self._log("Abruf der Rights abgebrochen.")
+            return
+        
+        username, password, use_test_api = credentials
+        
+        # Check if user selected new credentials or loaded saved account
+        credentials_are_new = dialog.is_new_credentials()
+        
+        api_type = "Test-API" if use_test_api else "Produktions-API"
+        self._log(f"Starte Abruf der DOIs mit Rights für Benutzer '{username}' ({api_type})...")
+        
+        # Disable buttons and show progress
+        self._set_buttons_enabled(False)
+        self.progress_bar.setVisible(True)
+        
+        # Create worker and thread
+        self.rights_worker = DOIRightsFetchWorker(username, password, use_test_api, credentials_are_new)
+        self.rights_thread = QThread()
+        self.rights_worker.moveToThread(self.rights_thread)
+        
+        # Connect signals
+        self.rights_thread.started.connect(self.rights_worker.run)
+        self.rights_worker.progress.connect(self._log)
+        self.rights_worker.finished.connect(self._on_rights_fetch_finished)
+        self.rights_worker.error.connect(self._on_rights_fetch_error)
+        self.rights_worker.request_save_credentials.connect(self._on_save_credentials_requested)
+        
+        # Clean up after worker finishes
+        self.rights_worker.finished.connect(self.rights_worker.deleteLater)
+        self.rights_worker.finished.connect(self.rights_thread.quit)
+        
+        # Clean up thread when it finishes
+        self.rights_thread.finished.connect(self.rights_thread.deleteLater)
+        self.rights_thread.finished.connect(self._cleanup_rights_thread)
+        
+        # Start the thread
+        self.rights_thread.start()
+    
+    def _on_rights_fetch_finished(self, rights_data, username):
+        """
+        Handle successful rights fetch.
+        
+        Args:
+            rights_data: List of rights tuples (DOI, rights, rightsUri, etc.)
+            username: DataCite username
+        """
+        if not rights_data:
+            self._log("[WARNUNG] Keine DOIs mit Rights gefunden.")
+            QMessageBox.information(
+                self,
+                "Keine Rights",
+                f"Für den Benutzer '{username}' wurden keine DOIs gefunden."
+            )
+            return
+        
+        # Export to CSV
+        try:
+            output_dir = os.getcwd()
+            filepath = export_dois_with_rights_to_csv(rights_data, username, output_dir)
+            
+            # Count unique DOIs
+            unique_dois = len(set(row[0] for row in rights_data))
+            
+            self._log(f"[OK] CSV-Datei erfolgreich erstellt: {filepath}")
+            
+            # Update username and check CSV files
+            self._current_username = username
+            self._check_csv_files()
+            
+            QMessageBox.information(
+                self,
+                "Erfolg",
+                f"{unique_dois} DOIs mit {len(rights_data)} Rights-Einträgen wurden erfolgreich exportiert.\n\n"
+                f"Datei: {Path(filepath).name}\n"
+                f"Verzeichnis: {output_dir}"
+            )
+            
+        except CSVExportError as e:
+            self._log(f"[FEHLER] Fehler beim CSV-Export: {str(e)}")
+            QMessageBox.critical(
+                self,
+                "Fehler beim Export",
+                f"Die CSV-Datei konnte nicht erstellt werden:\n\n{str(e)}"
+            )
+    
+    def _on_rights_fetch_error(self, error_message):
+        """
+        Handle rights fetch error.
+        
+        Args:
+            error_message: Error message
+        """
+        self._log(f"[FEHLER] {error_message}")
+        
+        QMessageBox.critical(
+            self,
+            "Fehler",
+            f"Beim Abrufen der Rights ist ein Fehler aufgetreten:\n\n{error_message}"
+        )
+    
+    def _cleanup_rights_thread(self):
+        """Clean up rights thread and worker after completion."""
+        self.progress_bar.setVisible(False)
+        self._set_buttons_enabled(True)
+        
+        # Reset references (objects are deleted via deleteLater)
+        self.rights_thread = None
+        self.rights_worker = None
+        
+        self._log("Bereit für nächsten Vorgang.")
+    
+    def _on_update_rights_clicked(self):
+        """Handle update rights button click."""
+        # Check if rights CSV exists
+        if not self._current_username:
+            QMessageBox.warning(
+                self,
+                "Keine Benutzerdaten",
+                "Bitte laden Sie zuerst die DOIs und Rights über 'DOIs und Rights exportieren'."
+            )
+            return
+        
+        rights_csv_path = Path(os.getcwd()) / f"{self._current_username}_rights.csv"
+        if not rights_csv_path.exists():
+            QMessageBox.warning(
+                self,
+                "CSV-Datei nicht gefunden",
+                f"Die CSV-Datei '{rights_csv_path.name}' wurde nicht gefunden.\n\n"
+                "Bitte laden Sie zuerst die DOIs und Rights über 'DOIs und Rights exportieren'."
+            )
+            return
+        
+        # Show credentials dialog in update mode
+        dialog = CredentialsDialog(self, mode="update")
+        credentials = dialog.get_credentials()
+        
+        if credentials is None:
+            self._log("Rights-Update abgebrochen.")
+            return
+        
+        username, password, use_test_api = credentials
+        
+        # Check if user selected new credentials or loaded saved account
+        credentials_are_new = dialog.is_new_credentials()
+        
+        api_type = "Test-API" if use_test_api else "Produktions-API"
+        self._log(f"Starte Rights-Update für Benutzer '{username}' ({api_type})...")
+        self._log(f"CSV-Datei: {rights_csv_path.name}")
+        
+        # Disable buttons and show progress
+        self._set_buttons_enabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setMaximum(100)  # Will be updated by worker
+        
+        # Create worker and thread
+        self.rights_update_worker = RightsUpdateWorker(
+            username, password, str(rights_csv_path), use_test_api, credentials_are_new
+        )
+        self.rights_update_thread = QThread()
+        self.rights_update_worker.moveToThread(self.rights_update_thread)
+        
+        # Connect signals
+        self.rights_update_thread.started.connect(self.rights_update_worker.run)
+        self.rights_update_worker.progress.connect(self._on_rights_update_progress)
+        self.rights_update_worker.finished.connect(self._on_rights_update_finished)
+        self.rights_update_worker.error.connect(self._on_rights_update_error)
+        self.rights_update_worker.request_save_credentials.connect(self._on_save_credentials_requested)
+        
+        # Clean up after worker finishes
+        self.rights_update_worker.finished.connect(self.rights_update_worker.deleteLater)
+        self.rights_update_worker.finished.connect(self.rights_update_thread.quit)
+        
+        # Clean up thread when it finishes
+        self.rights_update_thread.finished.connect(self.rights_update_thread.deleteLater)
+        self.rights_update_thread.finished.connect(self._cleanup_rights_update_thread)
+        
+        # Start the thread
+        self.rights_update_thread.start()
+    
+    def _on_rights_update_progress(self, current, total, message):
+        """
+        Handle rights update progress signal.
+        
+        Args:
+            current: Current DOI number
+            total: Total number of DOIs
+            message: Progress message
+        """
+        self._log(message)
+        
+        if total > 0:
+            self.progress_bar.setMaximum(total)
+            self.progress_bar.setValue(current)
+    
+    def _on_rights_update_finished(self, success_count, skipped_count, error_count, error_list, skipped_details):
+        """
+        Handle rights update completion.
+        
+        Args:
+            success_count: Number of successful updates
+            skipped_count: Number of skipped DOIs (no changes)
+            error_count: Number of failed updates
+            error_list: List of error messages
+            skipped_details: List of (doi, reason) tuples for skipped DOIs
+        """
+        total = success_count + skipped_count + error_count
+        
+        # Create log file
+        self._create_rights_update_log(success_count, skipped_count, error_count, error_list, skipped_details)
+        
+        # Prepare result message
+        message = (
+            f"Rights-Update abgeschlossen.\n\n"
+            f"Gesamt: {total} DOIs\n"
+            f"Erfolgreich aktualisiert: {success_count}\n"
+            f"Übersprungen (keine Änderungen): {skipped_count}\n"
+            f"Fehlgeschlagen: {error_count}"
+        )
+        
+        self._log(f"[OK] Rights-Update abgeschlossen: {success_count} erfolgreich, {skipped_count} übersprungen, {error_count} Fehler")
+        
+        if error_count > 0:
+            message += f"\n\nFehler Details:\n"
+            # Show first 5 errors
+            for err in error_list[:5]:
+                message += f"• {err}\n"
+            if len(error_list) > 5:
+                message += f"... und {len(error_list) - 5} weitere Fehler (siehe Log-Datei)"
+            
+            QMessageBox.warning(self, "Rights-Update mit Fehlern", message)
+        else:
+            QMessageBox.information(self, "Rights-Update erfolgreich", message)
+    
+    def _on_rights_update_error(self, error_message):
+        """
+        Handle rights update error.
+        
+        Args:
+            error_message: Error message
+        """
+        self._log(f"[FEHLER] Rights-Update: {error_message}")
+        
+        QMessageBox.critical(
+            self,
+            "Rights-Update Fehler",
+            f"Ein kritischer Fehler ist aufgetreten:\n\n{error_message}"
+        )
+    
+    def _cleanup_rights_update_thread(self):
+        """Clean up rights update thread and worker after completion."""
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setMaximum(0)  # Reset to indeterminate
+        self._set_buttons_enabled(True)
+        
+        # Reset references (objects are deleted via deleteLater)
+        self.rights_update_thread = None
+        self.rights_update_worker = None
+        
+        self._log("Bereit für nächsten Vorgang.")
+    
+    def _create_rights_update_log(self, success_count, skipped_count, error_count, error_list, skipped_details):
+        """
+        Create a log file with rights update results.
+        
+        Args:
+            success_count: Number of successful updates
+            skipped_count: Number of skipped DOIs (no changes)
+            error_count: Number of failed updates
+            error_list: List of error messages
+            skipped_details: List of (doi, reason) tuples for skipped DOIs
+        """
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_filename = f"rights_update_log_{timestamp}.txt"
+            log_path = Path(os.getcwd()) / log_filename
+            
+            total = success_count + skipped_count + error_count
+            efficiency_gain = (skipped_count / total * 100) if total > 0 else 0
+            
+            with open(log_path, 'w', encoding='utf-8') as f:
+                f.write("=" * 70 + "\n")
+                f.write("GROBI - Rights-Metadaten Update Log\n")
+                f.write("=" * 70 + "\n")
+                f.write(f"Datum: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("\n")
+                f.write("ZUSAMMENFASSUNG:\n")
+                f.write(f"  Gesamt: {total} DOIs\n")
+                f.write(f"  Erfolgreich aktualisiert: {success_count}\n")
+                f.write(f"  Übersprungen (keine Änderungen): {skipped_count}\n")
+                f.write(f"  Fehlgeschlagen: {error_count}\n")
+                f.write("\n")
+                f.write("EFFIZIENZ:\n")
+                f.write(f"  API-Calls vermieden: {skipped_count}/{total} ({efficiency_gain:.1f}%)\n")
+                f.write(f"  Nur DOIs mit tatsächlichen Änderungen wurden aktualisiert\n")
+                f.write("\n")
+                
+                # Detailed list of skipped DOIs
+                if skipped_details:
+                    f.write("=" * 70 + "\n")
+                    f.write("ÜBERSPRUNGENE DOIs (keine Änderungen):\n")
+                    f.write("=" * 70 + "\n")
+                    for doi, reason in skipped_details:
+                        f.write(f"  - {doi}\n")
+                        f.write(f"    Grund: {reason}\n")
+                    f.write("\n")
+                
+                if error_list:
+                    f.write("=" * 70 + "\n")
+                    f.write("FEHLER:\n")
+                    f.write("=" * 70 + "\n")
+                    for error in error_list:
+                        f.write(f"  - {error}\n")
+                else:
+                    f.write("Keine Fehler aufgetreten.\n")
+                
+                f.write("\n")
+                f.write("=" * 70 + "\n")
+                f.write("RIGHTS PROPERTIES:\n")
+                f.write("=" * 70 + "\n")
+                f.write("- rights: Freitext-Beschreibung der Lizenz\n")
+                f.write("- rightsUri: URI zur Lizenz (z.B. CC-Lizenz-URL)\n")
+                f.write("- schemeUri: URI zum Identifier-Schema (z.B. https://spdx.org/licenses/)\n")
+                f.write("- rightsIdentifier: SPDX-Identifier (z.B. CC-BY-4.0)\n")
+                f.write("- rightsIdentifierScheme: Name des Schemas (z.B. SPDX)\n")
+                f.write("- lang: Sprachcode nach ISO 639-1 (z.B. en, de)\n")
+                f.write("\n")
+                f.write("=" * 70 + "\n")
+            
+            self._log(f"[OK] Log-Datei erstellt: {log_filename}")
+            
+        except Exception as e:
+            self._log(f"[WARNUNG] Log-Datei konnte nicht erstellt werden: {str(e)}")
+
     def closeEvent(self, event):
         """
         Handle window close event.
@@ -3565,6 +4023,20 @@ class MainWindow(QMainWindow):
                 self.pending_export_worker.stop()
             self.pending_export_thread.quit()
             self.pending_export_thread.wait(3000)  # Wait max 3 seconds
+        
+        # If rights thread is running, wait for it to finish
+        if self.rights_thread is not None and self.rights_thread.isRunning():
+            self._log("Warte auf Abschluss des Rights-Abrufs...")
+            self.rights_thread.quit()
+            self.rights_thread.wait(3000)  # Wait max 3 seconds
+        
+        # If rights update thread is running, stop worker and wait for it to finish
+        if self.rights_update_thread is not None and self.rights_update_thread.isRunning():
+            self._log("Warte auf Abschluss des Rights-Updates...")
+            if self.rights_update_worker is not None:
+                self.rights_update_worker.stop()
+            self.rights_update_thread.quit()
+            self.rights_update_thread.wait(3000)  # Wait max 3 seconds
         
         # If F-UJI assessment thread is running, cancel and wait
         if self.fuji_thread is not None and self.fuji_thread.isRunning():
