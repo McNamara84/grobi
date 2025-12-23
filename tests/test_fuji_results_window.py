@@ -25,6 +25,8 @@ def window(qapp):
     """Create a FujiResultsWindow."""
     win = FujiResultsWindow()
     yield win
+    # Ensure _is_running is False to avoid QMessageBox dialog on close
+    win._is_running = False
     win.close()
 
 
