@@ -16,7 +16,7 @@ class RightsUpdateWorker(QObject):
     # Signals
     progress_update = Signal(int, int, str)  # current, total, message
     doi_updated = Signal(str, bool, str)  # doi, success, message
-    finished = Signal(int, int, int, list, list)  # success_count, error_count, skipped_count, error_list, skipped_details
+    finished = Signal(int, int, int, list, list)  # success_count, skipped_count, error_count, error_list, skipped_details
     error_occurred = Signal(str)  # error_message
     request_save_credentials = Signal(str, str, str)  # username, password, api_type
     
@@ -127,8 +127,7 @@ class RightsUpdateWorker(QObject):
                         has_changes, change_description = self._detect_rights_changes(current_rights, csv_rights)
                         
                         if not has_changes:
-                            # No change detected - skip update
-                            success_count += 1
+                            # No change detected - skip update (count as skipped, not success)
                             skipped_count += 1
                             skipped_reason = "Rights unverändert"
                             skipped_details.append((doi, skipped_reason))
@@ -183,7 +182,7 @@ class RightsUpdateWorker(QObject):
                     error_msg = f"Netzwerkfehler: {str(e)}"
                     logger.error(error_msg)
                     self.error_occurred.emit(error_msg)
-                    self.finished.emit(success_count, error_count, skipped_count, error_list, skipped_details)
+                    self.finished.emit(success_count, skipped_count, error_count, error_list, skipped_details)
                     return
                 
                 except Exception as e:
@@ -209,7 +208,7 @@ class RightsUpdateWorker(QObject):
                 for doi, reason in skipped_details[:5]:
                     logger.info(f"  - {doi}: {reason}")
                     
-            self.finished.emit(success_count, error_count, skipped_count, error_list, skipped_details)
+            self.finished.emit(success_count, skipped_count, error_count, error_list, skipped_details)
         
         finally:
             self._is_running = False

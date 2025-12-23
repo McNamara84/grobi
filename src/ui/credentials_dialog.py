@@ -67,6 +67,8 @@ class CredentialsDialog(QDialog):
             self.setWindowTitle("Autoren-Metadaten aktualisieren")
         elif mode == "update_publisher":
             self.setWindowTitle("Publisher-Metadaten aktualisieren")
+        elif mode == "update_rights":
+            self.setWindowTitle("Rights-Metadaten aktualisieren")
         elif mode == "fuji_check":
             self.setWindowTitle("F-UJI FAIR Assessment")
         else:
@@ -210,7 +212,7 @@ class CredentialsDialog(QDialog):
         layout.addWidget(self.test_api_checkbox)
         
         # CSV file selection (only for update modes)
-        if self.mode in ["update", "update_authors", "update_publisher", "update_contributors"]:
+        if self.mode in ["update", "update_authors", "update_publisher", "update_contributors", "update_rights"]:
             layout.addSpacing(10)
             
             csv_label = QLabel("CSV-Datei auswählen:")
@@ -260,6 +262,10 @@ class CredentialsDialog(QDialog):
             self.ok_button.setText("Contributor-Metadaten aktualisieren")
             # Disable button initially for update_contributors mode (needs CSV file)
             self.ok_button.setEnabled(False)
+        elif self.mode == "update_rights":
+            self.ok_button.setText("Rights-Metadaten aktualisieren")
+            # Disable button initially for update_rights mode (needs CSV file)
+            self.ok_button.setEnabled(False)
         elif self.mode == "fuji_check":
             self.ok_button.setText("FAIR Check starten")
         else:
@@ -279,7 +285,7 @@ class CredentialsDialog(QDialog):
         self.username_input.setFocus()
         
         # Connect input changes to validation for update modes
-        if self.mode in ["update", "update_authors", "update_publisher", "update_contributors"]:
+        if self.mode in ["update", "update_authors", "update_publisher", "update_contributors", "update_rights"]:
             self.username_input.textChanged.connect(self._check_update_ready)
             self.password_input.textChanged.connect(self._check_update_ready)
         
@@ -383,7 +389,7 @@ class CredentialsDialog(QDialog):
     
     def _check_update_ready(self):
         """Check if all requirements for update are met and enable/disable OK button."""
-        if self.mode in ["update", "update_authors", "update_publisher", "update_contributors"]:
+        if self.mode in ["update", "update_authors", "update_publisher", "update_contributors", "update_rights"]:
             has_credentials = (
                 bool(self.username_input.text().strip()) and 
                 bool(self.password_input.text().strip())
@@ -589,7 +595,7 @@ class CredentialsDialog(QDialog):
             use_test_api = self.test_api_checkbox.isChecked()
             
             # Always return 4-tuple for consistency
-            if self.mode in ["update", "update_authors", "update_publisher", "update_contributors"]:
+            if self.mode in ["update", "update_authors", "update_publisher", "update_contributors", "update_rights"]:
                 csv_path = self.csv_file_path
             else:
                 csv_path = None

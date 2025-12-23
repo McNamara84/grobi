@@ -3726,34 +3726,26 @@ class MainWindow(QMainWindow):
     
     def _on_update_rights_clicked(self):
         """Handle update rights button click."""
-        # Check if rights CSV exists
-        if not self._current_username:
-            QMessageBox.warning(
-                self,
-                "Keine Benutzerdaten",
-                "Bitte laden Sie zuerst die DOIs und Rights über 'DOIs und Rights exportieren'."
-            )
-            return
-        
-        rights_csv_path = Path(os.getcwd()) / f"{self._current_username}_rights.csv"
-        if not rights_csv_path.exists():
-            QMessageBox.warning(
-                self,
-                "CSV-Datei nicht gefunden",
-                f"Die CSV-Datei '{rights_csv_path.name}' wurde nicht gefunden.\n\n"
-                "Bitte laden Sie zuerst die DOIs und Rights über 'DOIs und Rights exportieren'."
-            )
-            return
-        
-        # Show credentials dialog in update mode
-        dialog = CredentialsDialog(self, mode="update")
+        # Show credentials dialog with CSV selection
+        dialog = CredentialsDialog(self, mode="update_rights")
         credentials = dialog.get_credentials()
         
         if credentials is None:
             self._log("Rights-Update abgebrochen.")
             return
         
-        username, password, use_test_api = credentials
+        username, password, csv_path, use_test_api = credentials
+        
+        if not csv_path:
+            self._log("[FEHLER] Keine CSV-Datei ausgewählt.")
+            QMessageBox.warning(
+                self,
+                "Keine CSV-Datei",
+                "Bitte wählen Sie eine Rights-CSV-Datei aus."
+            )
+            return
+        
+        rights_csv_path = Path(csv_path)
         
         # Check if user selected new credentials or loaded saved account
         credentials_are_new = dialog.is_new_credentials()
@@ -3776,9 +3768,9 @@ class MainWindow(QMainWindow):
         
         # Connect signals
         self.rights_update_thread.started.connect(self.rights_update_worker.run)
-        self.rights_update_worker.progress.connect(self._on_rights_update_progress)
+        self.rights_update_worker.progress_update.connect(self._on_rights_update_progress)
         self.rights_update_worker.finished.connect(self._on_rights_update_finished)
-        self.rights_update_worker.error.connect(self._on_rights_update_error)
+        self.rights_update_worker.error_occurred.connect(self._on_rights_update_error)
         self.rights_update_worker.request_save_credentials.connect(self._on_request_save_credentials)
         
         # Clean up after worker finishes
@@ -3820,30 +3812,69 @@ class MainWindow(QMainWindow):
         """
         total = success_count + skipped_count + error_count
         
-        # Create log file
-        self._create_rights_update_log(success_count, skipped_count, error_count, error_list, skipped_details)
+        # If total is 0 and there's a critical error flag, don't show success dialog
+        # (the error dialog was already shown by _on_rights_update_error)
+        if total == 0 and hasattr(self, '_rights_update_had_critical_error') and self._rights_update_had_critical_error:
+            # Reset flag and skip success dialog
+            self._rights_update_had_critical_error = False
+            self._log("Rights-Update wurde aufgrund eines Fehlers abgebrochen.")
+            return
+        
+        # Create log file (only if there was actual processing)
+        if total > 0 or error_list:
+            self._create_rights_update_log(success_count, skipped_count, error_count, error_list, skipped_details)
         
         # Prepare result message
-        message = (
-            f"Rights-Update abgeschlossen.\n\n"
-            f"Gesamt: {total} DOIs\n"
-            f"Erfolgreich aktualisiert: {success_count}\n"
-            f"Übersprungen (keine Änderungen): {skipped_count}\n"
-            f"Fehlgeschlagen: {error_count}"
-        )
-        
         self._log(f"[OK] Rights-Update abgeschlossen: {success_count} erfolgreich, {skipped_count} übersprungen, {error_count} Fehler")
         
-        if error_count > 0:
-            message += f"\n\nFehler Details:\n"
-            # Show first 5 errors
+        if error_count > 0 and success_count == 0 and skipped_count == 0:
+            # Only errors, no success - show warning
+            message = f"Rights-Update fehlgeschlagen.\n\n{error_count} DOI(s) konnten nicht aktualisiert werden:\n\n"
             for err in error_list[:5]:
                 message += f"• {err}\n"
             if len(error_list) > 5:
-                message += f"... und {len(error_list) - 5} weitere Fehler (siehe Log-Datei)"
+                message += f"\n... und {len(error_list) - 5} weitere Fehler (siehe Log-Datei)"
+            
+            QMessageBox.warning(self, "Rights-Update fehlgeschlagen", message)
+        elif error_count > 0:
+            # Mixed results
+            message = (
+                f"Rights-Update abgeschlossen mit Fehlern.\n\n"
+                f"✅ Erfolgreich aktualisiert: {success_count}\n"
+                f"⏭️ Übersprungen (keine Änderungen): {skipped_count}\n"
+                f"❌ Fehlgeschlagen: {error_count}\n\n"
+                f"Fehler Details:\n"
+            )
+            for err in error_list[:5]:
+                message += f"• {err}\n"
+            if len(error_list) > 5:
+                message += f"\n... und {len(error_list) - 5} weitere Fehler (siehe Log-Datei)"
             
             QMessageBox.warning(self, "Rights-Update mit Fehlern", message)
+        elif skipped_count > 0 and success_count == 0:
+            # All skipped (no changes needed)
+            message = (
+                f"Keine Änderungen notwendig.\n\n"
+                f"Alle {skipped_count} DOI(s) haben bereits die korrekten Rights-Metadaten.\n\n"
+                f"Effizienz: {skipped_count} unnötige API-Calls vermieden!"
+            )
+            QMessageBox.information(self, "Keine Änderungen", message)
+        elif total == 0:
+            # No DOIs processed at all
+            QMessageBox.information(
+                self,
+                "Keine DOIs verarbeitet",
+                "Es wurden keine DOIs in der CSV-Datei gefunden oder alle wurden übersprungen."
+            )
         else:
+            # Success!
+            message = (
+                f"Rights-Update erfolgreich abgeschlossen!\n\n"
+                f"✅ Erfolgreich aktualisiert: {success_count}\n"
+                f"⏭️ Übersprungen (keine Änderungen): {skipped_count}"
+            )
+            if skipped_count > 0:
+                message += f"\n\nEffizienz: {skipped_count} unnötige API-Calls vermieden!"
             QMessageBox.information(self, "Rights-Update erfolgreich", message)
     
     def _on_rights_update_error(self, error_message):
@@ -3855,11 +3886,38 @@ class MainWindow(QMainWindow):
         """
         self._log(f"[FEHLER] Rights-Update: {error_message}")
         
-        QMessageBox.critical(
-            self,
-            "Rights-Update Fehler",
-            f"Ein kritischer Fehler ist aufgetreten:\n\n{error_message}"
-        )
+        # Set flag to prevent double dialog (error + finished with 0 DOIs)
+        self._rights_update_had_critical_error = True
+        
+        # Check if this is a CSV validation error for better user messaging
+        if "Ungültiger SPDX-Identifier" in error_message:
+            # Extract DOI and identifier from message
+            QMessageBox.warning(
+                self,
+                "CSV-Validierungsfehler",
+                f"Die CSV-Datei enthält ungültige Daten:\n\n{error_message}\n\n"
+                f"Hinweis: SPDX-Identifier müssen exakt geschrieben werden (z.B. 'CC-BY-4.0', nicht 'cc-by-4.0').\n\n"
+                f"Eine Liste gültiger Identifier finden Sie unter:\nhttps://spdx.org/licenses/"
+            )
+        elif "Ungültiger Sprachcode" in error_message:
+            QMessageBox.warning(
+                self,
+                "CSV-Validierungsfehler",
+                f"Die CSV-Datei enthält ungültige Daten:\n\n{error_message}\n\n"
+                f"Hinweis: Sprachcodes müssen dem ISO 639-1 Standard entsprechen (z.B. 'en', 'de', 'fr')."
+            )
+        elif "CSV-Datei" in error_message or "Zeile" in error_message:
+            QMessageBox.warning(
+                self,
+                "CSV-Fehler",
+                f"Fehler beim Verarbeiten der CSV-Datei:\n\n{error_message}"
+            )
+        else:
+            QMessageBox.critical(
+                self,
+                "Rights-Update Fehler",
+                f"Ein kritischer Fehler ist aufgetreten:\n\n{error_message}"
+            )
     
     def _cleanup_rights_update_thread(self):
         """Clean up rights update thread and worker after completion."""
