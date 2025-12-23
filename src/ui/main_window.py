@@ -3608,14 +3608,15 @@ class MainWindow(QMainWindow):
     def _on_load_rights_clicked(self):
         """Handle load rights button click."""
         # Show credentials dialog
-        dialog = CredentialsDialog(self, mode="load")
+        dialog = CredentialsDialog(self)
         credentials = dialog.get_credentials()
         
         if credentials is None:
             self._log("Abruf der Rights abgebrochen.")
             return
         
-        username, password, use_test_api = credentials
+        username, password, csv_path, use_test_api = credentials
+        # csv_path is None in export mode, we don't need it here
         
         # Check if user selected new credentials or loaded saved account
         credentials_are_new = dialog.is_new_credentials()
@@ -3637,7 +3638,7 @@ class MainWindow(QMainWindow):
         self.rights_worker.progress.connect(self._log)
         self.rights_worker.finished.connect(self._on_rights_fetch_finished)
         self.rights_worker.error.connect(self._on_rights_fetch_error)
-        self.rights_worker.request_save_credentials.connect(self._on_save_credentials_requested)
+        self.rights_worker.request_save_credentials.connect(self._on_request_save_credentials)
         
         # Clean up after worker finishes
         self.rights_worker.finished.connect(self.rights_worker.deleteLater)
@@ -3778,7 +3779,7 @@ class MainWindow(QMainWindow):
         self.rights_update_worker.progress.connect(self._on_rights_update_progress)
         self.rights_update_worker.finished.connect(self._on_rights_update_finished)
         self.rights_update_worker.error.connect(self._on_rights_update_error)
-        self.rights_update_worker.request_save_credentials.connect(self._on_save_credentials_requested)
+        self.rights_update_worker.request_save_credentials.connect(self._on_request_save_credentials)
         
         # Clean up after worker finishes
         self.rights_update_worker.finished.connect(self.rights_update_worker.deleteLater)
