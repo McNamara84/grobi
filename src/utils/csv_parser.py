@@ -971,7 +971,10 @@ class CSVParser:
     @staticmethod
     def validate_spdx_identifier(identifier: str) -> bool:
         """
-        Validate SPDX license identifier.
+        Validate SPDX license identifier (case-insensitive).
+        
+        DataCite normalizes SPDX identifiers to lowercase, so we accept
+        both 'CC-BY-4.0' and 'cc-by-4.0' as valid.
         
         Args:
             identifier: SPDX license identifier to validate
@@ -981,7 +984,8 @@ class CSVParser:
         """
         if not identifier:
             return True  # Empty is allowed (optional field)
-        return identifier in CSVParser.VALID_SPDX_IDENTIFIERS
+        # Case-insensitive comparison: convert both to uppercase
+        return identifier.upper() in {s.upper() for s in CSVParser.VALID_SPDX_IDENTIFIERS}
 
     @staticmethod
     def validate_language_code(lang: str) -> bool:
