@@ -47,24 +47,6 @@ class CredentialsDialog(QDialog):
         self._loaded_password = None  # Stores password when loading from saved account
         self._is_new_credentials = True  # Initialize flag, updated when account is loaded
     
-    @property
-    def loaded_password(self) -> Optional[str]:
-        """Get the password loaded from a saved account.
-        
-        Returns:
-            The password if loaded from saved account, None otherwise.
-        """
-        return self._loaded_password
-    
-    @property
-    def is_new_credentials(self) -> bool:
-        """Check if credentials are new (not from saved account).
-        
-        Returns:
-            True if credentials are new, False if loaded from saved account.
-        """
-        return self._is_new_credentials
-        
         try:
             self.credential_manager = CredentialManager()
             self.saved_accounts = self.credential_manager.list_accounts()
@@ -96,6 +78,24 @@ class CredentialsDialog(QDialog):
         self._setup_ui()
         self._apply_styles()
     
+    @property
+    def loaded_password(self) -> Optional[str]:
+        """Get the password loaded from a saved account.
+        
+        Returns:
+            The password if loaded from saved account, None otherwise.
+        """
+        return self._loaded_password
+    
+    @property
+    def is_new_credentials(self) -> bool:
+        """Check if credentials are new (not from saved account).
+        
+        Returns:
+            True if credentials are new, False if loaded from saved account.
+        """
+        return self._is_new_credentials
+
     def _setup_ui(self):
         """Set up the user interface."""
         layout = QVBoxLayout(self)
