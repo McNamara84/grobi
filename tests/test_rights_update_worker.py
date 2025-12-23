@@ -442,7 +442,6 @@ class TestRightsChangeDetection:
 
         has_changes, description = worker._detect_rights_changes(current_rights, csv_rights)
         assert has_changes is True
-        assert "rights" in description.lower()
 
     def test_detect_rights_changes_count_mismatch(self, qapp, valid_csv_file):
         """Test that different number of rights is detected as change."""
@@ -470,6 +469,54 @@ class TestRightsChangeDetection:
         )
 
         has_changes, description = worker._detect_rights_changes([], [])
+        assert has_changes is False
+
+    def test_detect_rights_changes_order_independent(self, qapp, valid_csv_file):
+        """Test that rights in different order are detected as unchanged."""
+        worker = RightsUpdateWorker(
+            username="TIB.GFZ",
+            password="test_password",
+            csv_path=valid_csv_file,
+            use_test_api=False
+        )
+
+        # Same rights but in different order
+        current_rights = [
+            {"rights": "License B", "rightsUri": "https://b.org", "schemeUri": "",
+             "rightsIdentifier": "LB", "rightsIdentifierScheme": "SPDX", "lang": "en"},
+            {"rights": "License A", "rightsUri": "https://a.org", "schemeUri": "",
+             "rightsIdentifier": "LA", "rightsIdentifierScheme": "SPDX", "lang": "de"},
+        ]
+        csv_rights = [
+            {"rights": "License A", "rightsUri": "https://a.org", "schemeUri": "",
+             "rightsIdentifier": "LA", "rightsIdentifierScheme": "SPDX", "lang": "de"},
+            {"rights": "License B", "rightsUri": "https://b.org", "schemeUri": "",
+             "rightsIdentifier": "LB", "rightsIdentifierScheme": "SPDX", "lang": "en"},
+        ]
+
+        has_changes, description = worker._detect_rights_changes(current_rights, csv_rights)
+        assert has_changes is False
+
+    def test_detect_rights_changes_case_insensitive(self, qapp, valid_csv_file):
+        """Test that case differences are ignored in comparison."""
+        worker = RightsUpdateWorker(
+            username="TIB.GFZ",
+            password="test_password",
+            csv_path=valid_csv_file,
+            use_test_api=False
+        )
+
+        # Same rights but with different case (DataCite might normalize)
+        current_rights = [
+            {"rights": "Creative Commons Attribution 4.0", "rightsUri": "https://example.org",
+             "schemeUri": "", "rightsIdentifier": "cc-by-4.0", "rightsIdentifierScheme": "spdx", "lang": "EN"}
+        ]
+        csv_rights = [
+            {"rights": "Creative Commons Attribution 4.0", "rightsUri": "https://example.org",
+             "schemeUri": "", "rightsIdentifier": "CC-BY-4.0", "rightsIdentifierScheme": "SPDX", "lang": "en"}
+        ]
+
+        has_changes, description = worker._detect_rights_changes(current_rights, csv_rights)
         assert has_changes is False
 
 

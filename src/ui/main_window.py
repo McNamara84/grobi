@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox, QDialog
 )
 from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt, QSettings
-from PySide6.QtGui import QFont, QIcon, QAction, QDesktopServices, QPixmap, QGuiApplication
+from PySide6.QtGui import QFont, QIcon, QAction, QDesktopServices, QPixmap
 
 from src.ui.credentials_dialog import CredentialsDialog
 from src.ui.save_credentials_dialog import SaveCredentialsDialog
@@ -855,7 +855,7 @@ class MainWindow(QMainWindow):
                 rights_csv_found = True
                 rights_csv_name = rights_csv_path.name
         else:
-            # Check for any *_urls.csv, *_authors.csv and *_publishers.csv filesntributors.csv files
+            # Check for any *_urls.csv, *_authors.csv, *_publishers.csv, *_contributors.csv, *_rights.csv files
             urls_files = list(output_dir.glob("*_urls.csv"))
             authors_files = list(output_dir.glob("*_authors.csv"))
             publisher_files = list(output_dir.glob("*_publishers.csv"))
@@ -3896,7 +3896,8 @@ class MainWindow(QMainWindow):
                 self,
                 "CSV-Validierungsfehler",
                 f"Die CSV-Datei enthält ungültige Daten:\n\n{error_message}\n\n"
-                f"Hinweis: SPDX-Identifier müssen exakt geschrieben werden (z.B. 'CC-BY-4.0', nicht 'cc-by-4.0').\n\n"
+                f"Hinweis: SPDX-Identifier müssen einem gültigen SPDX-Lizenz-Identifier entsprechen "
+                f"(z.B. 'CC-BY-4.0', 'MIT', 'Apache-2.0'). Groß-/Kleinschreibung wird ignoriert.\n\n"
                 f"Eine Liste gültiger Identifier finden Sie unter:\nhttps://spdx.org/licenses/"
             )
         elif "Ungültiger Sprachcode" in error_message:

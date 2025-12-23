@@ -221,6 +221,9 @@ class RightsUpdateWorker(QObject):
         """
         Compare current DataCite rights with CSV data to detect changes.
         
+        Uses order-independent comparison since DataCite API might return
+        rights in a different order than they were uploaded.
+        
         Args:
             current_rights: Rights list from DataCite API
             csv_rights: Rights list from CSV (in CSV order)
@@ -238,31 +241,36 @@ class RightsUpdateWorker(QObject):
         if len(current_rights) == 0:
             return False, "Keine Rights vorhanden"
         
-        # Field-by-field comparison
-        changes = []
-        for i, (current, csv_item) in enumerate(zip(current_rights, csv_rights), 1):
-            # Compare each field
-            if current.get("rights", "") != csv_item.get("rights", ""):
-                changes.append(f"Rights {i}: rights Text geändert")
-            if current.get("rightsUri", "") != csv_item.get("rightsUri", ""):
-                changes.append(f"Rights {i}: rightsUri geändert")
-            if current.get("schemeUri", "") != csv_item.get("schemeUri", ""):
-                changes.append(f"Rights {i}: schemeUri geändert")
-            if current.get("rightsIdentifier", "") != csv_item.get("rightsIdentifier", ""):
-                changes.append(f"Rights {i}: rightsIdentifier geändert")
-            if current.get("rightsIdentifierScheme", "") != csv_item.get("rightsIdentifierScheme", ""):
-                changes.append(f"Rights {i}: rightsIdentifierScheme geändert")
-            if current.get("lang", "") != csv_item.get("lang", ""):
-                changes.append(f"Rights {i}: lang geändert")
+        def normalize_rights(r: dict) -> tuple:
+            """Create a hashable tuple from rights dict for comparison."""
+            return (
+                r.get("rights", "").strip().lower(),
+                r.get("rightsUri", "").strip().lower(),
+                r.get("schemeUri", "").strip().lower(),
+                r.get("rightsIdentifier", "").strip().lower(),
+                r.get("rightsIdentifierScheme", "").strip().lower(),
+                r.get("lang", "").strip().lower()
+            )
         
-        if changes:
-            # Return first 3 changes, indicate if more exist
-            change_desc = "; ".join(changes[:3])
-            if len(changes) > 3:
-                change_desc += f" (+ {len(changes) - 3} weitere)"
-            return True, change_desc
-        else:
+        # Create normalized sets for order-independent comparison
+        current_normalized = set(normalize_rights(r) for r in current_rights)
+        csv_normalized = set(normalize_rights(r) for r in csv_rights)
+        
+        # Compare sets
+        if current_normalized == csv_normalized:
             return False, "Keine Änderungen in Rights-Metadaten"
+        
+        # Determine what changed for the description
+        only_in_current = current_normalized - csv_normalized
+        only_in_csv = csv_normalized - current_normalized
+        
+        changes = []
+        if only_in_csv:
+            changes.append(f"{len(only_in_csv)} Rights hinzugefügt/geändert")
+        if only_in_current:
+            changes.append(f"{len(only_in_current)} Rights entfernt/geändert")
+        
+        return True, "; ".join(changes) if changes else "Rights geändert"
     
     def stop(self):
         """Request the worker to stop processing."""

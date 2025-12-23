@@ -935,7 +935,7 @@ class CSVParser:
         "MPL-1.0", "MPL-1.1", "MPL-2.0",
         "ISC", "Unlicense", "WTFPL", "Zlib",
         # Public Domain
-        "CC-PDDC", "Unlicense",
+        "CC-PDDC",
     }
 
     # Valid ISO 639-1 language codes (2-letter codes)
@@ -1140,7 +1140,8 @@ class CSVParser:
                             'lang': lang
                         }
                         rights_by_doi[doi].append(rights_data)
-                        logger.debug(f"Parsed rights for {doi}: {rights_identifier or rights_text[:30] + '...' if rights_text else 'empty'}")
+                        display_text = rights_identifier if rights_identifier else (rights_text[:30] + '...' if len(rights_text) > 30 else rights_text) if rights_text else 'empty'
+                        logger.debug(f"Parsed rights for {doi}: {display_text}")
         
         except csv.Error as e:
             raise CSVParseError(f"Fehler beim Lesen der CSV-Datei: {str(e)}")

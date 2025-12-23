@@ -2676,7 +2676,7 @@ class DataCiteClient:
                 raise DataCiteAPIError(error_msg)
             
             except requests.exceptions.ConnectionError as e:
-                error_msg = "Verbindung zur DataCite API fehlgeschlagen. Bitte ueberprüfe deine Internetverbindung."
+                error_msg = "Verbindung zur DataCite API fehlgeschlagen. Bitte überprüfe deine Internetverbindung."
                 logger.error(f"Connection error: {e}")
                 raise NetworkError(error_msg)
             
