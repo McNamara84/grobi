@@ -16,6 +16,16 @@ class CSVParseError(Exception):
     pass
 
 
+class SPDXValidationError(CSVParseError):
+    """Raised when SPDX identifier validation fails."""
+    pass
+
+
+class LanguageCodeError(CSVParseError):
+    """Raised when ISO 639-1 language code validation fails."""
+    pass
+
+
 class CSVParser:
     """Parser and validator for CSV files containing DOI and Landing Page URL data."""
     
@@ -913,3 +923,261 @@ class CSVParser:
         except csv.Error as e:
             raise CSVParseError(f"CSV-Parsing-Fehler: {e}")
 
+    # Curated subset of valid SPDX license identifiers commonly used at GFZ Data Services.
+    # This is NOT the complete SPDX list - only licenses typically used for research data.
+    # Full official list available at: https://spdx.org/licenses/
+    # Validation is case-insensitive (identifiers are normalized to uppercase for comparison).
+    VALID_SPDX_IDENTIFIERS = {
+        # Creative Commons licenses
+        "CC0-1.0", "CC-BY-1.0", "CC-BY-2.0", "CC-BY-2.5", "CC-BY-3.0", "CC-BY-4.0",
+        "CC-BY-SA-1.0", "CC-BY-SA-2.0", "CC-BY-SA-2.5", "CC-BY-SA-3.0", "CC-BY-SA-4.0",
+        "CC-BY-NC-1.0", "CC-BY-NC-2.0", "CC-BY-NC-2.5", "CC-BY-NC-3.0", "CC-BY-NC-4.0",
+        "CC-BY-NC-SA-1.0", "CC-BY-NC-SA-2.0", "CC-BY-NC-SA-2.5", "CC-BY-NC-SA-3.0", "CC-BY-NC-SA-4.0",
+        "CC-BY-ND-1.0", "CC-BY-ND-2.0", "CC-BY-ND-2.5", "CC-BY-ND-3.0", "CC-BY-ND-4.0",
+        "CC-BY-NC-ND-1.0", "CC-BY-NC-ND-2.0", "CC-BY-NC-ND-2.5", "CC-BY-NC-ND-3.0", "CC-BY-NC-ND-4.0",
+        # Open Data Commons
+        "ODC-By-1.0", "ODbL-1.0", "PDDL-1.0",
+        # Software licenses
+        "Apache-1.0", "Apache-1.1", "Apache-2.0",
+        "MIT", "MIT-0",
+        "BSD-2-Clause", "BSD-3-Clause", "BSD-4-Clause",
+        "GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later",
+        "LGPL-2.0-only", "LGPL-2.0-or-later", "LGPL-2.1-only", "LGPL-2.1-or-later", "LGPL-3.0-only", "LGPL-3.0-or-later",
+        "AGPL-3.0-only", "AGPL-3.0-or-later",
+        "MPL-1.0", "MPL-1.1", "MPL-2.0",
+        "ISC", "Unlicense", "WTFPL", "Zlib",
+        # Public Domain
+        "CC-PDDC",
+    }
+
+    # Valid ISO 639-1 language codes (2-letter codes)
+    VALID_LANGUAGE_CODES = {
+        "aa", "ab", "ae", "af", "ak", "am", "an", "ar", "as", "av", "ay", "az",
+        "ba", "be", "bg", "bh", "bi", "bm", "bn", "bo", "br", "bs",
+        "ca", "ce", "ch", "co", "cr", "cs", "cu", "cv", "cy",
+        "da", "de", "dv", "dz",
+        "ee", "el", "en", "eo", "es", "et", "eu",
+        "fa", "ff", "fi", "fj", "fo", "fr", "fy",
+        "ga", "gd", "gl", "gn", "gu", "gv",
+        "ha", "he", "hi", "ho", "hr", "ht", "hu", "hy", "hz",
+        "ia", "id", "ie", "ig", "ii", "ik", "io", "is", "it", "iu",
+        "ja", "jv",
+        "ka", "kg", "ki", "kj", "kk", "kl", "km", "kn", "ko", "kr", "ks", "ku", "kv", "kw", "ky",
+        "la", "lb", "lg", "li", "ln", "lo", "lt", "lu", "lv",
+        "mg", "mh", "mi", "mk", "ml", "mn", "mr", "ms", "mt", "my",
+        "na", "nb", "nd", "ne", "ng", "nl", "nn", "no", "nr", "nv", "ny",
+        "oc", "oj", "om", "or", "os",
+        "pa", "pi", "pl", "ps", "pt",
+        "qu",
+        "rm", "rn", "ro", "ru", "rw",
+        "sa", "sc", "sd", "se", "sg", "si", "sk", "sl", "sm", "sn", "so", "sq", "sr", "ss", "st", "su", "sv", "sw",
+        "ta", "te", "tg", "th", "ti", "tk", "tl", "tn", "to", "tr", "ts", "tt", "tw", "ty",
+        "ug", "uk", "ur", "uz",
+        "ve", "vi", "vo",
+        "wa", "wo",
+        "xh",
+        "yi", "yo",
+        "za", "zh", "zu"
+    }
+
+    @staticmethod
+    def validate_spdx_identifier(identifier: str) -> bool:
+        """
+        Validate SPDX license identifier (case-insensitive).
+        
+        DataCite normalizes SPDX identifiers to lowercase, so we accept
+        both 'CC-BY-4.0' and 'cc-by-4.0' as valid.
+        
+        Args:
+            identifier: SPDX license identifier to validate
+            
+        Returns:
+            True if identifier is valid, False otherwise
+        """
+        if not identifier:
+            return True  # Empty is allowed (optional field)
+        # Case-insensitive comparison: convert both to uppercase
+        return identifier.upper() in {s.upper() for s in CSVParser.VALID_SPDX_IDENTIFIERS}
+
+    @staticmethod
+    def validate_language_code(lang: str) -> bool:
+        """
+        Validate ISO 639-1 language code.
+        
+        Args:
+            lang: Language code to validate
+            
+        Returns:
+            True if code is valid, False otherwise
+        """
+        if not lang:
+            return True  # Empty is allowed (optional field)
+        return lang.lower() in CSVParser.VALID_LANGUAGE_CODES
+
+    @staticmethod
+    def parse_rights_update_csv(filepath: str) -> Tuple[Dict[str, List[Dict]], List[str]]:
+        """
+        Parse CSV file containing DOI and rights metadata for updates.
+        
+        Expected CSV format:
+        - Header: DOI,rights,rightsUri,schemeUri,rightsIdentifier,rightsIdentifierScheme,lang
+        - Multiple rows per DOI (one per rights entry)
+        - Preserves order of rights entries per DOI
+        
+        Args:
+            filepath: Path to the CSV file
+            
+        Returns:
+            Tuple of:
+            - Dict[DOI, List[RightsData]]: Rights grouped by DOI, preserving order
+            - List[str]: Warning messages (non-fatal issues)
+            
+        Raises:
+            CSVParseError: If file cannot be read or has invalid format
+            FileNotFoundError: If file does not exist
+        """
+        file_path = Path(filepath)
+        
+        # Check if file exists
+        if not file_path.exists():
+            raise FileNotFoundError(f"CSV-Datei nicht gefunden: {filepath}")
+        
+        # Check if file is readable
+        if not file_path.is_file():
+            raise CSVParseError(f"Pfad ist keine Datei: {filepath}")
+        
+        logger.info(f"Parsing rights CSV file: {filepath}")
+        
+        # Use OrderedDict to preserve DOI order
+        rights_by_doi = OrderedDict()
+        warnings = []
+        
+        # Expected headers
+        expected_headers = [
+            'DOI',
+            'rights',
+            'rightsUri',
+            'schemeUri',
+            'rightsIdentifier',
+            'rightsIdentifierScheme',
+            'lang'
+        ]
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as csvfile:
+                reader = csv.DictReader(csvfile)
+                
+                # Validate headers
+                if not reader.fieldnames:
+                    raise CSVParseError("CSV-Datei hat keine Header-Zeile.")
+                
+                # Check if all expected headers are present
+                missing_headers = [h for h in expected_headers if h not in reader.fieldnames]
+                if missing_headers:
+                    raise CSVParseError(
+                        f"CSV-Datei fehlen folgende Header: {', '.join(missing_headers)}. "
+                        f"Erwartet: {', '.join(expected_headers)}"
+                    )
+                
+                # Parse rows
+                for row_num, row in enumerate(reader, start=2):  # Start at 2 (line 1 is header)
+                    # Extract and trim fields
+                    doi = row.get('DOI', '').strip()
+                    rights_text = row.get('rights', '').strip()
+                    rights_uri = row.get('rightsUri', '').strip()
+                    scheme_uri = row.get('schemeUri', '').strip()
+                    rights_identifier = row.get('rightsIdentifier', '').strip()
+                    rights_identifier_scheme = row.get('rightsIdentifierScheme', '').strip()
+                    lang = row.get('lang', '').strip()
+                    
+                    # Validate DOI
+                    if not doi:
+                        warnings.append(f"Zeile {row_num}: DOI fehlt - überspringe Zeile")
+                        logger.warning(f"Row {row_num}: Missing DOI")
+                        continue
+                    
+                    if not CSVParser.validate_doi_format(doi):
+                        raise CSVParseError(
+                            f"Zeile {row_num}: Ungültiges DOI-Format '{doi}'. "
+                            "Erwartetes Format: 10.X/..."
+                        )
+                    
+                    # Validate SPDX identifier (if provided)
+                    if rights_identifier and rights_identifier_scheme.strip().upper() == 'SPDX':
+                        if not CSVParser.validate_spdx_identifier(rights_identifier):
+                            raise SPDXValidationError(
+                                f"Zeile {row_num}: Ungültiger SPDX-Identifier '{rights_identifier}' für DOI '{doi}'. "
+                                f"Gültige SPDX-Identifier findest du unter https://spdx.org/licenses/"
+                            )
+                    
+                    # Validate language code (if provided)
+                    if lang:
+                        if not CSVParser.validate_language_code(lang):
+                            raise LanguageCodeError(
+                                f"Zeile {row_num}: Ungültiger Sprachcode '{lang}' für DOI '{doi}'. "
+                                f"Erlaubt sind ISO 639-1 Codes (z.B. 'en', 'de', 'fr')."
+                            )
+                    
+                    # Validate URI formats (if provided)
+                    if rights_uri and not CSVParser.validate_url_format(rights_uri):
+                        raise CSVParseError(
+                            f"Zeile {row_num}: Ungültige rightsUri '{rights_uri}' für DOI '{doi}'. "
+                            "URL muss mit http:// oder https:// beginnen."
+                        )
+                    
+                    if scheme_uri and not CSVParser.validate_url_format(scheme_uri):
+                        raise CSVParseError(
+                            f"Zeile {row_num}: Ungültige schemeUri '{scheme_uri}' für DOI '{doi}'. "
+                            "URL muss mit http:// oder https:// beginnen."
+                        )
+                    
+                    # Check if row is completely empty (except DOI) - this marks "remove all rights"
+                    all_rights_fields_empty = not any([
+                        rights_text, rights_uri, scheme_uri, 
+                        rights_identifier, rights_identifier_scheme, lang
+                    ])
+                    
+                    # Initialize DOI entry if needed
+                    if doi not in rights_by_doi:
+                        rights_by_doi[doi] = []
+                    
+                    # Only add if at least one rights field is set (skip empty rows)
+                    if not all_rights_fields_empty:
+                        rights_data = {
+                            'rights': rights_text,
+                            'rightsUri': rights_uri,
+                            'schemeUri': scheme_uri,
+                            'rightsIdentifier': rights_identifier,
+                            'rightsIdentifierScheme': rights_identifier_scheme,
+                            'lang': lang
+                        }
+                        rights_by_doi[doi].append(rights_data)
+                        display_text = rights_identifier if rights_identifier else (rights_text[:30] + '...' if len(rights_text) > 30 else rights_text) if rights_text else '(leer)'
+                        logger.debug(f"Parsed rights for {doi}: {display_text}")
+        
+        except csv.Error as e:
+            raise CSVParseError(f"Fehler beim Lesen der CSV-Datei: {str(e)}")
+        
+        except UnicodeDecodeError:
+            raise CSVParseError(
+                "CSV-Datei konnte nicht gelesen werden. "
+                "Stelle sicher, dass die Datei UTF-8 kodiert ist."
+            )
+        
+        if not rights_by_doi:
+            raise CSVParseError(
+                "Keine gültigen Rights-Daten in der CSV-Datei gefunden. "
+                "Stelle sicher, dass die Datei mindestens eine Datenzeile enthält."
+            )
+        
+        # Count stats
+        total_rights = sum(len(rights) for rights in rights_by_doi.values())
+        dois_without_rights = sum(1 for rights in rights_by_doi.values() if not rights)
+        
+        logger.info(
+            f"Successfully parsed {len(rights_by_doi)} DOIs with "
+            f"{total_rights} rights entries from CSV "
+            f"({dois_without_rights} DOIs have empty rights)"
+        )
+        
+        return rights_by_doi, warnings
