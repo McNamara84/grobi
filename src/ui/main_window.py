@@ -37,10 +37,16 @@ from src.workers.fuji_worker import FujiAssessmentThread, StreamingFujiThread
 logger = logging.getLogger(__name__)
 
 # Window size constants
-DEFAULT_WINDOW_WIDTH = 800
+DEFAULT_WINDOW_WIDTH = 900
 MINIMUM_WINDOW_HEIGHT = 600
-SCREEN_HEIGHT_RATIO = 0.95
-FALLBACK_WINDOW_HEIGHT = 900
+MAXIMUM_WINDOW_WIDTH = 1200
+SCREEN_HEIGHT_RATIO = 0.80
+SCREEN_WIDTH_RATIO = 0.60
+FALLBACK_WINDOW_HEIGHT = 800
+
+# QSettings keys for window geometry
+SETTINGS_GEOMETRY = "window/geometry"
+SETTINGS_WINDOW_STATE = "window/state"
 
 
 class DOIFetchWorker(QObject):
@@ -380,15 +386,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("GROBI - GFZ Data Services Tool")
         self.setMinimumSize(DEFAULT_WINDOW_WIDTH, MINIMUM_WINDOW_HEIGHT)
         
-        # Set initial window size to maximize height
-        screen_obj = QGuiApplication.primaryScreen()
-        if screen_obj is not None:
-            screen = screen_obj.availableGeometry()
-            window_height = int(screen.height() * SCREEN_HEIGHT_RATIO)
-            self.resize(DEFAULT_WINDOW_WIDTH, window_height)
-        else:
-            # Fallback to a reasonable default size if screen detection fails
-            self.resize(DEFAULT_WINDOW_WIDTH, FALLBACK_WINDOW_HEIGHT)
+        # Restore saved window geometry or use smart defaults
+        self._restore_window_geometry()
         
         # Set window icon
         icon_path = Path(__file__).parent / "GROBI-Logo.ico"
@@ -4140,4 +4139,91 @@ class MainWindow(QMainWindow):
             self.fuji_thread.quit()
             self.fuji_thread.wait(3000)  # Wait max 3 seconds
         
+        # Save window geometry for next session
+        self._save_window_geometry()
+        
         event.accept()
+    
+    def _save_window_geometry(self):
+        """
+        Save current window position and size to QSettings.
+        
+        This allows the window to restore its position on next application start.
+        """
+        settings = QSettings("GFZ", "GROBI")
+        settings.setValue(SETTINGS_GEOMETRY, self.saveGeometry())
+        settings.setValue(SETTINGS_WINDOW_STATE, self.saveState())
+    
+    def _restore_window_geometry(self):
+        """
+        Restore window geometry from QSettings or use smart defaults.
+        
+        On first run, the window is centered with appropriate proportions.
+        On subsequent runs, the saved position is restored if it's still
+        on a visible screen.
+        """
+        settings = QSettings("GFZ", "GROBI")
+        saved_geometry = settings.value(SETTINGS_GEOMETRY)
+        
+        if saved_geometry is not None:
+            # Try to restore saved geometry
+            self.restoreGeometry(saved_geometry)
+            saved_state = settings.value(SETTINGS_WINDOW_STATE)
+            if saved_state is not None:
+                self.restoreState(saved_state)
+            
+            # Verify the window is still on a visible screen
+            if self._is_window_on_screen():
+                return  # Successfully restored
+        
+        # First run or saved position is off-screen: use smart defaults
+        self._set_default_geometry()
+    
+    def _is_window_on_screen(self) -> bool:
+        """
+        Check if the window is at least partially visible on any screen.
+        
+        This handles cases where a monitor was disconnected or resolution changed.
+        
+        Returns:
+            True if window is on a visible screen, False otherwise.
+        """
+        window_rect = self.frameGeometry()
+        
+        # Check all available screens
+        for screen in QGuiApplication.screens():
+            screen_rect = screen.availableGeometry()
+            # Check if at least 100x100 pixels are visible
+            if window_rect.intersected(screen_rect).width() >= 100 and \
+               window_rect.intersected(screen_rect).height() >= 100:
+                return True
+        
+        return False
+    
+    def _set_default_geometry(self):
+        """
+        Set intelligent default window size and center on primary screen.
+        
+        Window size is proportional to screen size with min/max constraints.
+        """
+        screen_obj = QGuiApplication.primaryScreen()
+        if screen_obj is None:
+            # Fallback if no screen detected
+            self.resize(DEFAULT_WINDOW_WIDTH, FALLBACK_WINDOW_HEIGHT)
+            return
+        
+        screen = screen_obj.availableGeometry()
+        
+        # Calculate proportional size with constraints
+        window_width = min(
+            max(int(screen.width() * SCREEN_WIDTH_RATIO), DEFAULT_WINDOW_WIDTH),
+            MAXIMUM_WINDOW_WIDTH
+        )
+        window_height = int(screen.height() * SCREEN_HEIGHT_RATIO)
+        
+        self.resize(window_width, window_height)
+        
+        # Center on screen
+        center_x = screen.x() + (screen.width() - window_width) // 2
+        center_y = screen.y() + (screen.height() - window_height) // 2
+        self.move(center_x, center_y)
