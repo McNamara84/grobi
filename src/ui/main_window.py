@@ -634,6 +634,7 @@ class MainWindow(QMainWindow):
             description="contentUrl-Felder bearbeiten",
             primary_text="📥 Exportieren"
         )
+        self.downloads_card.set_status("Bereit zum Exportieren", is_ready=True)
         self.downloads_card.add_action("Aus CSV aktualisieren", "update", "🔄")
         self.downloads_card.primary_clicked.connect(self._on_export_download_urls_clicked)
         self.downloads_card.action_triggered.connect(self._on_downloads_card_action)
@@ -654,6 +655,7 @@ class MainWindow(QMainWindow):
             description="DOIs aus Datenbank exportieren",
             primary_text="📥 Exportieren"
         )
+        self.pending_card.set_status("Datenbank-Export", is_ready=True)
         self.pending_card.setToolTip(
             "Exportiert alle DOIs mit Status 'pending' aus der SUMARIOPMD-Datenbank.\n"
             "Enthält DOI, Titel und Erstautor."
@@ -668,6 +670,7 @@ class MainWindow(QMainWindow):
             description="FAIR-Konformität prüfen",
             primary_text="🔍 Check starten"
         )
+        self.fuji_card.set_status("FAIR-Analyse bereit", is_ready=True)
         self.fuji_card.setToolTip(
             "Bewertet alle DOIs des DataCite-Accounts nach FAIR-Kriterien.\n"
             "Verwendet den F-UJI FAIR Assessment Service."
@@ -1093,6 +1096,9 @@ class MainWindow(QMainWindow):
         Args:
             theme: New theme
         """
+        # Apply new styles immediately
+        self._apply_styles()
+        
         # Log message
         if theme == Theme.AUTO:
             effective = self.theme_manager.get_effective_theme()
@@ -1101,6 +1107,9 @@ class MainWindow(QMainWindow):
             self._log("🌙 Dark Mode aktiviert")
         else:
             self._log("☀️ Light Mode aktiviert")
+        
+        logger.info(f"Theme changed to: {theme.value}")
+
     
     def _on_settings_theme_changed(self, theme: Theme):
         """
