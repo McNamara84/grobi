@@ -7,13 +7,10 @@ unittest.mock is the appropriate choice.
 """
 
 import pytest
-import tempfile
-import os
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import QSettings
 from PySide6.QtGui import QKeySequence
 
 from src.ui.main_window import MainWindow

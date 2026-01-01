@@ -44,6 +44,10 @@ SCREEN_HEIGHT_RATIO = 0.80
 SCREEN_WIDTH_RATIO = 0.60
 FALLBACK_WINDOW_HEIGHT = 800
 
+# Minimum visible area (in pixels) to consider a window "on screen"
+# Used to detect if window is still visible after monitor changes
+MINIMUM_VISIBLE_WINDOW_SIZE = 100
+
 # QSettings keys for window geometry
 SETTINGS_GEOMETRY = "window/geometry"
 SETTINGS_WINDOW_STATE = "window/state"
@@ -771,14 +775,20 @@ class MainWindow(QMainWindow):
         """
         Create references to maintain compatibility with old button names.
         
-        Note: In the new card-based UI, load and update actions share the same
-        primary button (export). The update action is now in the dropdown menu.
+        Note: In the new card-based UI, the distinction between "load/export" and
+        "update" buttons has changed:
+        - Export: Primary action (main button)
+        - Update: Secondary action in dropdown menu
         
-        Legacy button references point to primary buttons for backwards compatibility.
-        To control individual actions independently:
-        - Use card.setEnabled(False) to disable entire card
-        - Use card.set_action_enabled("update", False) to disable just the update action
-        - The update action visibility depends on CSV file detection
+        IMPORTANT for legacy code:
+        - self.load_* buttons: Point to primary button (export functionality)
+        - self.update_* buttons: Point to dropdown button (menu access)
+        
+        To check if "update" action is enabled, use:
+            self.urls_card.split_button.is_action_enabled("update")
+        
+        To enable/disable the update action specifically:
+            self.urls_card.set_action_enabled("update", True/False)
         """
         # Primary buttons - used by _set_buttons_enabled for disabling entire cards
         self.load_button = self.urls_card.split_button.primary_button
@@ -790,8 +800,9 @@ class MainWindow(QMainWindow):
         self.export_pending_btn = self.pending_card.split_button.primary_button
         self.fuji_check_btn = self.fuji_card.split_button.primary_button
         
-        # Update buttons - reference to dropdown button for legacy code that checks enabled state
-        # These now point to the dropdown button since update is a menu action
+        # Update buttons - reference to dropdown button (not the actual menu action)
+        # DEPRECATED: These references are kept for backwards compatibility only.
+        # New code should use card.set_action_enabled("update", bool) instead.
         self.update_button = self.urls_card.split_button.dropdown_button
         self.update_authors_button = self.authors_card.split_button.dropdown_button
         self.update_publisher_button = self.publisher_card.split_button.dropdown_button
@@ -841,7 +852,6 @@ class MainWindow(QMainWindow):
             for url in event.mimeData().urls():
                 if url.isLocalFile() and url.toLocalFile().lower().endswith('.csv'):
                     event.acceptProposedAction()
-                    self._log("📁 CSV-Datei erkannt - zum Importieren hier ablegen")
                     return
         event.ignore()
     
@@ -925,19 +935,19 @@ class MainWindow(QMainWindow):
                 self.pending_csv_path = file_path
                 self._on_update_publisher_clicked()
             
-            # 6. Landing Page URLs (fallback - has doi and url-like column)
-            # WARNING: This is the least specific check. A CSV with just "doi" and "url"
-            # columns could match different data types. We require "landing_page_url" header
-            # for reliable detection, or show a warning for ambiguous cases.
+            # 6. Landing Page URLs - only accept if explicit header is present
+            # WARNING: We only auto-import when "landing_page_url" header is explicit.
+            # For ambiguous cases (just "doi" + "url"), we don't auto-import to prevent
+            # false positives - user must use the manual import function instead.
             elif 'landing_page_url' in header_set:
                 self._log("→ Erkannt als: Landing Page URLs")
                 self.pending_csv_path = file_path
                 self._on_update_urls_clicked()
             elif 'doi' in header_set and ('url' in header_set or 'landing page url' in header_set):
-                self._log("→ Erkannt als: Landing Page URLs (bitte Typ verifizieren)")
-                self._log("[HINWEIS] CSV hat generische Header - bitte prüfen ob korrekt erkannt")
-                self.pending_csv_path = file_path
-                self._on_update_urls_clicked()
+                # Ambiguous case - don't auto-import, just inform user
+                self._log("[HINWEIS] CSV hat generische Header (doi, url).")
+                self._log("Bitte über Menü 'Landing Page URLs → Aus CSV aktualisieren' importieren.")
+                # Don't set pending_csv_path or trigger import - user must do manually
             
             else:
                 self._log(f"[WARNUNG] CSV-Typ nicht erkannt. Header: {', '.join(header[:5])}...")
@@ -4384,18 +4394,23 @@ class MainWindow(QMainWindow):
         Check if the window is at least partially visible on any screen.
         
         This handles cases where a monitor was disconnected or resolution changed.
+        The window is considered visible if at least MINIMUM_VISIBLE_WINDOW_SIZE
+        pixels are showing on any available screen.
         
         Returns:
-            True if window is on a visible screen, False otherwise.
+            bool: True if at least part of the window (100x100 pixels minimum)
+                  is visible on any connected screen. False if the window is
+                  completely off-screen or not sufficiently visible.
         """
         window_rect = self.frameGeometry()
         
         # Check all available screens
         for screen in QGuiApplication.screens():
             screen_rect = screen.availableGeometry()
-            # Check if at least 100x100 pixels are visible
-            if window_rect.intersected(screen_rect).width() >= 100 and \
-               window_rect.intersected(screen_rect).height() >= 100:
+            # Check if at least MINIMUM_VISIBLE_WINDOW_SIZE pixels are visible
+            intersection = window_rect.intersected(screen_rect)
+            if intersection.width() >= MINIMUM_VISIBLE_WINDOW_SIZE and \
+               intersection.height() >= MINIMUM_VISIBLE_WINDOW_SIZE:
                 return True
         
         return False
