@@ -365,3 +365,248 @@ class ThemeManager(QObject):
                 color: #808080;
             }
         """
+
+    def get_components_stylesheet(self) -> str:
+        """
+        Get stylesheet for new UI components (ActionCard, SplitButton, etc.).
+        
+        Returns:
+            str: CSS stylesheet for components
+        """
+        effective_theme = self.get_effective_theme()
+        if effective_theme == Theme.DARK:
+            return self._get_dark_components_stylesheet()
+        else:
+            return self._get_light_components_stylesheet()
+
+    def _get_light_components_stylesheet(self) -> str:
+        """Get light theme stylesheet for new UI components."""
+        return """
+            /* ===== ActionCard ===== */
+            #actionCard {
+                background-color: #ffffff;
+                border: 1px solid #e0e0e0;
+                border-radius: 12px;
+            }
+            #actionCard:hover {
+                border-color: #0078d4;
+            }
+            #cardIcon {
+                color: #0078d4;
+            }
+            #cardTitle {
+                color: #1a1a1a;
+            }
+            #cardDescription {
+                color: #666666;
+            }
+            #cardStatus {
+                color: #666666;
+            }
+            
+            /* ===== SplitButton ===== */
+            #splitButtonPrimary {
+                background-color: #0078d4;
+                color: white;
+                border: none;
+                border-radius: 8px 0px 0px 8px;
+                padding: 10px 16px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            #splitButtonPrimary:hover {
+                background-color: #106ebe;
+            }
+            #splitButtonPrimary:pressed {
+                background-color: #005a9e;
+            }
+            #splitButtonPrimary:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+            #splitButtonDropdown {
+                background-color: #0078d4;
+                color: white;
+                border: none;
+                border-radius: 0px 8px 8px 0px;
+                border-left: 1px solid rgba(255, 255, 255, 0.3);
+            }
+            #splitButtonDropdown:hover {
+                background-color: #106ebe;
+            }
+            #splitButtonDropdown:pressed {
+                background-color: #005a9e;
+            }
+            #splitButtonDropdown:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+            #splitButtonDropdown::menu-indicator {
+                image: none;
+            }
+            
+            /* ===== CollapsibleSection ===== */
+            #collapsibleHeader {
+                background-color: transparent;
+                border-bottom: 1px solid #e0e0e0;
+                padding: 4px 0;
+            }
+            #collapsibleHeader:hover {
+                background-color: rgba(0, 0, 0, 0.03);
+            }
+            #collapsibleTitle {
+                color: #1a1a1a;
+            }
+            #collapsibleToggle {
+                background-color: transparent;
+                border: none;
+            }
+            #collapsibleToggle:hover {
+                background-color: rgba(0, 0, 0, 0.05);
+                border-radius: 4px;
+            }
+            #collapsibleContent {
+                background-color: transparent;
+            }
+            
+            /* ===== ScrollArea ===== */
+            QScrollArea {
+                background-color: #f8f9fa;
+                border: none;
+            }
+            QScrollArea > QWidget > QWidget {
+                background-color: #f8f9fa;
+            }
+            QScrollBar:vertical {
+                background-color: #f0f0f0;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #c0c0c0;
+                border-radius: 6px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #a0a0a0;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """
+
+    def _get_dark_components_stylesheet(self) -> str:
+        """Get dark theme stylesheet for new UI components."""
+        return """
+            /* ===== ActionCard ===== */
+            #actionCard {
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                border-radius: 12px;
+            }
+            #actionCard:hover {
+                border-color: #4da6ff;
+            }
+            #cardIcon {
+                color: #4da6ff;
+            }
+            #cardTitle {
+                color: #e0e0e0;
+            }
+            #cardDescription {
+                color: #999999;
+            }
+            #cardStatus {
+                color: #999999;
+            }
+            
+            /* ===== SplitButton ===== */
+            #splitButtonPrimary {
+                background-color: #0e639c;
+                color: white;
+                border: none;
+                border-radius: 8px 0px 0px 8px;
+                padding: 10px 16px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            #splitButtonPrimary:hover {
+                background-color: #1177bb;
+            }
+            #splitButtonPrimary:pressed {
+                background-color: #0d5a8c;
+            }
+            #splitButtonPrimary:disabled {
+                background-color: #3e3e3e;
+                color: #808080;
+            }
+            #splitButtonDropdown {
+                background-color: #0e639c;
+                color: white;
+                border: none;
+                border-radius: 0px 8px 8px 0px;
+                border-left: 1px solid rgba(255, 255, 255, 0.2);
+            }
+            #splitButtonDropdown:hover {
+                background-color: #1177bb;
+            }
+            #splitButtonDropdown:pressed {
+                background-color: #0d5a8c;
+            }
+            #splitButtonDropdown:disabled {
+                background-color: #3e3e3e;
+                color: #808080;
+            }
+            #splitButtonDropdown::menu-indicator {
+                image: none;
+            }
+            
+            /* ===== CollapsibleSection ===== */
+            #collapsibleHeader {
+                background-color: transparent;
+                border-bottom: 1px solid #404040;
+                padding: 4px 0;
+            }
+            #collapsibleHeader:hover {
+                background-color: rgba(255, 255, 255, 0.03);
+            }
+            #collapsibleTitle {
+                color: #e0e0e0;
+            }
+            #collapsibleToggle {
+                background-color: transparent;
+                border: none;
+            }
+            #collapsibleToggle:hover {
+                background-color: rgba(255, 255, 255, 0.05);
+                border-radius: 4px;
+            }
+            #collapsibleContent {
+                background-color: transparent;
+            }
+            
+            /* ===== ScrollArea ===== */
+            QScrollArea {
+                background-color: #1e1e1e;
+                border: none;
+            }
+            QScrollArea > QWidget > QWidget {
+                background-color: #1e1e1e;
+            }
+            QScrollBar:vertical {
+                background-color: #2d2d2d;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #555555;
+                border-radius: 6px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #666666;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """

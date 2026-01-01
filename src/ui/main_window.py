@@ -7,7 +7,8 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox, QDialog
+    QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox, QDialog,
+    QScrollArea, QSizePolicy
 )
 from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt, QSettings
 from PySide6.QtGui import QFont, QIcon, QAction, QDesktopServices, QPixmap, QGuiApplication
@@ -18,6 +19,8 @@ from src.ui.about_dialog import AboutDialog
 from src.ui.csv_splitter_dialog import CSVSplitterDialog
 from src.ui.theme_manager import ThemeManager, Theme
 from src.ui.fuji_results_window import FujiResultsWindow
+from src.ui.flow_layout import FlowLayout
+from src.ui.components import ActionCard, CollapsibleSection
 from src.api.datacite_client import DataCiteClient, DataCiteAPIError, AuthenticationError, NetworkError
 from src.api.fuji_client import FujiClient
 from src.utils.csv_exporter import export_dois_to_csv, export_dois_with_creators_to_csv, export_dois_with_publisher_to_csv, export_dois_with_contributors_to_csv, export_dois_with_rights_to_csv, CSVExportError
@@ -496,43 +499,53 @@ class MainWindow(QMainWindow):
         logger.info("Menu bar initialized")
     
     def _setup_ui(self):
-        """Set up the user interface."""
-        # Central widget
+        """Set up the user interface with modern card-based layout."""
+        # Central widget with scroll area for responsive design
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
-        layout = QVBoxLayout(central_widget)
-        layout.setSpacing(20)
-        layout.setContentsMargins(30, 30, 30, 30)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
-        # Header with logo and title
+        # Scroll area for content
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setFrameShape(QScrollArea.NoFrame)
+        
+        # Content widget inside scroll area
+        content_widget = QWidget()
+        content_widget.setObjectName("scrollContent")
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setSpacing(16)
+        content_layout.setContentsMargins(24, 24, 24, 24)
+        
+        # ===== HEADER =====
         header_layout = QHBoxLayout()
-        header_layout.setSpacing(10)
+        header_layout.setSpacing(12)
         
         # Logo
         logo_label = QLabel()
         logo_path = Path(__file__).parent / "GROBI-Logo.ico"
         if logo_path.exists():
             pixmap = QPixmap(str(logo_path))
-            # Scale to 32x32 for compact display next to title
-            pixmap = pixmap.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            pixmap = pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             logo_label.setPixmap(pixmap)
-            logo_label.setFixedSize(32, 32)
+            logo_label.setFixedSize(40, 40)
         header_layout.addWidget(logo_label)
         
-        # Title and subtitle container
+        # Title container
         title_container = QVBoxLayout()
-        title_container.setSpacing(0)
+        title_container.setSpacing(2)
         
-        # Title
         title = QLabel("GROBI")
         title_font = QFont()
-        title_font.setPointSize(24)
+        title_font.setPointSize(22)
         title_font.setBold(True)
         title.setFont(title_font)
         title_container.addWidget(title)
         
-        # Subtitle
         self.subtitle = QLabel("GFZ Research Data Repository Operations & Batch Interface")
         subtitle_font = QFont()
         subtitle_font.setPointSize(10)
@@ -543,220 +556,230 @@ class MainWindow(QMainWindow):
         title_container.addWidget(self.subtitle)
         
         header_layout.addLayout(title_container)
-        header_layout.addStretch()  # Push everything to the left
+        header_layout.addStretch()
         
-        layout.addLayout(header_layout)
+        content_layout.addLayout(header_layout)
+        content_layout.addSpacing(16)
         
-        # Add spacing
-        layout.addSpacing(20)
+        # ===== SECTION 1: Metadaten-Verwaltung =====
+        self.metadata_section = CollapsibleSection("📊 Metadaten-Verwaltung", expanded=True)
         
-        # GroupBox 1: Landing Page URLs
-        urls_group = QGroupBox("🔗 Landing Page URLs")
-        urls_layout = QVBoxLayout()
-        urls_layout.setSpacing(10)
+        # FlowLayout for cards
+        metadata_flow = FlowLayout(h_spacing=16, v_spacing=16)
         
-        # Status label for URLs
-        self.urls_status_label = QLabel("⚪ Keine CSV-Datei gefunden")
-        urls_layout.addWidget(self.urls_status_label)
+        # Card 1: Landing Page URLs
+        self.urls_card = ActionCard(
+            icon="🔗",
+            title="Landing Page URLs",
+            description="DOI-URLs verwalten und aktualisieren",
+            primary_text="📥 Exportieren"
+        )
+        self.urls_card.add_action("Aus CSV aktualisieren", "update", "🔄")
+        self.urls_card.primary_clicked.connect(self._on_load_dois_clicked)
+        self.urls_card.action_triggered.connect(self._on_urls_card_action)
+        metadata_flow.addWidget(self.urls_card)
         
-        # Buttons for URLs workflow
-        self.load_button = QPushButton("📥 DOIs und URLs exportieren")
-        self.load_button.setMinimumHeight(40)
-        self.load_button.clicked.connect(self._on_load_dois_clicked)
-        urls_layout.addWidget(self.load_button)
+        # Card 2: Autoren
+        self.authors_card = ActionCard(
+            icon="👥",
+            title="Autoren",
+            description="Creator-Metadaten bearbeiten",
+            primary_text="📥 Exportieren"
+        )
+        self.authors_card.add_action("Aus CSV aktualisieren", "update", "🔄")
+        self.authors_card.primary_clicked.connect(self._on_load_authors_clicked)
+        self.authors_card.action_triggered.connect(self._on_authors_card_action)
+        metadata_flow.addWidget(self.authors_card)
         
-        self.update_button = QPushButton("🔄 Landing Page URLs aktualisieren")
-        self.update_button.setMinimumHeight(40)
-        self.update_button.setEnabled(False)  # Initially disabled
-        self.update_button.clicked.connect(self._on_update_urls_clicked)
-        urls_layout.addWidget(self.update_button)
+        # Card 3: Publisher
+        self.publisher_card = ActionCard(
+            icon="📦",
+            title="Publisher",
+            description="Publisher-Metadaten verwalten",
+            primary_text="📥 Exportieren"
+        )
+        self.publisher_card.add_action("Aus CSV aktualisieren", "update", "🔄")
+        self.publisher_card.primary_clicked.connect(self._on_load_publisher_clicked)
+        self.publisher_card.action_triggered.connect(self._on_publisher_card_action)
+        metadata_flow.addWidget(self.publisher_card)
         
-        urls_group.setLayout(urls_layout)
-        layout.addWidget(urls_group)
+        # Card 4: Contributors
+        self.contributors_card = ActionCard(
+            icon="🤝",
+            title="Contributors",
+            description="Contributor-Metadaten bearbeiten",
+            primary_text="📥 Exportieren"
+        )
+        self.contributors_card.add_action("Aus CSV aktualisieren", "update", "🔄")
+        self.contributors_card.primary_clicked.connect(self._on_load_contributors_clicked)
+        self.contributors_card.action_triggered.connect(self._on_contributors_card_action)
+        metadata_flow.addWidget(self.contributors_card)
         
-        # GroupBox 2: Authors Metadata
-        authors_group = QGroupBox("👥 Autoren-Metadaten")
-        authors_layout = QVBoxLayout()
-        authors_layout.setSpacing(10)
+        # Card 5: Rights
+        self.rights_card = ActionCard(
+            icon="⚖️",
+            title="Rights",
+            description="Lizenz-Metadaten verwalten",
+            primary_text="📥 Exportieren"
+        )
+        self.rights_card.add_action("Aus CSV aktualisieren", "update", "🔄")
+        self.rights_card.primary_clicked.connect(self._on_load_rights_clicked)
+        self.rights_card.action_triggered.connect(self._on_rights_card_action)
+        metadata_flow.addWidget(self.rights_card)
         
-        # Status label for authors
-        self.authors_status_label = QLabel("⚪ Keine CSV-Datei gefunden")
-        authors_layout.addWidget(self.authors_status_label)
+        # Card 6: Download URLs
+        self.downloads_card = ActionCard(
+            icon="📥",
+            title="Download-URLs",
+            description="contentUrl-Felder bearbeiten",
+            primary_text="📥 Exportieren"
+        )
+        self.downloads_card.add_action("Aus CSV aktualisieren", "update", "🔄")
+        self.downloads_card.primary_clicked.connect(self._on_export_download_urls_clicked)
+        self.downloads_card.action_triggered.connect(self._on_downloads_card_action)
+        metadata_flow.addWidget(self.downloads_card)
         
-        # Buttons for authors workflow
-        self.load_authors_button = QPushButton("📥 DOIs und Autoren exportieren")
-        self.load_authors_button.setMinimumHeight(40)
-        self.load_authors_button.clicked.connect(self._on_load_authors_clicked)
-        authors_layout.addWidget(self.load_authors_button)
+        self.metadata_section.set_content_layout(metadata_flow)
+        content_layout.addWidget(self.metadata_section)
         
-        self.update_authors_button = QPushButton("🖊️ Autoren aktualisieren")
-        self.update_authors_button.setMinimumHeight(40)
-        self.update_authors_button.setEnabled(False)  # Initially disabled
-        self.update_authors_button.clicked.connect(self._on_update_authors_clicked)
-        authors_layout.addWidget(self.update_authors_button)
+        # ===== SECTION 2: Datenbank & Analyse =====
+        self.tools_section = CollapsibleSection("🔧 Datenbank & Analyse", expanded=True)
         
-        authors_group.setLayout(authors_layout)
-        layout.addWidget(authors_group)
+        tools_flow = FlowLayout(h_spacing=16, v_spacing=16)
         
-        # GroupBox 3: Publisher Metadata
-        publisher_group = QGroupBox("📦 Publisher-Metadaten")
-        publisher_layout = QVBoxLayout()
-        publisher_layout.setSpacing(10)
-        
-        # Status label for publisher
-        self.publisher_status_label = QLabel("⚪ Keine CSV-Datei gefunden")
-        publisher_layout.addWidget(self.publisher_status_label)
-        
-        # Buttons for publisher workflow
-        self.load_publisher_button = QPushButton("📥 DOIs und Publisher-Metadaten laden")
-        self.load_publisher_button.setMinimumHeight(40)
-        self.load_publisher_button.clicked.connect(self._on_load_publisher_clicked)
-        publisher_layout.addWidget(self.load_publisher_button)
-        
-        self.update_publisher_button = QPushButton("🔄 Publisher-Metadaten aktualisieren")
-        self.update_publisher_button.setMinimumHeight(40)
-        self.update_publisher_button.setEnabled(False)  # Initially disabled
-        self.update_publisher_button.clicked.connect(self._on_update_publisher_clicked)
-        publisher_layout.addWidget(self.update_publisher_button)
-        
-        publisher_group.setLayout(publisher_layout)
-        layout.addWidget(publisher_group)
-        
-        # GroupBox 4: Contributors Metadata
-        contributors_group = QGroupBox("🤝 Contributors-Metadaten")
-        contributors_layout = QVBoxLayout()
-        contributors_layout.setSpacing(10)
-        
-        # Status label for contributors
-        self.contributors_status_label = QLabel("⚪ Keine CSV-Datei gefunden")
-        contributors_layout.addWidget(self.contributors_status_label)
-        
-        # Buttons for contributors workflow
-        self.load_contributors_button = QPushButton("📥 DOIs und Contributors exportieren")
-        self.load_contributors_button.setMinimumHeight(40)
-        self.load_contributors_button.clicked.connect(self._on_load_contributors_clicked)
-        contributors_layout.addWidget(self.load_contributors_button)
-        
-        self.update_contributors_button = QPushButton("🖊️ Contributors aktualisieren")
-        self.update_contributors_button.setMinimumHeight(40)
-        self.update_contributors_button.setEnabled(False)  # Initially disabled
-        self.update_contributors_button.clicked.connect(self._on_update_contributors_clicked)
-        contributors_layout.addWidget(self.update_contributors_button)
-        
-        contributors_group.setLayout(contributors_layout)
-        layout.addWidget(contributors_group)
-        
-        # GroupBox 5: Rights Metadata
-        rights_group = QGroupBox("⚖️ Rights-Metadaten")
-        rights_layout = QVBoxLayout()
-        rights_layout.setSpacing(10)
-        
-        # Status label for rights
-        self.rights_status_label = QLabel("⚪ Keine CSV-Datei gefunden")
-        rights_layout.addWidget(self.rights_status_label)
-        
-        # Buttons for rights workflow
-        self.load_rights_button = QPushButton("📥 DOIs und Rights exportieren")
-        self.load_rights_button.setMinimumHeight(40)
-        self.load_rights_button.clicked.connect(self._on_load_rights_clicked)
-        rights_layout.addWidget(self.load_rights_button)
-        
-        self.update_rights_button = QPushButton("🔄 Rights aktualisieren")
-        self.update_rights_button.setMinimumHeight(40)
-        self.update_rights_button.setEnabled(False)  # Initially disabled
-        self.update_rights_button.clicked.connect(self._on_update_rights_clicked)
-        rights_layout.addWidget(self.update_rights_button)
-        
-        rights_group.setLayout(rights_layout)
-        layout.addWidget(rights_group)
-        
-        # GroupBox 6: Download URLs
-        downloads_group = QGroupBox("📦 Download-URLs")
-        downloads_layout = QVBoxLayout()
-        downloads_layout.setSpacing(10)
-        
-        # Buttons for download URLs workflow
-        self.export_download_urls_btn = QPushButton("📥 DOIs und Download-URLs exportieren")
-        self.export_download_urls_btn.setMinimumHeight(40)
-        self.export_download_urls_btn.clicked.connect(self._on_export_download_urls_clicked)
-        downloads_layout.addWidget(self.export_download_urls_btn)
-        
-        self.update_download_urls_btn = QPushButton("📤 Download-URLs aktualisieren")
-        self.update_download_urls_btn.setMinimumHeight(40)
-        self.update_download_urls_btn.clicked.connect(self._on_update_download_urls_clicked)
-        downloads_layout.addWidget(self.update_download_urls_btn)
-        
-        downloads_group.setLayout(downloads_layout)
-        layout.addWidget(downloads_group)
-        
-        # GroupBox 7: Pending DOIs Export (SUMARIOPMD Database)
-        pending_group = QGroupBox("⏳ Pending DOIs (Datenbank)")
-        pending_layout = QVBoxLayout()
-        pending_layout.setSpacing(10)
-        
-        # Button for pending DOIs export
-        self.export_pending_btn = QPushButton("📥 Pending DOIs exportieren")
-        self.export_pending_btn.setMinimumHeight(40)
-        self.export_pending_btn.setToolTip(
+        # Card 7: Pending DOIs
+        self.pending_card = ActionCard(
+            icon="⏳",
+            title="Pending DOIs",
+            description="DOIs aus Datenbank exportieren",
+            primary_text="📥 Exportieren"
+        )
+        self.pending_card.setToolTip(
             "Exportiert alle DOIs mit Status 'pending' aus der SUMARIOPMD-Datenbank.\n"
             "Enthält DOI, Titel und Erstautor."
         )
-        self.export_pending_btn.clicked.connect(self._on_export_pending_clicked)
-        pending_layout.addWidget(self.export_pending_btn)
+        self.pending_card.primary_clicked.connect(self._on_export_pending_clicked)
+        tools_flow.addWidget(self.pending_card)
         
-        pending_group.setLayout(pending_layout)
-        layout.addWidget(pending_group)
-        
-        # GroupBox 8: F-UJI FAIR Assessment
-        fuji_group = QGroupBox("🎯 F-UJI FAIR Assessment")
-        fuji_layout = QVBoxLayout()
-        fuji_layout.setSpacing(10)
-        
-        # Button for FAIR check
-        self.fuji_check_btn = QPushButton("🔍 FAIR Check starten")
-        self.fuji_check_btn.setMinimumHeight(40)
-        self.fuji_check_btn.setToolTip(
+        # Card 8: F-UJI FAIR Assessment
+        self.fuji_card = ActionCard(
+            icon="🎯",
+            title="F-UJI FAIR",
+            description="FAIR-Konformität prüfen",
+            primary_text="🔍 Check starten"
+        )
+        self.fuji_card.setToolTip(
             "Bewertet alle DOIs des DataCite-Accounts nach FAIR-Kriterien.\n"
             "Verwendet den F-UJI FAIR Assessment Service."
         )
-        self.fuji_check_btn.clicked.connect(self._on_fuji_check_clicked)
-        fuji_layout.addWidget(self.fuji_check_btn)
+        self.fuji_card.primary_clicked.connect(self._on_fuji_check_clicked)
+        tools_flow.addWidget(self.fuji_card)
         
-        fuji_group.setLayout(fuji_layout)
-        layout.addWidget(fuji_group)
+        self.tools_section.set_content_layout(tools_flow)
+        content_layout.addWidget(self.tools_section)
         
-        # Progress bar
+        # ===== PROGRESS BAR =====
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(0)  # Indeterminate progress
-        layout.addWidget(self.progress_bar)
+        self.progress_bar.setFixedHeight(6)
+        content_layout.addWidget(self.progress_bar)
         
-        # Log area
-        log_label = QLabel("Status:")
-        log_label_font = QFont()
-        log_label_font.setBold(True)
-        log_label.setFont(log_label_font)
-        layout.addWidget(log_label)
+        # ===== LOG SECTION =====
+        self.log_section = CollapsibleSection("📋 Status-Log", expanded=True)
+        
+        log_container = QVBoxLayout()
+        log_container.setContentsMargins(0, 0, 0, 0)
         
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
+        self.log_text.setMinimumHeight(120)
         self.log_text.setMaximumHeight(200)
-        layout.addWidget(self.log_text)
+        log_container.addWidget(self.log_text)
         
-        # Add stretch to push everything to the top
-        layout.addStretch()
+        log_widget = QWidget()
+        log_widget.setLayout(log_container)
+        self.log_section.add_widget(log_widget)
+        content_layout.addWidget(self.log_section)
+        
+        # Add stretch at the end
+        content_layout.addStretch()
+        
+        scroll_area.setWidget(content_widget)
+        main_layout.addWidget(scroll_area)
+        
+        # ===== Compatibility: Create references to old button names =====
+        # This ensures existing code that references these buttons still works
+        self._create_legacy_button_references()
         
         # Check for existing CSV files
         self._check_csv_files()
         
         # Initial log message
-        self._log("Bereit. Klicke auf 'DOIs und URLs exportieren' um zu beginnen.")
+        self._log("Bereit. Wähle eine Aktion um zu beginnen.")
+    
+    def _create_legacy_button_references(self):
+        """Create references to maintain compatibility with old button names."""
+        # These are used by _set_buttons_enabled and other methods
+        self.load_button = self.urls_card.split_button.primary_button
+        self.update_button = self.urls_card.split_button.primary_button  # Handled via action
+        self.load_authors_button = self.authors_card.split_button.primary_button
+        self.update_authors_button = self.authors_card.split_button.primary_button
+        self.load_publisher_button = self.publisher_card.split_button.primary_button
+        self.update_publisher_button = self.publisher_card.split_button.primary_button
+        self.load_contributors_button = self.contributors_card.split_button.primary_button
+        self.update_contributors_button = self.contributors_card.split_button.primary_button
+        self.load_rights_button = self.rights_card.split_button.primary_button
+        self.update_rights_button = self.rights_card.split_button.primary_button
+        self.export_download_urls_btn = self.downloads_card.split_button.primary_button
+        self.update_download_urls_btn = self.downloads_card.split_button.primary_button
+        self.export_pending_btn = self.pending_card.split_button.primary_button
+        self.fuji_check_btn = self.fuji_card.split_button.primary_button
+        
+        # Status labels - create new references to card status labels
+        self.urls_status_label = self.urls_card.status_label
+        self.authors_status_label = self.authors_card.status_label
+        self.publisher_status_label = self.publisher_card.status_label
+        self.contributors_status_label = self.contributors_card.status_label
+        self.rights_status_label = self.rights_card.status_label
+    
+    def _on_urls_card_action(self, action_id: str):
+        """Handle action from URLs card dropdown."""
+        if action_id == "update":
+            self._on_update_urls_clicked()
+    
+    def _on_authors_card_action(self, action_id: str):
+        """Handle action from Authors card dropdown."""
+        if action_id == "update":
+            self._on_update_authors_clicked()
+    
+    def _on_publisher_card_action(self, action_id: str):
+        """Handle action from Publisher card dropdown."""
+        if action_id == "update":
+            self._on_update_publisher_clicked()
+    
+    def _on_contributors_card_action(self, action_id: str):
+        """Handle action from Contributors card dropdown."""
+        if action_id == "update":
+            self._on_update_contributors_clicked()
+    
+    def _on_rights_card_action(self, action_id: str):
+        """Handle action from Rights card dropdown."""
+        if action_id == "update":
+            self._on_update_rights_clicked()
+    
+    def _on_downloads_card_action(self, action_id: str):
+        """Handle action from Downloads card dropdown."""
+        if action_id == "update":
+            self._on_update_download_urls_clicked()
     
     def _apply_styles(self):
         """Apply styling to the window based on current theme."""
-        stylesheet = self.theme_manager.get_main_window_stylesheet()
-        self.setStyleSheet(stylesheet)
+        # Combine main window styles with component styles
+        main_stylesheet = self.theme_manager.get_main_window_stylesheet()
+        components_stylesheet = self.theme_manager.get_components_stylesheet()
+        self.setStyleSheet(main_stylesheet + "\n" + components_stylesheet)
         
         # Update subtitle color based on effective theme
         effective_theme = self.theme_manager.get_effective_theme()
@@ -888,43 +911,43 @@ class MainWindow(QMainWindow):
         
         # Update URLs status
         if urls_csv_found:
-            self.urls_status_label.setText(f"🟢 CSV bereit: {urls_csv_name}")
-            self.update_button.setEnabled(True)
+            self.urls_card.set_status(f"CSV bereit: {urls_csv_name}", is_ready=True)
+            self.urls_card.set_action_enabled("update", True)
         else:
-            self.urls_status_label.setText("⚪ Keine CSV-Datei gefunden")
-            self.update_button.setEnabled(False)
+            self.urls_card.set_status("Keine CSV-Datei gefunden", is_ready=False)
+            self.urls_card.set_action_enabled("update", False)
         
         # Update authors status
         if authors_csv_found:
-            self.authors_status_label.setText(f"🟢 CSV bereit: {authors_csv_name}")
-            self.update_authors_button.setEnabled(True)
+            self.authors_card.set_status(f"CSV bereit: {authors_csv_name}", is_ready=True)
+            self.authors_card.set_action_enabled("update", True)
         else:
-            self.authors_status_label.setText("⚪ Keine CSV-Datei gefunden")
-            self.update_authors_button.setEnabled(False)
+            self.authors_card.set_status("Keine CSV-Datei gefunden", is_ready=False)
+            self.authors_card.set_action_enabled("update", False)
         
         # Update publisher status
         if publisher_csv_found:
-            self.publisher_status_label.setText(f"🟢 CSV bereit: {publisher_csv_name}")
-            self.update_publisher_button.setEnabled(True)
+            self.publisher_card.set_status(f"CSV bereit: {publisher_csv_name}", is_ready=True)
+            self.publisher_card.set_action_enabled("update", True)
         else:
-            self.publisher_status_label.setText("⚪ Keine CSV-Datei gefunden")
-            self.update_publisher_button.setEnabled(False)
+            self.publisher_card.set_status("Keine CSV-Datei gefunden", is_ready=False)
+            self.publisher_card.set_action_enabled("update", False)
         
         # Update contributors status
         if contributors_csv_found:
-            self.contributors_status_label.setText(f"🟢 CSV bereit: {contributors_csv_name}")
-            self.update_contributors_button.setEnabled(True)
+            self.contributors_card.set_status(f"CSV bereit: {contributors_csv_name}", is_ready=True)
+            self.contributors_card.set_action_enabled("update", True)
         else:
-            self.contributors_status_label.setText("⚪ Keine CSV-Datei gefunden")
-            self.update_contributors_button.setEnabled(False)
+            self.contributors_card.set_status("Keine CSV-Datei gefunden", is_ready=False)
+            self.contributors_card.set_action_enabled("update", False)
         
         # Update rights status
         if rights_csv_found:
-            self.rights_status_label.setText(f"🟢 CSV bereit: {rights_csv_name}")
-            self.update_rights_button.setEnabled(True)
+            self.rights_card.set_status(f"CSV bereit: {rights_csv_name}", is_ready=True)
+            self.rights_card.set_action_enabled("update", True)
         else:
-            self.rights_status_label.setText("⚪ Keine CSV-Datei gefunden")
-            self.update_rights_button.setEnabled(False)
+            self.rights_card.set_status("Keine CSV-Datei gefunden", is_ready=False)
+            self.rights_card.set_action_enabled("update", False)
     
     def _log(self, message):
         """
@@ -938,21 +961,20 @@ class MainWindow(QMainWindow):
     
     def _set_buttons_enabled(self, enabled: bool):
         """
-        Enable or disable all main action buttons.
+        Enable or disable all main action cards.
         
         Args:
-            enabled: True to enable buttons, False to disable
+            enabled: True to enable cards, False to disable
         """
-        self.load_button.setEnabled(enabled)
-        self.load_authors_button.setEnabled(enabled)
-        self.load_publisher_button.setEnabled(enabled)
-        self.load_contributors_button.setEnabled(enabled)
-        self.load_rights_button.setEnabled(enabled)
-        self.update_button.setEnabled(enabled)
-        self.update_authors_button.setEnabled(enabled)
-        self.update_publisher_button.setEnabled(enabled)
-        self.update_contributors_button.setEnabled(enabled)
-        self.update_rights_button.setEnabled(enabled)
+        # Enable/disable all action cards
+        self.urls_card.setEnabled(enabled)
+        self.authors_card.setEnabled(enabled)
+        self.publisher_card.setEnabled(enabled)
+        self.contributors_card.setEnabled(enabled)
+        self.rights_card.setEnabled(enabled)
+        self.downloads_card.setEnabled(enabled)
+        self.pending_card.setEnabled(enabled)
+        self.fuji_card.setEnabled(enabled)
     
     def _format_error_list(self, items: list, max_items: int = 10, bullet: str = "") -> str:
         """
