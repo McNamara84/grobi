@@ -1,9 +1,10 @@
 """Action Card - A card widget for workflow actions with split button."""
 
 from PySide6.QtWidgets import (
-    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QGraphicsDropShadowEffect
+    QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QGraphicsDropShadowEffect,
+    QGraphicsOpacityEffect
 )
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QPropertyAnimation, QEasingCurve, QTimer
 from PySide6.QtGui import QFont, QColor
 
 from src.ui.components.split_button import SplitButton
@@ -187,22 +188,69 @@ class ActionCard(QFrame):
         self._description_label.setText(description)
         self._description_label.setVisible(bool(description))
     
-    def set_status(self, status: str, is_ready: bool = None):
+    def set_status(self, status: str, is_ready: bool = None, animate: bool = True):
         """
-        Set the status text.
+        Set the status text with optional fade animation.
         
         Args:
             status: Status text (can include emoji indicators)
             is_ready: Optional boolean to auto-format status
                      If provided, will use 🟢/⚪ prefix
+            animate: Whether to animate the status change (default True)
         """
         if is_ready is not None:
             prefix = "🟢" if is_ready else "⚪"
-            self._status_text = f"{prefix} {status}"
+            new_status = f"{prefix} {status}"
         else:
-            self._status_text = status
+            new_status = status
         
-        self._status_label.setText(self._status_text)
+        # Skip animation if status hasn't changed
+        if new_status == self._status_text:
+            return
+        
+        self._status_text = new_status
+        
+        if animate and self._status_label.isVisible():
+            self._animate_status_change(new_status)
+        else:
+            self._status_label.setText(new_status)
+    
+    def _animate_status_change(self, new_text: str):
+        """
+        Animate the status text change with a fade effect.
+        
+        Args:
+            new_text: New status text to display
+        """
+        # Create opacity effect if not exists
+        if not hasattr(self, '_status_opacity'):
+            self._status_opacity = QGraphicsOpacityEffect(self._status_label)
+            self._status_label.setGraphicsEffect(self._status_opacity)
+        
+        # Fade out animation
+        self._fade_out = QPropertyAnimation(self._status_opacity, b"opacity")
+        self._fade_out.setDuration(100)
+        self._fade_out.setStartValue(1.0)
+        self._fade_out.setEndValue(0.0)
+        self._fade_out.setEasingCurve(QEasingCurve.Type.OutQuad)
+        
+        # Store new text for after fade out
+        self._pending_status_text = new_text
+        self._fade_out.finished.connect(self._on_fade_out_finished)
+        self._fade_out.start()
+    
+    def _on_fade_out_finished(self):
+        """Handle fade out completion - update text and fade in."""
+        # Update the text
+        self._status_label.setText(self._pending_status_text)
+        
+        # Fade in animation
+        self._fade_in = QPropertyAnimation(self._status_opacity, b"opacity")
+        self._fade_in.setDuration(150)
+        self._fade_in.setStartValue(0.0)
+        self._fade_in.setEndValue(1.0)
+        self._fade_in.setEasingCurve(QEasingCurve.Type.InQuad)
+        self._fade_in.start()
     
     def set_primary_text(self, text: str):
         """

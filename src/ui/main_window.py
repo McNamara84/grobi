@@ -10,8 +10,8 @@ from PySide6.QtWidgets import (
     QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox, QDialog,
     QScrollArea, QSizePolicy
 )
-from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt, QSettings
-from PySide6.QtGui import QFont, QIcon, QAction, QDesktopServices, QPixmap, QGuiApplication
+from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt, QSettings, QMimeData
+from PySide6.QtGui import QFont, QIcon, QAction, QDesktopServices, QPixmap, QGuiApplication, QShortcut, QKeySequence, QDragEnterEvent, QDropEvent
 
 from src.ui.credentials_dialog import CredentialsDialog
 from src.ui.save_credentials_dialog import SaveCredentialsDialog
@@ -573,6 +573,12 @@ class MainWindow(QMainWindow):
             description="DOI-URLs verwalten und aktualisieren",
             primary_text="📥 Exportieren"
         )
+        self.urls_card.setToolTip(
+            "Exportiert alle DOIs mit ihren Landing Page URLs.\n"
+            "Die URLs können dann in einer CSV-Datei bearbeitet\n"
+            "und wieder importiert werden.\n\n"
+            "Tastenkürzel: Ctrl+1"
+        )
         self.urls_card.add_action("Aus CSV aktualisieren", "update", "🔄")
         self.urls_card.primary_clicked.connect(self._on_load_dois_clicked)
         self.urls_card.action_triggered.connect(self._on_urls_card_action)
@@ -584,6 +590,12 @@ class MainWindow(QMainWindow):
             title="Autoren",
             description="Creator-Metadaten bearbeiten",
             primary_text="📥 Exportieren"
+        )
+        self.authors_card.setToolTip(
+            "Exportiert Creator-Informationen (Name, ORCID, Affiliationen).\n"
+            "Achtung: Nur Creator-Rollen werden bearbeitet,\n"
+            "Contributors bleiben unverändert.\n\n"
+            "Tastenkürzel: Ctrl+2"
         )
         self.authors_card.add_action("Aus CSV aktualisieren", "update", "🔄")
         self.authors_card.primary_clicked.connect(self._on_load_authors_clicked)
@@ -597,6 +609,11 @@ class MainWindow(QMainWindow):
             description="Publisher-Metadaten verwalten",
             primary_text="📥 Exportieren"
         )
+        self.publisher_card.setToolTip(
+            "Exportiert und aktualisiert Publisher-Informationen.\n"
+            "Typischerweise 'GFZ Data Services' für alle DOIs.\n\n"
+            "Tastenkürzel: Ctrl+3"
+        )
         self.publisher_card.add_action("Aus CSV aktualisieren", "update", "🔄")
         self.publisher_card.primary_clicked.connect(self._on_load_publisher_clicked)
         self.publisher_card.action_triggered.connect(self._on_publisher_card_action)
@@ -608,6 +625,12 @@ class MainWindow(QMainWindow):
             title="Contributors",
             description="Contributor-Metadaten bearbeiten",
             primary_text="📥 Exportieren"
+        )
+        self.contributors_card.setToolTip(
+            "Exportiert Contributor-Informationen mit Rollen.\n"
+            "Unterstützte Rollen: ContactPerson, DataCurator,\n"
+            "ProjectLeader, Researcher, etc.\n\n"
+            "Tastenkürzel: Ctrl+4"
         )
         self.contributors_card.add_action("Aus CSV aktualisieren", "update", "🔄")
         self.contributors_card.primary_clicked.connect(self._on_load_contributors_clicked)
@@ -621,6 +644,12 @@ class MainWindow(QMainWindow):
             description="Lizenz-Metadaten verwalten",
             primary_text="📥 Exportieren"
         )
+        self.rights_card.setToolTip(
+            "Exportiert und aktualisiert Lizenzinformationen.\n"
+            "Unterstützt SPDX-Identifikatoren (CC-BY-4.0, etc.)\n"
+            "und valide Lizenz-URIs.\n\n"
+            "Tastenkürzel: Ctrl+5"
+        )
         self.rights_card.add_action("Aus CSV aktualisieren", "update", "🔄")
         self.rights_card.primary_clicked.connect(self._on_load_rights_clicked)
         self.rights_card.action_triggered.connect(self._on_rights_card_action)
@@ -632,6 +661,12 @@ class MainWindow(QMainWindow):
             title="Download-URLs",
             description="contentUrl-Felder bearbeiten",
             primary_text="📥 Exportieren"
+        )
+        self.downloads_card.setToolTip(
+            "Exportiert contentUrl-Felder (Download-Links).\n"
+            "Diese URLs werden im DataCite-Schema als\n"
+            "direkter Zugang zu den Daten verwendet.\n\n"
+            "Tastenkürzel: Ctrl+6"
         )
         self.downloads_card.set_status("Bereit zum Exportieren", is_ready=True)
         self.downloads_card.add_action("Aus CSV aktualisieren", "update", "🔄")
@@ -657,7 +692,8 @@ class MainWindow(QMainWindow):
         self.pending_card.set_status("Datenbank-Export", is_ready=True)
         self.pending_card.setToolTip(
             "Exportiert alle DOIs mit Status 'pending' aus der SUMARIOPMD-Datenbank.\n"
-            "Enthält DOI, Titel und Erstautor."
+            "Enthält DOI, Titel und Erstautor.\n\n"
+            "Tastenkürzel: Ctrl+7"
         )
         self.pending_card.primary_clicked.connect(self._on_export_pending_clicked)
         tools_flow.addWidget(self.pending_card)
@@ -672,7 +708,8 @@ class MainWindow(QMainWindow):
         self.fuji_card.set_status("FAIR-Analyse bereit", is_ready=True)
         self.fuji_card.setToolTip(
             "Bewertet alle DOIs des DataCite-Accounts nach FAIR-Kriterien.\n"
-            "Verwendet den F-UJI FAIR Assessment Service."
+            "Verwendet den F-UJI FAIR Assessment Service.\n\n"
+            "Tastenkürzel: Ctrl+8"
         )
         self.fuji_card.primary_clicked.connect(self._on_fuji_check_clicked)
         tools_flow.addWidget(self.fuji_card)
@@ -715,6 +752,12 @@ class MainWindow(QMainWindow):
         # This ensures existing code that references these buttons still works
         self._create_legacy_button_references()
         
+        # Set up keyboard shortcuts for cards
+        self._setup_keyboard_shortcuts()
+        
+        # Enable drag & drop for CSV files
+        self._setup_drag_drop()
+        
         # Check for existing CSV files
         self._check_csv_files()
         
@@ -745,6 +788,122 @@ class MainWindow(QMainWindow):
         self.publisher_status_label = self.publisher_card.status_label
         self.contributors_status_label = self.contributors_card.status_label
         self.rights_status_label = self.rights_card.status_label
+    
+    def _setup_keyboard_shortcuts(self):
+        """Set up keyboard shortcuts for quick card access."""
+        # Ctrl+1 to Ctrl+8 for cards
+        shortcuts = [
+            ("Ctrl+1", self._on_load_dois_clicked, "Landing Page URLs exportieren"),
+            ("Ctrl+2", self._on_load_authors_clicked, "Autoren exportieren"),
+            ("Ctrl+3", self._on_load_publisher_clicked, "Publisher exportieren"),
+            ("Ctrl+4", self._on_load_contributors_clicked, "Contributors exportieren"),
+            ("Ctrl+5", self._on_load_rights_clicked, "Rights exportieren"),
+            ("Ctrl+6", self._on_export_download_urls_clicked, "Download-URLs exportieren"),
+            ("Ctrl+7", self._on_export_pending_clicked, "Pending DOIs exportieren"),
+            ("Ctrl+8", self._on_fuji_check_clicked, "F-UJI Check starten"),
+        ]
+        
+        self._shortcuts = []  # Keep references to prevent garbage collection
+        for key_seq, callback, description in shortcuts:
+            shortcut = QShortcut(QKeySequence(key_seq), self)
+            shortcut.activated.connect(callback)
+            shortcut.setWhatsThis(description)
+            self._shortcuts.append(shortcut)
+    
+    def _setup_drag_drop(self):
+        """Enable drag and drop for CSV files."""
+        self.setAcceptDrops(True)
+    
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        """
+        Handle drag enter event.
+        
+        Accept the drag if it contains file URLs that look like CSV files.
+        """
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.isLocalFile() and url.toLocalFile().lower().endswith('.csv'):
+                    event.acceptProposedAction()
+                    self._log("📁 CSV-Datei erkannt - zum Importieren hier ablegen")
+                    return
+        event.ignore()
+    
+    def dragLeaveEvent(self, event):
+        """Handle drag leave event."""
+        # Clear the drop hint from log
+        pass
+    
+    def dropEvent(self, event: QDropEvent):
+        """
+        Handle drop event for CSV files.
+        
+        Analyzes the dropped CSV and triggers the appropriate import action.
+        """
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.isLocalFile():
+                    file_path = url.toLocalFile()
+                    if file_path.lower().endswith('.csv'):
+                        event.acceptProposedAction()
+                        self._handle_dropped_csv(file_path)
+                        return
+        event.ignore()
+    
+    def _handle_dropped_csv(self, file_path: str):
+        """
+        Handle a dropped CSV file by detecting its type and triggering import.
+        
+        Args:
+            file_path: Path to the dropped CSV file
+        """
+        import csv
+        from pathlib import Path
+        
+        self._log(f"📁 CSV-Datei erhalten: {Path(file_path).name}")
+        
+        try:
+            # Read first line to detect CSV type
+            with open(file_path, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                header = next(reader, None)
+            
+            if header is None:
+                self._log("[FEHLER] Leere CSV-Datei")
+                return
+            
+            header_lower = [h.lower().strip() for h in header]
+            
+            # Detect CSV type by headers
+            if 'landing_page_url' in header_lower or ('doi' in header_lower and 'url' in header_lower):
+                self._log("→ Erkannt als: Landing Page URLs")
+                self.pending_csv_path = file_path
+                self._on_update_urls_clicked()
+            elif 'creator' in header_lower or 'given name' in header_lower or 'givenname' in header_lower:
+                self._log("→ Erkannt als: Autoren-Daten")
+                self.pending_csv_path = file_path
+                self._on_update_authors_clicked()
+            elif 'publisher' in header_lower:
+                self._log("→ Erkannt als: Publisher-Daten")
+                self.pending_csv_path = file_path
+                self._on_update_publisher_clicked()
+            elif 'contributortype' in header_lower or 'contributor' in header_lower:
+                self._log("→ Erkannt als: Contributors-Daten")
+                self.pending_csv_path = file_path
+                self._on_update_contributors_clicked()
+            elif 'rightidentifier' in header_lower or 'rights' in header_lower or 'license' in header_lower:
+                self._log("→ Erkannt als: Rights/Lizenz-Daten")
+                self.pending_csv_path = file_path
+                self._on_update_rights_clicked()
+            elif 'contenturl' in header_lower or 'download' in header_lower:
+                self._log("→ Erkannt als: Download-URLs")
+                self.pending_csv_path = file_path
+                self._on_update_download_urls_clicked()
+            else:
+                self._log(f"[WARNUNG] CSV-Typ nicht erkannt. Header: {', '.join(header[:5])}...")
+                self._log("Bitte manuell die passende Import-Funktion wählen.")
+                
+        except Exception as e:
+            self._log(f"[FEHLER] Konnte CSV nicht analysieren: {str(e)}")
     
     def _on_urls_card_action(self, action_id: str):
         """Handle action from URLs card dropdown."""
