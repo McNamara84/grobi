@@ -222,6 +222,16 @@ class ActionCard(QFrame):
         Args:
             new_text: New status text to display
         """
+        # Cancel any running animation to handle rapid status updates
+        if hasattr(self, '_fade_out') and self._fade_out is not None:
+            self._fade_out.stop()
+            try:
+                self._fade_out.finished.disconnect(self._on_fade_out_finished)
+            except RuntimeError:
+                pass  # Already disconnected
+        if hasattr(self, '_fade_in') and self._fade_in is not None:
+            self._fade_in.stop()
+        
         # Create opacity effect if not exists
         if not hasattr(self, '_status_opacity'):
             self._status_opacity = QGraphicsOpacityEffect(self._status_label)

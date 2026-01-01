@@ -773,27 +773,31 @@ class MainWindow(QMainWindow):
         
         Note: In the new card-based UI, load and update actions share the same
         primary button (export). The update action is now in the dropdown menu.
-        Both load_button and update_button point to the same widget intentionally -
-        when disabling the card, both export and update should be disabled together.
-        For fine-grained control over individual actions, use the card's 
-        set_action_enabled() method instead.
+        
+        Legacy button references point to primary buttons for backwards compatibility.
+        To control individual actions independently:
+        - Use card.setEnabled(False) to disable entire card
+        - Use card.set_action_enabled("update", False) to disable just the update action
+        - The update action visibility depends on CSV file detection
         """
-        # Primary buttons - used by _set_buttons_enabled
-        # Note: load and update point to same button since they're now unified
+        # Primary buttons - used by _set_buttons_enabled for disabling entire cards
         self.load_button = self.urls_card.split_button.primary_button
-        self.update_button = self.urls_card.split_button.primary_button
         self.load_authors_button = self.authors_card.split_button.primary_button
-        self.update_authors_button = self.authors_card.split_button.primary_button
         self.load_publisher_button = self.publisher_card.split_button.primary_button
-        self.update_publisher_button = self.publisher_card.split_button.primary_button
         self.load_contributors_button = self.contributors_card.split_button.primary_button
-        self.update_contributors_button = self.contributors_card.split_button.primary_button
         self.load_rights_button = self.rights_card.split_button.primary_button
-        self.update_rights_button = self.rights_card.split_button.primary_button
         self.export_download_urls_btn = self.downloads_card.split_button.primary_button
-        self.update_download_urls_btn = self.downloads_card.split_button.primary_button
         self.export_pending_btn = self.pending_card.split_button.primary_button
         self.fuji_check_btn = self.fuji_card.split_button.primary_button
+        
+        # Update buttons - reference to dropdown button for legacy code that checks enabled state
+        # These now point to the dropdown button since update is a menu action
+        self.update_button = self.urls_card.split_button.dropdown_button
+        self.update_authors_button = self.authors_card.split_button.dropdown_button
+        self.update_publisher_button = self.publisher_card.split_button.dropdown_button
+        self.update_contributors_button = self.contributors_card.split_button.dropdown_button
+        self.update_rights_button = self.rights_card.split_button.dropdown_button
+        self.update_download_urls_btn = self.downloads_card.split_button.dropdown_button
         
         # Status labels - create new references to card status labels
         self.urls_status_label = self.urls_card.status_label
@@ -922,9 +926,16 @@ class MainWindow(QMainWindow):
                 self._on_update_publisher_clicked()
             
             # 6. Landing Page URLs (fallback - has doi and url-like column)
-            elif 'landing_page_url' in header_set or \
-                 ('doi' in header_set and ('url' in header_set or 'landing page url' in header_set)):
+            # WARNING: This is the least specific check. A CSV with just "doi" and "url"
+            # columns could match different data types. We require "landing_page_url" header
+            # for reliable detection, or show a warning for ambiguous cases.
+            elif 'landing_page_url' in header_set:
                 self._log("→ Erkannt als: Landing Page URLs")
+                self.pending_csv_path = file_path
+                self._on_update_urls_clicked()
+            elif 'doi' in header_set and ('url' in header_set or 'landing page url' in header_set):
+                self._log("→ Erkannt als: Landing Page URLs (bitte Typ verifizieren)")
+                self._log("[HINWEIS] CSV hat generische Header - bitte prüfen ob korrekt erkannt")
                 self.pending_csv_path = file_path
                 self._on_update_urls_clicked()
             

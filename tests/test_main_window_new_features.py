@@ -1,4 +1,10 @@
-"""Tests for new MainWindow features: keyboard shortcuts, drag & drop, window geometry."""
+"""Tests for new MainWindow features: keyboard shortcuts, drag & drop, window geometry.
+
+Note: This test file uses unittest.mock.patch for mocking internal methods.
+The project's testing guidelines specify using the 'responses' library for HTTP mocking,
+but that is specifically for external HTTP calls. For internal method mocking,
+unittest.mock is the appropriate choice.
+"""
 
 import pytest
 import tempfile
@@ -7,8 +13,8 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt, QSettings, QMimeData, QUrl, QPoint
-from PySide6.QtGui import QKeySequence, QDragEnterEvent, QDropEvent
+from PySide6.QtCore import Qt, QSettings
+from PySide6.QtGui import QKeySequence
 
 from src.ui.main_window import MainWindow
 
@@ -137,23 +143,29 @@ class TestDragAndDrop:
         csv_file = tmp_path / "empty.csv"
         csv_file.write_text("")
         
+        # Clear log first to ensure we only check new entries
+        main_window.log_text.clear()
+        
         # Should log error but not crash
         main_window._handle_dropped_csv(str(csv_file))
         
-        # Check that error was logged
+        # Check that the specific empty CSV error was logged
         log_text = main_window.log_text.toPlainText()
-        assert "FEHLER" in log_text or "Leere CSV" in log_text
+        assert "Leere CSV-Datei" in log_text, f"Expected 'Leere CSV-Datei' in log, got: {log_text}"
     
     def test_handle_dropped_csv_unknown_type(self, main_window, tmp_path):
         """Test handling of CSV with unknown headers."""
         csv_file = tmp_path / "unknown.csv"
         csv_file.write_text("Column1,Column2,Column3\nvalue1,value2,value3")
         
+        # Clear log first
+        main_window.log_text.clear()
+        
         main_window._handle_dropped_csv(str(csv_file))
         
-        # Should log warning
+        # Should log specific warning about unrecognized CSV type
         log_text = main_window.log_text.toPlainText()
-        assert "WARNUNG" in log_text or "nicht erkannt" in log_text
+        assert "CSV-Typ nicht erkannt" in log_text, f"Expected 'CSV-Typ nicht erkannt' in log, got: {log_text}"
     
     def test_handle_dropped_csv_invalid_file(self, main_window, tmp_path):
         """Test handling of non-existent file."""
@@ -219,7 +231,6 @@ class TestWindowGeometry:
     def test_geometry_restored_on_init(self, qapp, qtbot):
         """Test that a newly created window restores its geometry."""
         # Save specific geometry first
-        settings = QSettings("GFZ", "GROBI")
         
         # Create first window and save its geometry
         window1 = MainWindow()
@@ -232,9 +243,10 @@ class TestWindowGeometry:
         window2 = MainWindow()
         qtbot.addWidget(window2)
         
-        # Geometry should be similar (exact match may vary by platform)
-        assert abs(window2.x() - 200) < 50 or window2.x() >= 0  # May be adjusted for screen
-        assert window2.width() >= 900
+        # Verify geometry was restored (size is more reliable than position
+        # since position may be adjusted by window manager or multi-monitor setup)
+        assert window2.width() == 1100, f"Expected width 1100, got {window2.width()}"
+        assert window2.height() == 800, f"Expected height 800, got {window2.height()}"
 
 
 class TestCollapsibleSectionSignalDisconnect:
@@ -243,17 +255,21 @@ class TestCollapsibleSectionSignalDisconnect:
     def test_expand_animation_disconnects_signal(self, qapp, qtbot):
         """Test that the expand animation properly disconnects its finished signal."""
         from src.ui.components import CollapsibleSection
+        from src.ui.components.collapsible_section import CollapsibleSection as CS
         
         section = CollapsibleSection("Test", expanded=True)
         qtbot.addWidget(section)
         section.show()
         
+        # Use ANIMATION_DURATION from the class + buffer for reliability
+        wait_time = CS.ANIMATION_DURATION + 50
+        
         # Collapse then expand multiple times to test signal handling
         for _ in range(3):
             section.toggle()  # Collapse
-            qtbot.wait(250)   # Wait for animation
+            qtbot.wait(wait_time)
             section.toggle()  # Expand
-            qtbot.wait(250)   # Wait for animation
+            qtbot.wait(wait_time)
         
         # If signal wasn't disconnected properly, this would cause issues
         assert section.is_expanded()
