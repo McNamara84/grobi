@@ -110,6 +110,30 @@ class TestSplitButton:
             elif action.data() == "a2":
                 assert action.isEnabled()
 
+    def test_is_action_enabled(self, qapp, qtbot):
+        """Test checking if specific actions are enabled."""
+        btn = SplitButton("Export")
+        qtbot.addWidget(btn)
+        
+        btn.add_action("Action 1", "a1")
+        btn.add_action("Action 2", "a2")
+        
+        # Initially all actions should be enabled
+        assert btn.is_action_enabled("a1")
+        assert btn.is_action_enabled("a2")
+        
+        # Disable one action
+        btn.set_action_enabled("a1", False)
+        assert not btn.is_action_enabled("a1")
+        assert btn.is_action_enabled("a2")
+        
+        # Re-enable the action
+        btn.set_action_enabled("a1", True)
+        assert btn.is_action_enabled("a1")
+        
+        # Non-existent action should return False
+        assert not btn.is_action_enabled("nonexistent")
+
 
 class TestCollapsibleSection:
     """Tests for the CollapsibleSection component."""

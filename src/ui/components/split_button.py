@@ -200,7 +200,22 @@ class SplitButton(QWidget):
             if action.data() == action_id:
                 action.setEnabled(enabled)
                 break
-    
+
+    def is_action_enabled(self, action_id: str) -> bool:
+        """
+        Check if a specific menu action is enabled.
+        
+        Args:
+            action_id: The action ID to check
+            
+        Returns:
+            bool: True if the action is enabled, False if disabled or not found
+        """
+        for action in self._menu.actions():
+            if action.data() == action_id:
+                return action.isEnabled()
+        return False
+
     def setToolTip(self, tooltip: str):
         """
         Set tooltip for the primary button.

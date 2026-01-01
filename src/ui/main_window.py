@@ -943,8 +943,9 @@ class MainWindow(QMainWindow):
                 self._log("→ Erkannt als: Landing Page URLs")
                 self.pending_csv_path = file_path
                 self._on_update_urls_clicked()
-            elif 'doi' in header_set and ('url' in header_set or 'landing page url' in header_set):
+            elif 'doi' in header_set and 'url' in header_set:
                 # Ambiguous case - don't auto-import, just inform user
+                # Note: header_set contains normalized headers (lowercase, underscores instead of spaces)
                 self._log("[HINWEIS] CSV hat generische Header (doi, url).")
                 self._log("Bitte über Menü 'Landing Page URLs → Aus CSV aktualisieren' importieren.")
                 # Don't set pending_csv_path or trigger import - user must do manually
