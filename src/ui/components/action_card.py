@@ -228,8 +228,9 @@ class ActionCard(QFrame):
             try:
                 self._fade_out.finished.disconnect(self._on_fade_out_finished)
             except RuntimeError as e:
-                # Only silently ignore the expected "signal not connected" error
-                if "signal" not in str(e).lower() and "connect" not in str(e).lower():
+                # Only silently ignore the specific "failed to disconnect signal" error
+                error_msg = str(e).lower()
+                if "failed to disconnect" not in error_msg:
                     raise  # Re-raise unexpected RuntimeError
         if hasattr(self, '_fade_in') and self._fade_in is not None:
             self._fade_in.stop()
@@ -244,7 +245,7 @@ class ActionCard(QFrame):
         self._fade_out.setDuration(100)
         self._fade_out.setStartValue(1.0)
         self._fade_out.setEndValue(0.0)
-        self._fade_out.setEasingCurve(QEasingCurve.Type.OutQuad)
+        self._fade_out.setEasingCurve(QEasingCurve.OutQuad)
         
         # Store new text for after fade out
         self._pending_status_text = new_text
@@ -261,7 +262,7 @@ class ActionCard(QFrame):
         self._fade_in.setDuration(150)
         self._fade_in.setStartValue(0.0)
         self._fade_in.setEndValue(1.0)
-        self._fade_in.setEasingCurve(QEasingCurve.Type.InQuad)
+        self._fade_in.setEasingCurve(QEasingCurve.InQuad)
         self._fade_in.start()
     
     def set_primary_text(self, text: str):

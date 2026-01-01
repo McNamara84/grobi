@@ -801,8 +801,10 @@ class MainWindow(QMainWindow):
         self.fuji_check_btn = self.fuji_card.split_button.primary_button
         
         # Update buttons - reference to dropdown button (not the actual menu action)
-        # DEPRECATED: These references are kept for backwards compatibility only.
-        # New code should use card.set_action_enabled("update", bool) instead.
+        # LEGACY COMPATIBILITY: These references point to the dropdown button for
+        # backwards compatibility with code that checks .isEnabled() on these buttons.
+        # For new code, prefer using card.set_action_enabled("update", bool) or
+        # card.split_button.is_action_enabled("update") for more precise control.
         self.update_button = self.urls_card.split_button.dropdown_button
         self.update_authors_button = self.authors_card.split_button.dropdown_button
         self.update_publisher_button = self.publisher_card.split_button.dropdown_button
@@ -945,7 +947,7 @@ class MainWindow(QMainWindow):
                 self._on_update_urls_clicked()
             elif 'doi' in header_set and 'url' in header_set:
                 # Ambiguous case - don't auto-import, just inform user
-                # Note: header_set contains normalized headers (lowercase, underscores instead of spaces)
+                # Note: header_set contains lowercase headers (no underscore normalization)
                 self._log("[HINWEIS] CSV hat generische Header (doi, url).")
                 self._log("Bitte über Menü 'Landing Page URLs → Aus CSV aktualisieren' importieren.")
                 # Don't set pending_csv_path or trigger import - user must do manually

@@ -161,13 +161,14 @@ class CollapsibleSection(QWidget):
     def _on_expand_finished(self):
         """Called when expand animation finishes."""
         # Disconnect to prevent memory leaks on repeated animations.
-        # RuntimeError with specific message is expected when toggle() is called
-        # multiple times rapidly before the animation finishes.
+        # RuntimeError is expected when toggle() is called multiple times rapidly
+        # before the animation finishes - the signal may already be disconnected.
         try:
             self._animation.finished.disconnect(self._on_expand_finished)
         except RuntimeError as e:
-            # Only silently ignore the expected "signal not connected" error
-            if "signal" not in str(e).lower() and "connect" not in str(e).lower():
+            # Only silently ignore the specific "failed to disconnect signal" error
+            error_msg = str(e).lower()
+            if "failed to disconnect" not in error_msg:
                 raise  # Re-raise unexpected RuntimeError
         
         # Remove height constraint so content can resize naturally
