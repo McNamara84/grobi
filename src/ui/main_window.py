@@ -7,10 +7,10 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QTextEdit, QProgressBar, QLabel, QMessageBox, QGroupBox, QDialog,
+    QTextEdit, QProgressBar, QLabel, QMessageBox, QDialog,
     QScrollArea, QSizePolicy
 )
-from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt, QSettings, QMimeData
+from PySide6.QtCore import QThread, Signal, QObject, QUrl, Qt, QSettings
 from PySide6.QtGui import QFont, QIcon, QAction, QDesktopServices, QPixmap, QGuiApplication, QShortcut, QKeySequence, QDragEnterEvent, QDropEvent
 
 from src.ui.credentials_dialog import CredentialsDialog
@@ -448,6 +448,9 @@ class MainWindow(QMainWindow):
         # Track current username for CSV detection
         self._current_username = None
         
+        # Path to CSV file dropped via drag & drop (used by import methods)
+        self.pending_csv_path = None
+        
         # Initialize theme manager
         self.theme_manager = ThemeManager()
         self.theme_manager.theme_changed.connect(self._on_theme_changed)
@@ -765,10 +768,20 @@ class MainWindow(QMainWindow):
         self._log("Bereit. Wähle eine Aktion um zu beginnen.")
     
     def _create_legacy_button_references(self):
-        """Create references to maintain compatibility with old button names."""
-        # These are used by _set_buttons_enabled and other methods
+        """
+        Create references to maintain compatibility with old button names.
+        
+        Note: In the new card-based UI, load and update actions share the same
+        primary button (export). The update action is now in the dropdown menu.
+        Both load_button and update_button point to the same widget intentionally -
+        when disabling the card, both export and update should be disabled together.
+        For fine-grained control over individual actions, use the card's 
+        set_action_enabled() method instead.
+        """
+        # Primary buttons - used by _set_buttons_enabled
+        # Note: load and update point to same button since they're now unified
         self.load_button = self.urls_card.split_button.primary_button
-        self.update_button = self.urls_card.split_button.primary_button  # Handled via action
+        self.update_button = self.urls_card.split_button.primary_button
         self.load_authors_button = self.authors_card.split_button.primary_button
         self.update_authors_button = self.authors_card.split_button.primary_button
         self.load_publisher_button = self.publisher_card.split_button.primary_button
@@ -828,11 +841,6 @@ class MainWindow(QMainWindow):
                     return
         event.ignore()
     
-    def dragLeaveEvent(self, event):
-        """Handle drag leave event."""
-        # Clear the drop hint from log
-        pass
-    
     def dropEvent(self, event: QDropEvent):
         """
         Handle drop event for CSV files.
@@ -853,6 +861,10 @@ class MainWindow(QMainWindow):
         """
         Handle a dropped CSV file by detecting its type and triggering import.
         
+        The detection order is important - more specific headers are checked first
+        to avoid false positives (e.g., contributors CSV with 'doi' column being
+        detected as URL CSV).
+        
         Args:
             file_path: Path to the dropped CSV file
         """
@@ -872,32 +884,50 @@ class MainWindow(QMainWindow):
                 return
             
             header_lower = [h.lower().strip() for h in header]
+            header_set = set(header_lower)
             
-            # Detect CSV type by headers
-            if 'landing_page_url' in header_lower or ('doi' in header_lower and 'url' in header_lower):
-                self._log("→ Erkannt als: Landing Page URLs")
-                self.pending_csv_path = file_path
-                self._on_update_urls_clicked()
-            elif 'creator' in header_lower or 'given name' in header_lower or 'givenname' in header_lower:
-                self._log("→ Erkannt als: Autoren-Daten")
-                self.pending_csv_path = file_path
-                self._on_update_authors_clicked()
-            elif 'publisher' in header_lower:
-                self._log("→ Erkannt als: Publisher-Daten")
-                self.pending_csv_path = file_path
-                self._on_update_publisher_clicked()
-            elif 'contributortype' in header_lower or 'contributor' in header_lower:
-                self._log("→ Erkannt als: Contributors-Daten")
-                self.pending_csv_path = file_path
-                self._on_update_contributors_clicked()
-            elif 'rightidentifier' in header_lower or 'rights' in header_lower or 'license' in header_lower:
+            # Detect CSV type by headers - order from most specific to least specific
+            # to avoid false positives when multiple type-indicators are present
+            
+            # 1. Rights (most specific - has unique identifiers)
+            if 'rightsidentifier' in header_set or 'rightidentifier' in header_set:
                 self._log("→ Erkannt als: Rights/Lizenz-Daten")
                 self.pending_csv_path = file_path
                 self._on_update_rights_clicked()
-            elif 'contenturl' in header_lower or 'download' in header_lower:
+            
+            # 2. Contributors (specific - has contributortype)
+            elif 'contributortype' in header_set:
+                self._log("→ Erkannt als: Contributors-Daten")
+                self.pending_csv_path = file_path
+                self._on_update_contributors_clicked()
+            
+            # 3. Download URLs (specific - has contenturl)
+            elif 'contenturl' in header_set:
                 self._log("→ Erkannt als: Download-URLs")
                 self.pending_csv_path = file_path
                 self._on_update_download_urls_clicked()
+            
+            # 4. Authors/Creators (has creator-specific fields)
+            elif 'creator name' in header_set or 'creatorname' in header_set or \
+                 ('given name' in header_set and 'family name' in header_set) or \
+                 ('givenname' in header_set and 'familyname' in header_set):
+                self._log("→ Erkannt als: Autoren-Daten")
+                self.pending_csv_path = file_path
+                self._on_update_authors_clicked()
+            
+            # 5. Publisher (has publisher column but not creator-specific fields)
+            elif 'publisher' in header_set and 'creator name' not in header_set:
+                self._log("→ Erkannt als: Publisher-Daten")
+                self.pending_csv_path = file_path
+                self._on_update_publisher_clicked()
+            
+            # 6. Landing Page URLs (fallback - has doi and url-like column)
+            elif 'landing_page_url' in header_set or \
+                 ('doi' in header_set and ('url' in header_set or 'landing page url' in header_set)):
+                self._log("→ Erkannt als: Landing Page URLs")
+                self.pending_csv_path = file_path
+                self._on_update_urls_clicked()
+            
             else:
                 self._log(f"[WARNUNG] CSV-Typ nicht erkannt. Header: {', '.join(header[:5])}...")
                 self._log("Bitte manuell die passende Import-Funktion wählen.")

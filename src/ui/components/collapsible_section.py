@@ -2,13 +2,14 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QToolButton, QLabel, 
-    QFrame, QSizePolicy, QScrollArea
+    QFrame, QSizePolicy
 )
-from PySide6.QtCore import (
-    Signal, Qt, QPropertyAnimation, QEasingCurve, 
-    Property, QParallelAnimationGroup
-)
+from PySide6.QtCore import Signal, Qt, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFont
+
+
+# Qt maximum widget size constant for removing height constraints
+QWIDGETSIZE_MAX = 16777215
 
 
 class CollapsibleSection(QWidget):
@@ -52,8 +53,6 @@ class CollapsibleSection(QWidget):
         
         self._title = title
         self._expanded = expanded
-        self._animation_group = None
-        self._content_height = 0
         
         self._setup_ui()
         
@@ -137,7 +136,7 @@ class CollapsibleSection(QWidget):
         # Calculate content height
         if self._expanded:
             # Expanding: calculate full content height
-            self._content_area.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
+            self._content_area.setMaximumHeight(QWIDGETSIZE_MAX)
             self._content_area.adjustSize()
             target_height = self._content_area.sizeHint().height()
             start_height = 0
@@ -161,8 +160,14 @@ class CollapsibleSection(QWidget):
     
     def _on_expand_finished(self):
         """Called when expand animation finishes."""
+        # Disconnect to prevent memory leaks on repeated animations
+        try:
+            self._animation.finished.disconnect(self._on_expand_finished)
+        except RuntimeError:
+            pass  # Already disconnected
+        
         # Remove height constraint so content can resize naturally
-        self._content_area.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
+        self._content_area.setMaximumHeight(QWIDGETSIZE_MAX)
     
     def set_content_layout(self, layout):
         """
@@ -210,7 +215,7 @@ class CollapsibleSection(QWidget):
                     Qt.DownArrow if expanded else Qt.RightArrow
                 )
                 if expanded:
-                    self._content_area.setMaximumHeight(16777215)
+                    self._content_area.setMaximumHeight(QWIDGETSIZE_MAX)
                 else:
                     self._content_area.setMaximumHeight(0)
                 self.toggled.emit(expanded)

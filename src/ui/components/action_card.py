@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect
 )
-from PySide6.QtCore import Signal, Qt, QPropertyAnimation, QEasingCurve, QTimer
+from PySide6.QtCore import Signal, Qt, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFont, QColor
 
 from src.ui.components.split_button import SplitButton
