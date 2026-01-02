@@ -165,11 +165,9 @@ class CollapsibleSection(QWidget):
         # before the animation finishes - the signal may already be disconnected.
         try:
             self._animation.finished.disconnect(self._on_expand_finished)
-        except RuntimeError as e:
-            # Only silently ignore the specific "failed to disconnect signal" error
-            error_msg = str(e).lower()
-            if "failed to disconnect" not in error_msg:
-                raise  # Re-raise unexpected RuntimeError
+        except RuntimeError:
+            # Signal was already disconnected - this is expected on rapid toggles
+            pass
         
         # Remove height constraint so content can resize naturally
         self._content_area.setMaximumHeight(QWIDGETSIZE_MAX)

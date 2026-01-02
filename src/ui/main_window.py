@@ -1,5 +1,6 @@
 """Main application window for GROBI."""
 
+import csv
 import logging
 import os
 from datetime import datetime
@@ -801,10 +802,13 @@ class MainWindow(QMainWindow):
         self.fuji_check_btn = self.fuji_card.split_button.primary_button
         
         # Update buttons - reference to dropdown button (not the actual menu action)
-        # LEGACY COMPATIBILITY: These references point to the dropdown button for
-        # backwards compatibility with code that checks .isEnabled() on these buttons.
-        # For new code, prefer using card.set_action_enabled("update", bool) or
-        # card.split_button.is_action_enabled("update") for more precise control.
+        # LEGACY COMPATIBILITY WARNING: These references point to the dropdown button,
+        # NOT the individual menu actions. Checking .isEnabled() on these buttons will
+        # return the dropdown button's state, not the menu action's enabled state.
+        # For accurate action state checking, use:
+        #   card.split_button.is_action_enabled("update")
+        # For setting action state, use:
+        #   card.set_action_enabled("update", True/False)
         self.update_button = self.urls_card.split_button.dropdown_button
         self.update_authors_button = self.authors_card.split_button.dropdown_button
         self.update_publisher_button = self.publisher_card.split_button.dropdown_button
@@ -836,6 +840,8 @@ class MainWindow(QMainWindow):
         self._shortcuts = []  # Keep references to prevent garbage collection
         for key_seq, callback, description in shortcuts:
             shortcut = QShortcut(QKeySequence(key_seq), self)
+            # Use WindowShortcut context to prevent activation when text widgets have focus
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
             shortcut.activated.connect(callback)
             shortcut.setWhatsThis(description)
             self._shortcuts.append(shortcut)
@@ -884,9 +890,6 @@ class MainWindow(QMainWindow):
         Args:
             file_path: Path to the dropped CSV file
         """
-        import csv
-        from pathlib import Path
-        
         self._log(f"📁 CSV-Datei erhalten: {Path(file_path).name}")
         
         try:
@@ -899,40 +902,45 @@ class MainWindow(QMainWindow):
                 self._log("[FEHLER] Leere CSV-Datei")
                 return
             
-            header_lower = [h.lower().strip() for h in header]
-            header_set = set(header_lower)
+            # Normalize headers: lowercase, strip whitespace, replace spaces with underscores
+            # This ensures consistent matching regardless of whether CSV uses
+            # "Landing Page URL", "landing_page_url", or "Landing_Page_URL"
+            header_normalized = [h.lower().strip().replace(' ', '_') for h in header]
+            header_set = set(header_normalized)
             
             # Detect CSV type by headers - order from most specific to least specific
             # to avoid false positives when multiple type-indicators are present
             
             # 1. Rights (most specific - has unique identifiers)
-            if 'rightsidentifier' in header_set or 'rightidentifier' in header_set:
+            if 'rightsidentifier' in header_set or 'rightidentifier' in header_set or \
+               'rights_identifier' in header_set or 'right_identifier' in header_set:
                 self._log("→ Erkannt als: Rights/Lizenz-Daten")
                 self.pending_csv_path = file_path
                 self._on_update_rights_clicked()
             
             # 2. Contributors (specific - has contributortype)
-            elif 'contributortype' in header_set:
+            elif 'contributortype' in header_set or 'contributor_type' in header_set:
                 self._log("→ Erkannt als: Contributors-Daten")
                 self.pending_csv_path = file_path
                 self._on_update_contributors_clicked()
             
             # 3. Download URLs (specific - has contenturl)
-            elif 'contenturl' in header_set:
+            elif 'contenturl' in header_set or 'content_url' in header_set:
                 self._log("→ Erkannt als: Download-URLs")
                 self.pending_csv_path = file_path
                 self._on_update_download_urls_clicked()
             
             # 4. Authors/Creators (has creator-specific fields)
-            elif 'creator name' in header_set or 'creatorname' in header_set or \
-                 ('given name' in header_set and 'family name' in header_set) or \
+            # Note: After normalization, "creator name" becomes "creator_name"
+            elif 'creator_name' in header_set or 'creatorname' in header_set or \
+                 ('given_name' in header_set and 'family_name' in header_set) or \
                  ('givenname' in header_set and 'familyname' in header_set):
                 self._log("→ Erkannt als: Autoren-Daten")
                 self.pending_csv_path = file_path
                 self._on_update_authors_clicked()
             
             # 5. Publisher (has publisher column but not creator-specific fields)
-            elif 'publisher' in header_set and 'creator name' not in header_set:
+            elif 'publisher' in header_set and 'creator_name' not in header_set:
                 self._log("→ Erkannt als: Publisher-Daten")
                 self.pending_csv_path = file_path
                 self._on_update_publisher_clicked()
@@ -947,7 +955,7 @@ class MainWindow(QMainWindow):
                 self._on_update_urls_clicked()
             elif 'doi' in header_set and 'url' in header_set:
                 # Ambiguous case - don't auto-import, just inform user
-                # Note: header_set contains lowercase headers (no underscore normalization)
+                # Note: header_set contains normalized headers (lowercase, spaces→underscores)
                 self._log("[HINWEIS] CSV hat generische Header (doi, url).")
                 self._log("Bitte über Menü 'Landing Page URLs → Aus CSV aktualisieren' importieren.")
                 # Don't set pending_csv_path or trigger import - user must do manually
@@ -4394,27 +4402,38 @@ class MainWindow(QMainWindow):
     
     def _is_window_on_screen(self) -> bool:
         """
-        Check if the window is at least partially visible on any screen.
+        Check if the window is usable (visible and draggable) on any screen.
         
         This handles cases where a monitor was disconnected or resolution changed.
-        The window is considered visible if at least MINIMUM_VISIBLE_WINDOW_SIZE
-        pixels are showing on any available screen.
+        The window is considered usable if:
+        1. At least MINIMUM_VISIBLE_WINDOW_SIZE pixels are visible on any screen
+        2. The top edge (title bar) is accessible for dragging
         
         Returns:
-            bool: True if at least part of the window (100x100 pixels minimum)
-                  is visible on any connected screen. False if the window is
-                  completely off-screen or not sufficiently visible.
+            bool: True if the window is usable on any connected screen.
+                  False if off-screen, not sufficiently visible, or title bar
+                  is inaccessible.
         """
         window_rect = self.frameGeometry()
+        
+        # Minimum pixels of title bar that must be visible for dragging
+        TITLE_BAR_MIN_VISIBLE = 50
         
         # Check all available screens
         for screen in QGuiApplication.screens():
             screen_rect = screen.availableGeometry()
+            
             # Check if at least MINIMUM_VISIBLE_WINDOW_SIZE pixels are visible
             intersection = window_rect.intersected(screen_rect)
             if intersection.width() >= MINIMUM_VISIBLE_WINDOW_SIZE and \
                intersection.height() >= MINIMUM_VISIBLE_WINDOW_SIZE:
-                return True
+                
+                # Additionally check if the title bar is accessible for dragging
+                # The top of the window should be within the screen bounds
+                # (with some tolerance for the title bar height)
+                if window_rect.top() >= screen_rect.top() - TITLE_BAR_MIN_VISIBLE and \
+                   window_rect.top() <= screen_rect.bottom() - TITLE_BAR_MIN_VISIBLE:
+                    return True
         
         return False
     

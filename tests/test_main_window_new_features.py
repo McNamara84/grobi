@@ -145,11 +145,11 @@ class TestDragAndDrop:
         # Should log error but not crash
         main_window._handle_dropped_csv(str(csv_file))
         
-        # Check that an error was logged - verify both the error indicator and message
+        # Check that an error was logged with German error message
         log_text = main_window.log_text.toPlainText()
         assert "[FEHLER]" in log_text, f"Expected error indicator in log, got: {log_text}"
-        assert "Leere" in log_text or "empty" in log_text.lower(), (
-            f"Expected empty file error message in log, got: {log_text}"
+        assert "Leere CSV-Datei" in log_text, (
+            f"Expected 'Leere CSV-Datei' in log, got: {log_text}"
         )
     
     def test_handle_dropped_csv_unknown_type(self, main_window, tmp_path):

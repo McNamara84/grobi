@@ -227,11 +227,9 @@ class ActionCard(QFrame):
             self._fade_out.stop()
             try:
                 self._fade_out.finished.disconnect(self._on_fade_out_finished)
-            except RuntimeError as e:
-                # Only silently ignore the specific "failed to disconnect signal" error
-                error_msg = str(e).lower()
-                if "failed to disconnect" not in error_msg:
-                    raise  # Re-raise unexpected RuntimeError
+            except RuntimeError:
+                # Signal was already disconnected - this is expected on rapid updates
+                pass
         if hasattr(self, '_fade_in') and self._fade_in is not None:
             self._fade_in.stop()
         
