@@ -248,14 +248,17 @@ class TestWindowGeometry:
         # 2. QSettings contains saved geometry (proves save/restore mechanism works)
         
         # Check for CI environment - be lenient on virtual displays
-        # CI detection: Check if environment variables are explicitly set to true-like values.
-        # Expected values: 'true', '1', 'yes' (case-insensitive). Empty strings or 'false'/'0' are falsy.
-        # Note: GitHub Actions sets CI='true' and GITHUB_ACTIONS='true'
+        # CI detection: Check if EITHER environment variable is set to a truthy value.
+        # GitHub Actions sets CI='true' and GITHUB_ACTIONS='true'
+        # Non-CI environments have these unset (empty string)
         ci_value = os.environ.get('CI', '').lower()
         github_actions_value = os.environ.get('GITHUB_ACTIONS', '').lower()
-        # Treat as CI if explicitly set to a truthy value (not empty, not 'false', not '0', not 'no')
+        # Define values that indicate NOT in CI (empty, explicit false values)
         false_values = ('', 'false', '0', 'no')
-        is_ci = ci_value not in false_values or github_actions_value not in false_values
+        # We're in CI if EITHER variable indicates a truthy value
+        ci_is_truthy = ci_value not in false_values
+        github_actions_is_truthy = github_actions_value not in false_values
+        is_ci = ci_is_truthy or github_actions_is_truthy
         
         if is_ci:
             # On CI, just verify window has valid non-zero dimensions
@@ -281,14 +284,13 @@ class TestCollapsibleSectionAnimation:
         cycles correctly by checking the final state is as expected.
         """
         from src.ui.components import CollapsibleSection
-        from src.ui.components.collapsible_section import CollapsibleSection as CS
         
         section = CollapsibleSection("Test", expanded=True)
         qtbot.addWidget(section)
         section.show()
         
         # Use ANIMATION_DURATION from the class + buffer for reliability
-        wait_time = CS.ANIMATION_DURATION + 50
+        wait_time = section.ANIMATION_DURATION + 50
         
         # Collapse then expand multiple times to test signal handling
         for _ in range(3):

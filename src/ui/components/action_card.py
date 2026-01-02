@@ -43,6 +43,12 @@ class ActionCard(QFrame):
     CARD_MAX_WIDTH = 320
     CARD_MIN_HEIGHT = 160
     
+    # Shadow effect constants for hover animation
+    SHADOW_BLUR_DEFAULT = 12
+    SHADOW_BLUR_HOVER = 20
+    SHADOW_COLOR_DEFAULT = QColor(0, 0, 0, 30)
+    SHADOW_COLOR_HOVER = QColor(0, 0, 0, 50)
+    
     def __init__(
         self,
         icon: str = "",
@@ -149,10 +155,10 @@ class ActionCard(QFrame):
     def _setup_shadow(self):
         """Set up the drop shadow effect."""
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(12)
+        shadow.setBlurRadius(self.SHADOW_BLUR_DEFAULT)
         shadow.setXOffset(0)
         shadow.setYOffset(2)
-        shadow.setColor(QColor(0, 0, 0, 30))
+        shadow.setColor(self.SHADOW_COLOR_DEFAULT)
         self.setGraphicsEffect(shadow)
     
     def _on_action_triggered(self, action_id: str):
@@ -378,18 +384,18 @@ class ActionCard(QFrame):
     
     def enterEvent(self, event):
         """Handle mouse enter for hover effect."""
-        # Update shadow on hover
+        # Update shadow on hover using class constants
         shadow = self.graphicsEffect()
         if shadow and isinstance(shadow, QGraphicsDropShadowEffect):
-            shadow.setBlurRadius(20)
-            shadow.setColor(QColor(0, 0, 0, 50))
+            shadow.setBlurRadius(self.SHADOW_BLUR_HOVER)
+            shadow.setColor(self.SHADOW_COLOR_HOVER)
         super().enterEvent(event)
     
     def leaveEvent(self, event):
         """Handle mouse leave to reset hover effect."""
-        # Reset shadow
+        # Reset shadow to default values using class constants
         shadow = self.graphicsEffect()
         if shadow and isinstance(shadow, QGraphicsDropShadowEffect):
-            shadow.setBlurRadius(12)
-            shadow.setColor(QColor(0, 0, 0, 30))
+            shadow.setBlurRadius(self.SHADOW_BLUR_DEFAULT)
+            shadow.setColor(self.SHADOW_COLOR_DEFAULT)
         super().leaveEvent(event)

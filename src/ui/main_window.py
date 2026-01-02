@@ -925,32 +925,35 @@ class MainWindow(QMainWindow):
                 self._log("[FEHLER] Leere CSV-Datei")
                 return
             
-            # Normalize headers: lowercase, strip whitespace, replace spaces with underscores
-            # This ensures consistent matching regardless of whether CSV uses
-            # "Landing Page URL", "landing_page_url", or "Landing_Page_URL"
-            # LIMITATION: CamelCase without spaces (e.g., "RightsIdentifier") becomes
-            # "rightsidentifier" (no underscores inserted), so we check for both variants
-            header_normalized = [h.lower().strip().replace(' ', '_') for h in header]
+            # Normalize headers for consistent matching:
+            # 1. Convert to lowercase
+            # 2. Strip whitespace
+            # 3. Replace spaces with underscores
+            # 4. Convert CamelCase to snake_case (e.g., "RightsIdentifier" → "rights_identifier")
+            import re
+            def normalize_header(h: str) -> str:
+                # First, handle CamelCase: insert underscore before uppercase letters
+                # that follow lowercase letters (e.g., "RightsIdentifier" → "Rights_Identifier")
+                h = re.sub(r'([a-z])([A-Z])', r'\1_\2', h)
+                # Then lowercase, strip, and replace spaces with underscores
+                return h.lower().strip().replace(' ', '_')
+            
+            header_normalized = [normalize_header(h) for h in header]
             header_set = set(header_normalized)
             
             # Detect CSV type by headers - order from most specific to least specific
             # to avoid false positives when multiple type-indicators are present
-            # Note: Normalization handles spaces ("Rights Identifier" → "rights_identifier")
-            #       but not CamelCase ("RightsIdentifier" → "rightsidentifier")
-            #       so we check for both underscore and non-underscore variants
             
             # Define expected column sets for each type for robust validation
             # A type is detected if its required columns AND at least some optional columns exist
             
             # Pre-define indicator sets for each CSV type
-            rights_indicators = {'rights_identifier', 'rightsidentifier', 'right_identifier', 'rightidentifier'}
-            contributor_type_indicators = {'contributor_type', 'contributortype'}
-            content_url_indicators = {'content_url', 'contenturl'}
-            creator_name_indicators = {'creator_name', 'creatorname'}
-            name_parts_present = (
-                ('given_name' in header_set and 'family_name' in header_set) or
-                ('givenname' in header_set and 'familyname' in header_set)
-            )
+            # With CamelCase normalization, we now consistently get snake_case
+            rights_indicators = {'rights_identifier', 'right_identifier'}
+            contributor_type_indicators = {'contributor_type'}
+            content_url_indicators = {'content_url'}
+            creator_name_indicators = {'creator_name'}
+            name_parts_present = ('given_name' in header_set and 'family_name' in header_set)
             is_not_contributor = not (header_set & contributor_type_indicators)
             
             # 1. Rights (most specific - has unique identifiers AND doi)
@@ -4493,12 +4496,13 @@ class MainWindow(QMainWindow):
                intersection.height() >= MINIMUM_VISIBLE_WINDOW_SIZE:
                 
                 # Additionally check if the title bar is accessible for dragging.
-                # The window top must be:
-                # - Not too far above the screen (top edge allows some tolerance)
-                # - Not too far below the screen top (title bar must be reachable)
+                # The window top must be within the screen's visible area so users
+                # can grab the title bar. We allow the window to extend slightly
+                # above the screen (up to TITLE_BAR_MIN_VISIBLE pixels) to handle
+                # cases where the title bar is partially visible.
                 title_bar_visible = (
                     window_rect.top() >= screen_rect.top() - TITLE_BAR_MIN_VISIBLE and
-                    window_rect.top() <= screen_rect.bottom() - MINIMUM_VISIBLE_WINDOW_SIZE
+                    window_rect.top() < screen_rect.bottom() - TITLE_BAR_MIN_VISIBLE
                 )
                 if title_bar_visible:
                     return True
