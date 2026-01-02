@@ -41,9 +41,10 @@ src/
 - Englische Log-Messages für Debugging
 
 ### UI Conventions
-- Alle UI-Texte auf Deutsch
+- User-facing UI-Texte auf Deutsch (Labels, Buttons, Dialoge, Statusmeldungen)
+- Code-Interna in Englisch (Variablennamen, Funktionsnamen, Kommentare im Code)
 - Log-Messages mit `[OK]` oder `[FEHLER]` Prefix für Status
-- GroupBox-basierte Workflow-Organisation im MainWindow
+- Card-basierte Workflow-Organisation im MainWindow (seit v2.0)
 - Theme-aware Styling via `ThemeManager`
 
 ## Development Commands

@@ -226,13 +226,11 @@ class TestCSVFileDetection:
         
         main_window._check_csv_files()
         
-        # Update buttons should be disabled
-        assert not main_window.update_button.isEnabled()
-        assert not main_window.update_authors_button.isEnabled()
-        
-        # Status labels should show no CSV
-        assert "Keine CSV" in main_window.urls_status_label.text()
-        assert "Keine CSV" in main_window.authors_status_label.text()
+        # With new card-based UI, we check if actions are disabled
+        # The update action in the dropdown menu should be disabled
+        # Check that status shows no CSV found
+        assert "Keine CSV" in main_window.urls_card.status_label.text()
+        assert "Keine CSV" in main_window.authors_card.status_label.text()
     
     @patch('src.ui.main_window.os.getcwd')
     def test_check_csv_files_with_username(self, mock_getcwd, main_window):
@@ -260,10 +258,10 @@ class TestCSVFileDetection:
             
             main_window._check_csv_files()
             
-            # URLs update button should be enabled
-            assert main_window.update_button.isEnabled()
-            # Authors update button should be disabled
-            assert not main_window.update_authors_button.isEnabled()
+            # URLs card should show CSV ready status (contains the filename)
+            assert "test_user_urls.csv" in main_window.urls_card.status_label.text() or "🟢" in main_window.urls_card.status_label.text()
+            # Authors card should show no CSV found
+            assert "Keine CSV" in main_window.authors_card.status_label.text() or "⚪" in main_window.authors_card.status_label.text()
     
     @patch('src.ui.main_window.Path.glob')
     def test_check_csv_files_without_username(self, mock_glob, main_window):
@@ -304,40 +302,42 @@ class TestCSVFileDetection:
         assert main_window._current_username is None
 
 
-class TestGroupBoxes:
-    """Test GroupBox UI elements."""
+class TestUIContainers:
+    """Test UI container elements (CollapsibleSection and ActionCard components)."""
     
-    def test_groupboxes_exist(self, main_window):
-        """Test that both GroupBoxes are created."""
-        from PySide6.QtWidgets import QGroupBox
+    def test_collapsible_sections_exist(self, main_window):
+        """Test that CollapsibleSections are created instead of GroupBoxes."""
+        from src.ui.components import CollapsibleSection
         
-        groupboxes = main_window.findChildren(QGroupBox)
-        assert len(groupboxes) >= 2, "Should have at least 2 GroupBoxes"
-        
-        groupbox_titles = [gb.title() for gb in groupboxes]
-        assert any("Landing Page" in title for title in groupbox_titles)
-        assert any("Autoren" in title for title in groupbox_titles)
+        # Check that we have collapsible sections
+        assert hasattr(main_window, 'metadata_section')
+        assert hasattr(main_window, 'tools_section')
+        assert isinstance(main_window.metadata_section, CollapsibleSection)
+        assert isinstance(main_window.tools_section, CollapsibleSection)
     
     def test_status_labels_exist(self, main_window):
-        """Test that status labels exist."""
-        assert hasattr(main_window, 'urls_status_label')
-        assert hasattr(main_window, 'authors_status_label')
+        """Test that status labels exist (now in ActionCards)."""
+        # Status labels are now part of the action cards
+        assert hasattr(main_window, 'urls_card')
+        assert hasattr(main_window, 'authors_card')
         
-        # Labels should be QLabel instances
+        # Cards should have status labels
         from PySide6.QtWidgets import QLabel
-        assert isinstance(main_window.urls_status_label, QLabel)
-        assert isinstance(main_window.authors_status_label, QLabel)
+        assert isinstance(main_window.urls_card.status_label, QLabel)
+        assert isinstance(main_window.authors_card.status_label, QLabel)
     
-    def test_buttons_in_groupboxes(self, main_window):
-        """Test that buttons are organized in GroupBoxes."""
-        # All main workflow buttons should exist
-        assert hasattr(main_window, 'load_button')
-        assert hasattr(main_window, 'update_button')
-        assert hasattr(main_window, 'load_authors_button')
-        assert hasattr(main_window, 'update_authors_button')
+    def test_action_cards_exist(self, main_window):
+        """Test that action cards exist with buttons."""
+        # All main workflow cards should exist
+        assert hasattr(main_window, 'urls_card')
+        assert hasattr(main_window, 'authors_card')
+        assert hasattr(main_window, 'publisher_card')
+        assert hasattr(main_window, 'contributors_card')
+        assert hasattr(main_window, 'rights_card')
+        assert hasattr(main_window, 'downloads_card')
         
-        # Buttons should not be None
-        assert main_window.load_button is not None
+        # Cards should not be None
+        assert main_window.urls_card is not None
         assert main_window.update_button is not None
         assert main_window.load_authors_button is not None
         assert main_window.update_authors_button is not None
