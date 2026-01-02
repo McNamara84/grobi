@@ -814,15 +814,18 @@ class MainWindow(QMainWindow):
         
         # Update buttons - reference to dropdown button (not the actual menu action)
         # LEGACY COMPATIBILITY WARNING:
-        # These references (e.g., self.update_button) point to the dropdown button widget.
+        # These references point to the dropdown button widget, NOT the menu action.
         # 
-        # IMPORTANT BEHAVIOR DIFFERENCE:
-        #   self.update_button.isEnabled()  →  Returns dropdown button's enabled state
-        #   card.split_button.is_action_enabled("update")  →  Returns menu action's enabled state
+        # BEHAVIOR DIFFERENCE (BREAKING CHANGE):
+        #   OLD: self.update_button.isEnabled() checked the actual update action
+        #   NEW: self.update_button.isEnabled() returns dropdown button's state
         # 
-        # The dropdown button may be enabled while specific menu actions are disabled.
-        # For accurate action state checking, always use is_action_enabled().
-        # For setting action state, use card.set_action_enabled("update", True/False).
+        # CORRECT USAGE for action state:
+        #   - Check state:  card.split_button.is_action_enabled("update")
+        #   - Set state:    card.set_action_enabled("update", True/False)
+        # 
+        # These legacy references are kept for compatibility with existing tests
+        # and code that only checks widget visibility, not action state.
         self.update_button = self.urls_card.split_button.dropdown_button
         self.update_authors_button = self.authors_card.split_button.dropdown_button
         self.update_publisher_button = self.publisher_card.split_button.dropdown_button
@@ -855,9 +858,10 @@ class MainWindow(QMainWindow):
         for key_seq, callback, description in shortcuts:
             shortcut = QShortcut(QKeySequence(key_seq), self)
             # WindowShortcut context: fires when window has focus, even in text fields.
-            # Note: This means shortcuts may interfere with typing in the log area,
-            # but since Ctrl+1-8 are not typical text input combinations, this is acceptable.
-            # The shortcut will NOT fire when a modal dialog (like file picker) is open.
+            # This is acceptable because:
+            # 1. The log area is read-only (users don't type there)
+            # 2. Ctrl+1-8 are not typical text editing combinations
+            # 3. The shortcuts don't fire when modal dialogs are open
             shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
             shortcut.activated.connect(callback)
             shortcut.setWhatsThis(description)
@@ -933,38 +937,55 @@ class MainWindow(QMainWindow):
             #       but not CamelCase ("RightsIdentifier" → "rightsidentifier")
             #       so we check for both underscore and non-underscore variants
             
-            # 1. Rights (most specific - has unique identifiers)
-            if 'rights_identifier' in header_set or 'rightsidentifier' in header_set or \
-               'right_identifier' in header_set or 'rightidentifier' in header_set:
+            # Define expected column sets for each type for robust validation
+            # A type is detected if its required columns AND at least some optional columns exist
+            
+            # Pre-define indicator sets for each CSV type
+            rights_indicators = {'rights_identifier', 'rightsidentifier', 'right_identifier', 'rightidentifier'}
+            contributor_type_indicators = {'contributor_type', 'contributortype'}
+            content_url_indicators = {'content_url', 'contenturl'}
+            creator_name_indicators = {'creator_name', 'creatorname'}
+            name_parts_present = (
+                ('given_name' in header_set and 'family_name' in header_set) or
+                ('givenname' in header_set and 'familyname' in header_set)
+            )
+            is_not_contributor = not (header_set & contributor_type_indicators)
+            
+            # 1. Rights (most specific - has unique identifiers AND doi)
+            # Expected: doi, rights, rights_identifier, rights_uri
+            if header_set & rights_indicators and 'doi' in header_set:
                 self._log("→ Erkannt als: Rights/Lizenz-Daten")
                 self.pending_csv_path = file_path
                 self._on_update_rights_clicked()
             
-            # 2. Contributors (specific - has contributor_type)
-            elif 'contributor_type' in header_set or 'contributortype' in header_set:
+            # 2. Contributors (specific - has contributor_type AND doi)
+            # Expected: doi, contributor_name, contributor_type, etc.
+            elif header_set & contributor_type_indicators and 'doi' in header_set:
                 self._log("→ Erkannt als: Contributors-Daten")
                 self.pending_csv_path = file_path
                 self._on_update_contributors_clicked()
             
-            # 3. Download URLs (specific - has content_url)
-            elif 'content_url' in header_set or 'contenturl' in header_set:
+            # 3. Download URLs (specific - has content_url AND doi)
+            # Expected: doi, content_url
+            elif header_set & content_url_indicators and 'doi' in header_set:
                 self._log("→ Erkannt als: Download-URLs")
                 self.pending_csv_path = file_path
                 self._on_update_download_urls_clicked()
             
-            # 4. Authors/Creators (has creator-specific fields)
+            # 4. Authors/Creators (has creator-specific fields AND doi)
+            # Expected: doi, creator_name or (given_name + family_name), optionally name_identifier
             # Note: After normalization, "creator name" becomes "creator_name"
             # Exclude files with contributor_type to avoid misclassifying Contributors as Authors
-            elif ('creator_name' in header_set or 'creatorname' in header_set or 
-                  (('given_name' in header_set and 'family_name' in header_set) or
-                   ('givenname' in header_set and 'familyname' in header_set))) and \
-                 'contributor_type' not in header_set and 'contributortype' not in header_set:
+            elif ((header_set & creator_name_indicators) or name_parts_present) and \
+                 'doi' in header_set and is_not_contributor:
                 self._log("→ Erkannt als: Autoren-Daten")
                 self.pending_csv_path = file_path
                 self._on_update_authors_clicked()
             
-            # 5. Publisher (has publisher column but not creator-specific fields)
-            elif 'publisher' in header_set and 'creator_name' not in header_set:
+            # 5. Publisher (has publisher column AND doi, but not creator-specific fields)
+            # Expected: doi, publisher, optionally publisher_identifier
+            elif 'publisher' in header_set and 'doi' in header_set and \
+                 not (header_set & creator_name_indicators):
                 self._log("→ Erkannt als: Publisher-Daten")
                 self.pending_csv_path = file_path
                 self._on_update_publisher_clicked()
@@ -4469,11 +4490,15 @@ class MainWindow(QMainWindow):
             if intersection.width() >= MINIMUM_VISIBLE_WINDOW_SIZE and \
                intersection.height() >= MINIMUM_VISIBLE_WINDOW_SIZE:
                 
-                # Additionally check if the title bar is accessible for dragging
-                # The top of the window should be within the screen bounds
-                # (with some tolerance for the title bar height)
-                if window_rect.top() >= screen_rect.top() - TITLE_BAR_MIN_VISIBLE and \
-                   window_rect.top() <= screen_rect.bottom() - TITLE_BAR_MIN_VISIBLE:
+                # Additionally check if the title bar is accessible for dragging.
+                # The window top must be:
+                # - Not too far above the screen (top edge allows some tolerance)
+                # - Not too far below the screen top (title bar must be reachable)
+                title_bar_visible = (
+                    window_rect.top() >= screen_rect.top() - TITLE_BAR_MIN_VISIBLE and
+                    window_rect.top() <= screen_rect.bottom() - MINIMUM_VISIBLE_WINDOW_SIZE
+                )
+                if title_bar_visible:
                     return True
         
         return False

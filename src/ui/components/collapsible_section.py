@@ -8,7 +8,9 @@ from PySide6.QtCore import Signal, Qt, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFont
 
 
-# Qt maximum widget size constant for removing height constraints
+# Qt maximum widget size constant for removing height constraints.
+# This is 2^24 - 1, Qt's internal limit for widget dimensions.
+# This value is consistent across Qt versions and platforms.
 QWIDGETSIZE_MAX = 16777215
 
 
@@ -132,10 +134,14 @@ class CollapsibleSection(QWidget):
         if hasattr(self, '_animation') and self._animation is not None:
             if self._animation.state() == QPropertyAnimation.State.Running:
                 self._animation.stop()
-                # Disconnect signal if it was connected
+                # Only try to disconnect if we previously connected (avoid Qt warning)
                 if getattr(self, '_expand_signal_connected', False):
-                    self._animation.finished.disconnect(self._on_expand_finished)
-                    self._expand_signal_connected = False
+                    try:
+                        self._animation.finished.disconnect(self._on_expand_finished)
+                    except RuntimeError:
+                        pass  # Already disconnected
+                    finally:
+                        self._expand_signal_connected = False
         
         # Update arrow direction
         self._toggle_button.setArrowType(
@@ -170,11 +176,14 @@ class CollapsibleSection(QWidget):
     
     def _on_expand_finished(self):
         """Called when expand animation finishes."""
-        # Disconnect only if we know the signal is connected.
-        # This avoids catching RuntimeError which could mask other issues.
+        # Use flag + try-finally to ensure flag is always updated correctly
         if getattr(self, '_expand_signal_connected', False):
-            self._animation.finished.disconnect(self._on_expand_finished)
-            self._expand_signal_connected = False
+            try:
+                self._animation.finished.disconnect(self._on_expand_finished)
+            except RuntimeError:
+                pass  # Already disconnected
+            finally:
+                self._expand_signal_connected = False
         
         # Remove height constraint so content can resize naturally
         self._content_area.setMaximumHeight(QWIDGETSIZE_MAX)

@@ -1,10 +1,4 @@
-"""Tests for new MainWindow features: keyboard shortcuts, drag & drop, window geometry.
-
-Note: This test file uses unittest.mock.patch for mocking internal methods.
-The project's testing guidelines specify using the 'responses' library for HTTP mocking,
-but that is specifically for external HTTP calls. For internal method mocking,
-unittest.mock is the appropriate choice.
-"""
+"""Tests for new MainWindow features: keyboard shortcuts, drag & drop, window geometry."""
 
 import pytest
 from unittest.mock import patch
@@ -254,7 +248,7 @@ class TestWindowGeometry:
         # 2. QSettings contains saved geometry (proves save/restore mechanism works)
         
         # Check for CI environment - be lenient on virtual displays
-        # Environment variables may be set to empty string, so check for truthy non-empty value
+        # Check if CI environment variables are explicitly set to true-like values (case-insensitive)
         ci_value = os.environ.get('CI', '')
         github_actions_value = os.environ.get('GITHUB_ACTIONS', '')
         is_ci = ci_value.lower() in ('true', '1', 'yes') or \
@@ -274,11 +268,15 @@ class TestWindowGeometry:
         assert settings.value("window/geometry") is not None, "Geometry was not saved"
 
 
-class TestCollapsibleSectionSignalDisconnect:
-    """Tests for CollapsibleSection signal handling."""
+class TestCollapsibleSectionAnimation:
+    """Tests for CollapsibleSection animation handling."""
     
-    def test_expand_animation_disconnects_signal(self, qapp, qtbot):
-        """Test that the expand animation properly disconnects its finished signal."""
+    def test_multiple_rapid_toggles_work_correctly(self, qapp, qtbot):
+        """Test that multiple rapid toggles complete without errors.
+        
+        This verifies the animation system handles repeated expand/collapse
+        cycles correctly by checking the final state is as expected.
+        """
         from src.ui.components import CollapsibleSection
         from src.ui.components.collapsible_section import CollapsibleSection as CS
         
@@ -300,7 +298,7 @@ class TestCollapsibleSectionSignalDisconnect:
         assert section.is_expanded()
 
 
-class TestQWIDGETSIZE_MAX_Constant:
+class TestQWidgetSizeMaxConstant:
     """Tests for the QWIDGETSIZE_MAX constant usage."""
     
     def test_constant_is_defined(self):

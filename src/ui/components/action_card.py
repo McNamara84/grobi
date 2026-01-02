@@ -227,10 +227,14 @@ class ActionCard(QFrame):
         # Cancel any running animation to handle rapid status updates
         if hasattr(self, '_fade_out') and self._fade_out is not None:
             self._fade_out.stop()
-            # Only disconnect if we know the signal is connected
+            # Only try to disconnect if we previously connected (avoid Qt warning)
             if getattr(self, '_fade_signal_connected', False):
-                self._fade_out.finished.disconnect(self._on_fade_out_finished)
-                self._fade_signal_connected = False
+                try:
+                    self._fade_out.finished.disconnect(self._on_fade_out_finished)
+                except RuntimeError:
+                    pass  # Already disconnected
+                finally:
+                    self._fade_signal_connected = False
         if hasattr(self, '_fade_in') and self._fade_in is not None:
             self._fade_in.stop()
         
@@ -254,8 +258,14 @@ class ActionCard(QFrame):
     
     def _on_fade_out_finished(self):
         """Handle fade out completion - update text and fade in."""
-        # Mark signal as disconnected (it auto-disconnects after being called)
-        self._fade_signal_connected = False
+        # Use flag + try-finally to ensure flag is always updated correctly
+        if getattr(self, '_fade_signal_connected', False):
+            try:
+                self._fade_out.finished.disconnect(self._on_fade_out_finished)
+            except RuntimeError:
+                pass  # Already disconnected
+            finally:
+                self._fade_signal_connected = False
         
         # Update the text
         self._status_label.setText(self._pending_status_text)
