@@ -155,19 +155,17 @@ class CollapsibleSection(QWidget):
         if self._expanded:
             # When expanding, remove max height constraint at the end
             self._animation.finished.connect(self._on_expand_finished)
+            self._expand_signal_connected = True
         
         self._animation.start()
     
     def _on_expand_finished(self):
         """Called when expand animation finishes."""
-        # Disconnect to prevent memory leaks on repeated animations.
-        # RuntimeError is expected when toggle() is called multiple times rapidly
-        # before the animation finishes - the signal may already be disconnected.
-        try:
+        # Disconnect only if we know the signal is connected.
+        # This avoids catching RuntimeError which could mask other issues.
+        if getattr(self, '_expand_signal_connected', False):
             self._animation.finished.disconnect(self._on_expand_finished)
-        except RuntimeError:
-            # Signal was already disconnected - this is expected on rapid toggles
-            pass
+            self._expand_signal_connected = False
         
         # Remove height constraint so content can resize naturally
         self._content_area.setMaximumHeight(QWIDGETSIZE_MAX)

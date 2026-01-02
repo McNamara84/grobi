@@ -249,7 +249,11 @@ class TestWindowGeometry:
         # 2. QSettings contains saved geometry (proves save/restore mechanism works)
         
         # Check for CI environment - be lenient on virtual displays
-        is_ci = os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS')
+        # Environment variables may be set to empty string, so check for truthy non-empty value
+        ci_value = os.environ.get('CI', '')
+        github_actions_value = os.environ.get('GITHUB_ACTIONS', '')
+        is_ci = ci_value.lower() in ('true', '1', 'yes') or \
+                github_actions_value.lower() in ('true', '1', 'yes')
         
         if is_ci:
             # On CI, just verify window has valid non-zero dimensions

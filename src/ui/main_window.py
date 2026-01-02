@@ -49,6 +49,11 @@ FALLBACK_WINDOW_HEIGHT = 800
 # Used to detect if window is still visible after monitor changes
 MINIMUM_VISIBLE_WINDOW_SIZE = 100
 
+# Minimum pixels of title bar that must be visible for the window to be draggable
+# 50 pixels is approximately the width needed for a user to grab and move the window
+# on most operating systems with standard title bar heights (typically 20-40 pixels)
+TITLE_BAR_MIN_VISIBLE = 50
+
 # QSettings keys for window geometry
 SETTINGS_GEOMETRY = "window/geometry"
 SETTINGS_WINDOW_STATE = "window/state"
@@ -802,13 +807,16 @@ class MainWindow(QMainWindow):
         self.fuji_check_btn = self.fuji_card.split_button.primary_button
         
         # Update buttons - reference to dropdown button (not the actual menu action)
-        # LEGACY COMPATIBILITY WARNING: These references point to the dropdown button,
-        # NOT the individual menu actions. Checking .isEnabled() on these buttons will
-        # return the dropdown button's state, not the menu action's enabled state.
-        # For accurate action state checking, use:
-        #   card.split_button.is_action_enabled("update")
-        # For setting action state, use:
-        #   card.set_action_enabled("update", True/False)
+        # LEGACY COMPATIBILITY WARNING:
+        # These references (e.g., self.update_button) point to the dropdown button widget.
+        # 
+        # IMPORTANT BEHAVIOR DIFFERENCE:
+        #   self.update_button.isEnabled()  →  Returns dropdown button's enabled state
+        #   card.split_button.is_action_enabled("update")  →  Returns menu action's enabled state
+        # 
+        # The dropdown button may be enabled while specific menu actions are disabled.
+        # For accurate action state checking, always use is_action_enabled().
+        # For setting action state, use card.set_action_enabled("update", True/False).
         self.update_button = self.urls_card.split_button.dropdown_button
         self.update_authors_button = self.authors_card.split_button.dropdown_button
         self.update_publisher_button = self.publisher_card.split_button.dropdown_button
@@ -910,22 +918,25 @@ class MainWindow(QMainWindow):
             
             # Detect CSV type by headers - order from most specific to least specific
             # to avoid false positives when multiple type-indicators are present
+            # Note: Normalization handles spaces ("Rights Identifier" → "rights_identifier")
+            #       but not CamelCase ("RightsIdentifier" → "rightsidentifier")
+            #       so we check for both underscore and non-underscore variants
             
             # 1. Rights (most specific - has unique identifiers)
-            if 'rightsidentifier' in header_set or 'rightidentifier' in header_set or \
-               'rights_identifier' in header_set or 'right_identifier' in header_set:
+            if 'rights_identifier' in header_set or 'rightsidentifier' in header_set or \
+               'right_identifier' in header_set or 'rightidentifier' in header_set:
                 self._log("→ Erkannt als: Rights/Lizenz-Daten")
                 self.pending_csv_path = file_path
                 self._on_update_rights_clicked()
             
-            # 2. Contributors (specific - has contributortype)
-            elif 'contributortype' in header_set or 'contributor_type' in header_set:
+            # 2. Contributors (specific - has contributor_type)
+            elif 'contributor_type' in header_set or 'contributortype' in header_set:
                 self._log("→ Erkannt als: Contributors-Daten")
                 self.pending_csv_path = file_path
                 self._on_update_contributors_clicked()
             
-            # 3. Download URLs (specific - has contenturl)
-            elif 'contenturl' in header_set or 'content_url' in header_set:
+            # 3. Download URLs (specific - has content_url)
+            elif 'content_url' in header_set or 'contenturl' in header_set:
                 self._log("→ Erkannt als: Download-URLs")
                 self.pending_csv_path = file_path
                 self._on_update_download_urls_clicked()
@@ -4415,9 +4426,6 @@ class MainWindow(QMainWindow):
                   is inaccessible.
         """
         window_rect = self.frameGeometry()
-        
-        # Minimum pixels of title bar that must be visible for dragging
-        TITLE_BAR_MIN_VISIBLE = 50
         
         # Check all available screens
         for screen in QGuiApplication.screens():
