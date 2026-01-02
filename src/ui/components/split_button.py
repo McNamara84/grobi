@@ -17,17 +17,17 @@ class SplitButton(QWidget):
     
     Signals:
         clicked: Emitted when the primary button is clicked
-        action_triggered(QAction): Emitted when a menu action is triggered
+        action_triggered(str): Emitted when a menu action is triggered, with action ID
     
     Example:
         >>> split_btn = SplitButton("📥 Exportieren")
         >>> split_btn.add_action("🔄 Aus CSV aktualisieren", "update")
         >>> split_btn.clicked.connect(self.on_export)
-        >>> split_btn.action_triggered.connect(self.on_action)
+        >>> split_btn.action_triggered.connect(self.on_action)  # receives action_id str
     """
     
     clicked = Signal()
-    action_triggered = Signal(QAction)
+    action_triggered = Signal(str)
     
     def __init__(self, text: str = "", icon: str = "", parent: QWidget = None):
         """
@@ -86,7 +86,8 @@ class SplitButton(QWidget):
     
     def _on_menu_triggered(self, action: QAction):
         """Handle menu action trigger."""
-        self.action_triggered.emit(action)
+        action_id = action.data() or action.text()
+        self.action_triggered.emit(action_id)
     
     def add_action(self, text: str, action_id: str = "", icon: str = "") -> QAction:
         """

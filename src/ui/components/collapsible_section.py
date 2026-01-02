@@ -128,6 +128,15 @@ class CollapsibleSection(QWidget):
     
     def _animate_toggle(self):
         """Animate the expand/collapse transition."""
+        # Stop any running animation to prevent visual glitches on rapid toggles
+        if hasattr(self, '_animation') and self._animation is not None:
+            if self._animation.state() == QPropertyAnimation.State.Running:
+                self._animation.stop()
+                # Disconnect signal if it was connected
+                if getattr(self, '_expand_signal_connected', False):
+                    self._animation.finished.disconnect(self._on_expand_finished)
+                    self._expand_signal_connected = False
+        
         # Update arrow direction
         self._toggle_button.setArrowType(
             Qt.DownArrow if self._expanded else Qt.RightArrow

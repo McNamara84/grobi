@@ -49,6 +49,7 @@ class ActionCard(QFrame):
         title: str = "",
         description: str = "",
         primary_text: str = "📥 Exportieren",
+        default_status: str = "",
         parent = None
     ):
         """
@@ -59,6 +60,7 @@ class ActionCard(QFrame):
             title: Card title
             description: Optional description text
             primary_text: Text for the primary button
+            default_status: Initial status text (empty by default for flexibility)
             parent: Parent widget
         """
         super().__init__(parent)
@@ -67,6 +69,7 @@ class ActionCard(QFrame):
         self._title = title
         self._description = description
         self._primary_text = primary_text
+        self._default_status = default_status
         self._status_text = ""
         
         self._setup_ui()
@@ -127,7 +130,7 @@ class ActionCard(QFrame):
         layout.addWidget(self._description_label)
         
         # Status label
-        self._status_label = QLabel("⚪ Keine CSV-Datei gefunden")
+        self._status_label = QLabel(self._default_status)
         self._status_label.setObjectName("cardStatus")
         status_font = QFont()
         status_font.setPointSize(11)
@@ -152,9 +155,8 @@ class ActionCard(QFrame):
         shadow.setColor(QColor(0, 0, 0, 30))
         self.setGraphicsEffect(shadow)
     
-    def _on_action_triggered(self, action):
+    def _on_action_triggered(self, action_id: str):
         """Handle action trigger from split button."""
-        action_id = action.data()
         self.action_triggered.emit(action_id)
     
     def set_icon(self, icon: str):

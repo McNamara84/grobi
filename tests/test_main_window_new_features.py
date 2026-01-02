@@ -162,8 +162,9 @@ class TestDragAndDrop:
         
         main_window._handle_dropped_csv(str(csv_file))
         
-        # Should log specific warning about unrecognized CSV type
+        # Should log warning about unrecognized CSV type with proper prefix
         log_text = main_window.log_text.toPlainText()
+        assert "[WARNUNG]" in log_text, f"Expected '[WARNUNG]' prefix in log, got: {log_text}"
         assert "CSV-Typ nicht erkannt" in log_text, f"Expected 'CSV-Typ nicht erkannt' in log, got: {log_text}"
     
     def test_handle_dropped_csv_invalid_file(self, main_window, tmp_path):
@@ -237,6 +238,10 @@ class TestWindowGeometry:
         window1.move(200, 150)
         window1.resize(1100, 800)
         window1._save_window_geometry()
+        
+        # Close window1 to ensure clean state before creating window2
+        window1.close()
+        qtbot.wait(100)  # Wait for close event to complete
         
         # Create second window - should restore geometry
         window2 = MainWindow()

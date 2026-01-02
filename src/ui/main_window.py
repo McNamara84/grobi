@@ -57,6 +57,7 @@ TITLE_BAR_MIN_VISIBLE = 50
 # QSettings keys for window geometry
 SETTINGS_GEOMETRY = "window/geometry"
 SETTINGS_WINDOW_STATE = "window/state"
+SETTINGS_WINDOW_MAXIMIZED = "window/maximized"
 
 
 class DOIFetchWorker(QObject):
@@ -584,7 +585,8 @@ class MainWindow(QMainWindow):
             icon="🔗",
             title="Landing Page URLs",
             description="DOI-URLs verwalten und aktualisieren",
-            primary_text="📥 Exportieren"
+            primary_text="📥 Exportieren",
+            default_status="⚪ Keine CSV-Datei geladen"
         )
         self.urls_card.setToolTip(
             "Exportiert alle DOIs mit ihren Landing Page URLs.\n"
@@ -602,7 +604,8 @@ class MainWindow(QMainWindow):
             icon="👥",
             title="Autoren",
             description="Creator-Metadaten bearbeiten",
-            primary_text="📥 Exportieren"
+            primary_text="📥 Exportieren",
+            default_status="⚪ Keine CSV-Datei geladen"
         )
         self.authors_card.setToolTip(
             "Exportiert Creator-Informationen (Name, ORCID, Affiliationen).\n"
@@ -620,7 +623,8 @@ class MainWindow(QMainWindow):
             icon="📦",
             title="Publisher",
             description="Publisher-Metadaten verwalten",
-            primary_text="📥 Exportieren"
+            primary_text="📥 Exportieren",
+            default_status="⚪ Keine CSV-Datei geladen"
         )
         self.publisher_card.setToolTip(
             "Exportiert und aktualisiert Publisher-Informationen.\n"
@@ -637,7 +641,8 @@ class MainWindow(QMainWindow):
             icon="🤝",
             title="Contributors",
             description="Contributor-Metadaten bearbeiten",
-            primary_text="📥 Exportieren"
+            primary_text="📥 Exportieren",
+            default_status="⚪ Keine CSV-Datei geladen"
         )
         self.contributors_card.setToolTip(
             "Exportiert Contributor-Informationen mit Rollen.\n"
@@ -655,7 +660,8 @@ class MainWindow(QMainWindow):
             icon="⚖️",
             title="Rights",
             description="Lizenz-Metadaten verwalten",
-            primary_text="📥 Exportieren"
+            primary_text="📥 Exportieren",
+            default_status="⚪ Keine CSV-Datei geladen"
         )
         self.rights_card.setToolTip(
             "Exportiert und aktualisiert Lizenzinformationen.\n"
@@ -848,7 +854,10 @@ class MainWindow(QMainWindow):
         self._shortcuts = []  # Keep references to prevent garbage collection
         for key_seq, callback, description in shortcuts:
             shortcut = QShortcut(QKeySequence(key_seq), self)
-            # Use WindowShortcut context to prevent activation when text widgets have focus
+            # WindowShortcut context: fires when window has focus, even in text fields.
+            # Note: This means shortcuts may interfere with typing in the log area,
+            # but since Ctrl+1-8 are not typical text input combinations, this is acceptable.
+            # The shortcut will NOT fire when a modal dialog (like file picker) is open.
             shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
             shortcut.activated.connect(callback)
             shortcut.setWhatsThis(description)
@@ -913,6 +922,8 @@ class MainWindow(QMainWindow):
             # Normalize headers: lowercase, strip whitespace, replace spaces with underscores
             # This ensures consistent matching regardless of whether CSV uses
             # "Landing Page URL", "landing_page_url", or "Landing_Page_URL"
+            # LIMITATION: CamelCase without spaces (e.g., "RightsIdentifier") becomes
+            # "rightsidentifier" (no underscores inserted), so we check for both variants
             header_normalized = [h.lower().strip().replace(' ', '_') for h in header]
             header_set = set(header_normalized)
             
@@ -943,9 +954,11 @@ class MainWindow(QMainWindow):
             
             # 4. Authors/Creators (has creator-specific fields)
             # Note: After normalization, "creator name" becomes "creator_name"
-            elif 'creator_name' in header_set or 'creatorname' in header_set or \
-                 ('given_name' in header_set and 'family_name' in header_set) or \
-                 ('givenname' in header_set and 'familyname' in header_set):
+            # Exclude files with contributor_type to avoid misclassifying Contributors as Authors
+            elif ('creator_name' in header_set or 'creatorname' in header_set or 
+                  (('given_name' in header_set and 'family_name' in header_set) or
+                   ('givenname' in header_set and 'familyname' in header_set))) and \
+                 'contributor_type' not in header_set and 'contributortype' not in header_set:
                 self._log("→ Erkannt als: Autoren-Daten")
                 self.pending_csv_path = file_path
                 self._on_update_authors_clicked()
@@ -965,10 +978,20 @@ class MainWindow(QMainWindow):
                 self.pending_csv_path = file_path
                 self._on_update_urls_clicked()
             elif 'doi' in header_set and 'url' in header_set:
-                # Ambiguous case - don't auto-import, just inform user
+                # Ambiguous case - don't auto-import, inform user with dialog
                 # Note: header_set contains normalized headers (lowercase, spaces→underscores)
                 self._log("[HINWEIS] CSV hat generische Header (doi, url).")
-                self._log("Bitte über Menü 'Landing Page URLs → Aus CSV aktualisieren' importieren.")
+                QMessageBox.information(
+                    self,
+                    "CSV-Typ nicht eindeutig",
+                    "Die CSV-Datei hat generische Header (doi, url).\n\n"
+                    "Bitte verwenden Sie die spezifische Import-Funktion:\n"
+                    "• Landing Page URLs → Aus CSV aktualisieren\n"
+                    "• Oder CSV mit 'landing_page_url' Header exportieren\n\n"
+                    "Diese Sicherheitsabfrage verhindert versehentliche\n"
+                    "Datenänderungen bei mehrdeutigen CSV-Dateien.",
+                    QMessageBox.Ok
+                )
                 # Don't set pending_csv_path or trigger import - user must do manually
             
             else:
@@ -4381,10 +4404,12 @@ class MainWindow(QMainWindow):
         Save current window position and size to QSettings.
         
         This allows the window to restore its position on next application start.
+        Maximized state is saved separately to handle screen changes properly.
         """
         settings = QSettings("GFZ", "GROBI")
         settings.setValue(SETTINGS_GEOMETRY, self.saveGeometry())
         settings.setValue(SETTINGS_WINDOW_STATE, self.saveState())
+        settings.setValue(SETTINGS_WINDOW_MAXIMIZED, self.isMaximized())
     
     def _restore_window_geometry(self):
         """
@@ -4392,10 +4417,12 @@ class MainWindow(QMainWindow):
         
         On first run, the window is centered with appropriate proportions.
         On subsequent runs, the saved position is restored if it's still
-        on a visible screen.
+        on a visible screen. Maximized state is restored separately to
+        handle cases where the screen configuration has changed.
         """
         settings = QSettings("GFZ", "GROBI")
         saved_geometry = settings.value(SETTINGS_GEOMETRY)
+        was_maximized = settings.value(SETTINGS_WINDOW_MAXIMIZED, False, type=bool)
         
         if saved_geometry is not None:
             # Try to restore saved geometry
@@ -4406,10 +4433,16 @@ class MainWindow(QMainWindow):
             
             # Verify the window is still on a visible screen
             if self._is_window_on_screen():
+                # Restore maximized state after geometry restoration
+                if was_maximized:
+                    self.showMaximized()
                 return  # Successfully restored
         
         # First run or saved position is off-screen: use smart defaults
         self._set_default_geometry()
+        # Even if position was off-screen, honor maximized preference
+        if was_maximized:
+            self.showMaximized()
     
     def _is_window_on_screen(self) -> bool:
         """
