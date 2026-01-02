@@ -302,8 +302,8 @@ class TestCSVFileDetection:
         assert main_window._current_username is None
 
 
-class TestGroupBoxes:
-    """Test UI container elements (now using CollapsibleSection instead of GroupBox)."""
+class TestUIContainers:
+    """Test UI container elements (CollapsibleSection and ActionCard components)."""
     
     def test_collapsible_sections_exist(self, main_window):
         """Test that CollapsibleSections are created instead of GroupBoxes."""
@@ -326,7 +326,7 @@ class TestGroupBoxes:
         assert isinstance(main_window.urls_card.status_label, QLabel)
         assert isinstance(main_window.authors_card.status_label, QLabel)
     
-    def test_buttons_in_groupboxes(self, main_window):
+    def test_action_cards_exist(self, main_window):
         """Test that action cards exist with buttons."""
         # All main workflow cards should exist
         assert hasattr(main_window, 'urls_card')

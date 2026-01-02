@@ -248,11 +248,14 @@ class TestWindowGeometry:
         # 2. QSettings contains saved geometry (proves save/restore mechanism works)
         
         # Check for CI environment - be lenient on virtual displays
-        # Check if CI environment variables are explicitly set to true-like values (case-insensitive)
-        ci_value = os.environ.get('CI', '')
-        github_actions_value = os.environ.get('GITHUB_ACTIONS', '')
-        is_ci = ci_value.lower() in ('true', '1', 'yes') or \
-                github_actions_value.lower() in ('true', '1', 'yes')
+        # CI detection: Check if environment variables are explicitly set to true-like values.
+        # Expected values: 'true', '1', 'yes' (case-insensitive). Empty strings or 'false'/'0' are falsy.
+        # Note: GitHub Actions sets CI='true' and GITHUB_ACTIONS='true'
+        ci_value = os.environ.get('CI', '').lower()
+        github_actions_value = os.environ.get('GITHUB_ACTIONS', '').lower()
+        # Treat as CI if explicitly set to a truthy value (not empty, not 'false', not '0', not 'no')
+        false_values = ('', 'false', '0', 'no')
+        is_ci = ci_value not in false_values or github_actions_value not in false_values
         
         if is_ci:
             # On CI, just verify window has valid non-zero dimensions

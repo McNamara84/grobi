@@ -252,8 +252,13 @@ class ActionCard(QFrame):
         
         # Store new text for after fade out
         self._pending_status_text = new_text
-        self._fade_out.finished.connect(self._on_fade_out_finished)
+        # Set flag before connecting to ensure consistency even if connect fails
         self._fade_signal_connected = True
+        try:
+            self._fade_out.finished.connect(self._on_fade_out_finished)
+        except Exception:
+            self._fade_signal_connected = False
+            raise
         self._fade_out.start()
     
     def _on_fade_out_finished(self):

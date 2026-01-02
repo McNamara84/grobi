@@ -812,20 +812,18 @@ class MainWindow(QMainWindow):
         self.export_pending_btn = self.pending_card.split_button.primary_button
         self.fuji_check_btn = self.fuji_card.split_button.primary_button
         
-        # Update buttons - reference to dropdown button (not the actual menu action)
-        # LEGACY COMPATIBILITY WARNING:
-        # These references point to the dropdown button widget, NOT the menu action.
+        # DEPRECATED LEGACY REFERENCES - BREAKING CHANGE in v2.0
+        # These dropdown button references are DEPRECATED and will be removed in a future version.
+        # They do NOT behave like the old buttons:
+        #   - isEnabled() returns dropdown visibility, NOT menu action state
+        #   - setEnabled() affects the dropdown, NOT individual actions
         # 
-        # BEHAVIOR DIFFERENCE (BREAKING CHANGE):
-        #   OLD: self.update_button.isEnabled() checked the actual update action
-        #   NEW: self.update_button.isEnabled() returns dropdown button's state
+        # MIGRATION: Use the new card-based API instead:
+        #   - Check action state:  card.split_button.is_action_enabled("update")
+        #   - Set action state:    card.set_action_enabled("update", True/False)
+        #   - Primary button:      card.split_button.primary_button
         # 
-        # CORRECT USAGE for action state:
-        #   - Check state:  card.split_button.is_action_enabled("update")
-        #   - Set state:    card.set_action_enabled("update", True/False)
-        # 
-        # These legacy references are kept for compatibility with existing tests
-        # and code that only checks widget visibility, not action state.
+        # These references are kept temporarily for backward compatibility with tests.
         self.update_button = self.urls_card.split_button.dropdown_button
         self.update_authors_button = self.authors_card.split_button.dropdown_button
         self.update_publisher_button = self.publisher_card.split_button.dropdown_button
@@ -917,7 +915,11 @@ class MainWindow(QMainWindow):
             # Read first line to detect CSV type
             with open(file_path, 'r', encoding='utf-8') as f:
                 reader = csv.reader(f)
-                header = next(reader, None)
+                try:
+                    header = next(reader, None)
+                except csv.Error as csv_err:
+                    self._log(f"[FEHLER] Ungültiges CSV-Format: {str(csv_err)}")
+                    return
             
             if header is None:
                 self._log("[FEHLER] Leere CSV-Datei")

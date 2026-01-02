@@ -169,8 +169,13 @@ class CollapsibleSection(QWidget):
         
         if self._expanded:
             # When expanding, remove max height constraint at the end
-            self._animation.finished.connect(self._on_expand_finished)
+            # Set flag before connecting to ensure consistency even if connect fails
             self._expand_signal_connected = True
+            try:
+                self._animation.finished.connect(self._on_expand_finished)
+            except Exception:
+                self._expand_signal_connected = False
+                raise
         
         self._animation.start()
     
