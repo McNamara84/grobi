@@ -8,7 +8,6 @@ import requests
 INPUT_FILE = "dois_unique.csv"
 OUTPUT_DIR = "scholexplorer_responses"
 
-# wie im Browser-Beispiel, nur ohne hardcodierten DOI
 BASE_URL = "https://api-beta.scholexplorer.openaire.eu/v3/Links"
 
 
@@ -43,7 +42,6 @@ def fetch_for_target_pid(doi: str):
 
 
 def safe_filename_from_doi(doi: str) -> str:
-    # einfache Variante: Sonderzeichen ersetzen
     return doi.replace("/", "_").replace(":", "_")
 
 
@@ -64,12 +62,11 @@ def main():
                 json.dump(data, f, ensure_ascii=False, indent=2)
             print(f"  -> gespeichert in {out_path}")
         else:
-            # auch Fehlerfälle protokollieren, damit du sie später sehen kannst
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump({"error": True}, f)
             print(f"  -> Fehler, Platzhalter-JSON in {out_path}")
 
-        time.sleep(0.3)  # kleine Pause für die API
+        time.sleep(0.3)
 
     print("Fertig.")
 
