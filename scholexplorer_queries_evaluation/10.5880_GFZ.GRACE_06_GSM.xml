@@ -1,0 +1,138 @@
+<resource xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://datacite.org/schema/kernel-4" xsi:schemaLocation="http://datacite.org/schema/kernel-4 http://schema.datacite.org/meta/kernel-4.3/metadata.xsd">
+    <identifier identifierType="DOI">10.5880/GFZ.GRACE_06_GSM</identifier>
+    <creators>
+     <creator>
+      <creatorName nameType="Personal">Dahle, Christoph</creatorName>
+      <givenName>Christoph</givenName>
+      <familyName>Dahle</familyName>
+      <nameIdentifier nameIdentifierScheme="ORCID">0000-0002-4733-9242</nameIdentifier>
+      <affiliation affiliationIdentifier="0000-0002-4733-9242" affiliationIdentifierScheme="ORCID">GFZ German Research Centre for Geosciences, Potsdam, Germany</affiliation>
+     </creator>
+     <creator>
+      <creatorName nameType="Personal">Flechtner, Frank</creatorName>
+      <givenName>Frank</givenName>
+      <familyName>Flechtner</familyName>
+      <nameIdentifier nameIdentifierScheme="ORCID">0000-0002-3093-5558</nameIdentifier>
+      <affiliation affiliationIdentifier="0000-0002-3093-5558" affiliationIdentifierScheme="ORCID">GFZ German Research Centre for Geosciences, Potsdam, Germany</affiliation>
+     </creator>
+     <creator>
+      <creatorName nameType="Personal">Murböck, Michael</creatorName>
+      <givenName>Michael</givenName>
+      <familyName>Murböck</familyName>
+      <nameIdentifier nameIdentifierScheme="ORCID">0000-0002-4108-578X</nameIdentifier>
+      <affiliation affiliationIdentifier="0000-0002-4108-578X" affiliationIdentifierScheme="ORCID">GFZ German Research Centre for Geosciences, Potsdam, Germany</affiliation>
+     </creator>
+     <creator>
+      <creatorName nameType="Personal">Michalak, Grzegorz</creatorName>
+      <givenName>Grzegorz</givenName>
+      <familyName>Michalak</familyName>
+      <nameIdentifier nameIdentifierScheme="ORCID">0000-0002-1925-8824</nameIdentifier>
+      <affiliation affiliationIdentifier="0000-0002-1925-8824" affiliationIdentifierScheme="ORCID">GFZ German Research Centre for Geosciences, Potsdam, Germany</affiliation>
+     </creator>
+     <creator>
+      <creatorName nameType="Personal">Neumayer, Hans</creatorName>
+      <givenName>Hans</givenName>
+      <familyName>Neumayer</familyName>
+      <affiliation affiliationIdentifier="" affiliationIdentifierScheme="">GFZ German Research Centre for Geosciences, Potsdam, Germany</affiliation>
+     </creator>
+     <creator>
+      <creatorName nameType="Personal">Abrykosov, Oleh</creatorName>
+      <givenName>Oleh</givenName>
+      <familyName>Abrykosov</familyName>
+      <nameIdentifier nameIdentifierScheme="ORCID">0000-0003-1463-412X</nameIdentifier>
+      <affiliation affiliationIdentifier="0000-0003-1463-412X" affiliationIdentifierScheme="ORCID">GFZ German Research Centre for Geosciences, Potsdam, Germany</affiliation>
+     </creator>
+     <creator>
+      <creatorName nameType="Personal">Reinhold, Anton</creatorName>
+      <givenName>Anton</givenName>
+      <familyName>Reinhold</familyName>
+      <affiliation affiliationIdentifier="" affiliationIdentifierScheme="">GFZ German Research Centre for Geosciences, Potsdam, Germany</affiliation>
+     </creator>
+     <creator>
+      <creatorName nameType="Personal">König, Rolf</creatorName>
+      <givenName>Rolf</givenName>
+      <familyName>König</familyName>
+      <nameIdentifier nameIdentifierScheme="ORCID">0000-0002-7155-6976</nameIdentifier>
+      <affiliation affiliationIdentifier="0000-0002-7155-6976" affiliationIdentifierScheme="ORCID">GFZ German Research Centre for Geosciences, Potsdam, Germany</affiliation>
+     </creator>
+    </creators>
+    <titles>
+     <title>GRACE Geopotential GSM Coefficients GFZ RL06</title>
+    </titles>
+    <publisher>GFZ Data Services</publisher>
+    <publicationYear>2018</publicationYear>
+    <subjects>
+     <subject>Gravity Recovery And Climate Experiment (GRACE)</subject>
+     <subject>Level-2</subject>
+     <subject>SHM</subject>
+     <subject>Spherical Harmonic Model</subject>
+     <subject>Gravitational Field</subject>
+     <subject>GSM</subject>
+     <subject>Geopotential</subject>
+     <subject>Gravity Field</subject>
+     <subject>Mass</subject>
+     <subject>Mass Transport</subject>
+     <subject>Total Water Storage</subject>
+     <subject>Time Variable Gravity</subject>
+     <subject>Mass Balance</subject>
+     <subject>Gravity Anomaly</subject>
+     <subject>Satellite Geodesy</subject>
+     <subject subjectScheme="GCMD Platforms">Earth Observation Satellites &gt; NASA Earth System Science Pathfinder &gt; GRACE</subject>
+     <subject subjectScheme="GCMD Instruments">Earth Remote Sensing Instruments &gt; Passive Remote Sensing &gt; Magnetic/Motion Sensors &gt; Accelerometers &gt; GRACE ACC</subject>
+     <subject subjectScheme="NASA/GCMD Earth Science Keywords">EARTH SCIENCE &gt; SOLID EARTH &gt; GRAVITY/GRAVITATIONAL FIELD &gt; GRAVITATIONAL FIELD</subject>
+     <subject subjectScheme="NASA/GCMD Earth Science Keywords">EARTH SCIENCE &gt; SOLID EARTH &gt; GRAVITY/GRAVITATIONAL FIELD &gt; GRAVITY</subject>
+    </subjects>
+    <contributors>
+     <contributor contributorType="HostingInstitution">
+      <contributorName>GRACE Science Data System</contributorName>
+      <affiliation affiliationIdentifier="" affiliationIdentifierScheme="">GFZ German Research Centre for Geosciences, Potsdam, Germany</affiliation>
+     </contributor>
+     <contributor contributorType="ContactPerson">
+      <contributorName>Dahle, Christoph</contributorName>
+      <affiliation affiliationIdentifier="" affiliationIdentifierScheme="">GFZ German Research Centre for Geosciences, Potsdam, Germany</affiliation>
+     </contributor>
+    </contributors>
+    <dates>
+     <date dateType="Created">2018-08-02</date>
+     <date dateType="Collected">2002-04/2017-06</date>
+     <date dateType="Collected">2002-04/2017-06</date>
+     <date dateType="Collected">2002-04/2017-06</date>
+     <date dateType="Collected">2002-04/2017-06</date>
+    </dates>
+    <resourceType resourceTypeGeneral="Dataset">Dataset</resourceType>
+    <relatedIdentifiers>
+     <relatedIdentifier relatedIdentifierType="DOI" relationType="IsDocumentedBy">10.3390/rs11182116</relatedIdentifier>
+     <relatedIdentifier relatedIdentifierType="DOI" relationType="IsDocumentedBy">10.2312/GFZ.b103-18048</relatedIdentifier>
+     <relatedIdentifier relatedIdentifierType="URL" relationType="IsDocumentedBy">https://isdc-data.gfz.de/grace/DOCUMENTS/RELEASE_NOTES/GRACE_GFZ_L2_Release_Notes_for_RL06.pdf</relatedIdentifier>
+     <relatedIdentifier relatedIdentifierType="URL" relationType="IsDocumentedBy">https://isdc-data.gfz.de/grace/DOCUMENTS/Level-2/GRACE_L2_Gravity_Field_Product_User_Handbook_v4.0.pdf</relatedIdentifier>
+     <relatedIdentifier relatedIdentifierType="DOI" relationType="HasPart">10.5880/GFZ.GRACE_06_GAA</relatedIdentifier>
+     <relatedIdentifier relatedIdentifierType="DOI" relationType="HasPart">10.5880/GFZ.GRACE_06_GAB</relatedIdentifier>
+     <relatedIdentifier relatedIdentifierType="DOI" relationType="HasPart">10.5880/GFZ.GRACE_06_GAC</relatedIdentifier>
+     <relatedIdentifier relatedIdentifierType="DOI" relationType="HasPart">10.5880/GFZ.GRACE_06_GAD</relatedIdentifier>
+     <relatedIdentifier relatedIdentifierType="DOI" relationType="IsContinuedBy">10.5880/GFZ.GRACEFO_06_GSM</relatedIdentifier>
+     <relatedIdentifier relatedIdentifierType="DOI" relationType="IsCitedBy">10.1038/s43247-020-0010-1</relatedIdentifier>
+     <relatedIdentifier relatedIdentifierType="DOI" relationType="IsPartOf">10.5880/COST-G.ICGEM_02_L2</relatedIdentifier>
+     <relatedIdentifier relatedIdentifierType="DOI" relationType="IsPartOf">10.5880/ICGEM.COST-G.001</relatedIdentifier>
+     <relatedIdentifier relatedIdentifierType="DOI" relationType="IsSourceOf">10.5880/GFZ.GRAVIS_06_L2B</relatedIdentifier>
+    </relatedIdentifiers>
+    <sizes/>
+    <formats/>
+    <version>6.0</version>
+    <rightsList>
+     <rights rightsURI="http://creativecommons.org/licenses/by/4.0/">CC BY 4.0</rights>
+    </rightsList>
+    <descriptions>
+     <description descriptionType="Abstract">Spherical harmonic coefficients representing an estimate of Earth's mean gravity field during the specified timespan derived from GRACE mission measurements. These coefficients represent the full magnitude of land hydrology, ice, and solid Earth processes. Further, they represent atmospheric and oceanic processes not captured in the accompanying GAC product.      <br/>
+     </description>
+    </descriptions>
+    <geoLocations>
+     <geoLocation>
+      <geoLocationBox>
+       <westBoundLongitude>-180</westBoundLongitude>
+       <eastBoundLongitude>180</eastBoundLongitude>
+       <southBoundLatitude>-90</southBoundLatitude>
+       <northBoundLatitude>90</northBoundLatitude>
+      </geoLocationBox>
+     </geoLocation>
+    </geoLocations>
+   </resource>
