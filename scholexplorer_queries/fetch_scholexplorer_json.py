@@ -1,6 +1,5 @@
 import csv
 import time
-import urllib.parse
 import json
 import os
 
