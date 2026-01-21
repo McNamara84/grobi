@@ -8,10 +8,12 @@ import requests
 INPUT_FILE = "dois_unique.csv"
 OUTPUT_DIR = "scholexplorer_responses"
 
+# ScholeXplorer API endpoint
 BASE_URL = "https://api-beta.scholexplorer.openaire.eu/v3/Links"
 
 
 def load_dois(path: str):
+    """Load DOIs from CSV (expects a 'DOI' column)."""
     dois = []
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -23,6 +25,7 @@ def load_dois(path: str):
 
 
 def fetch_for_target_pid(doi: str):
+    """Fetch Scholix links for a given DOI via ScholeXplorer API."""
     params = {"targetPid": doi}
     try:
         resp = requests.get(BASE_URL, params=params, timeout=30)
@@ -42,10 +45,12 @@ def fetch_for_target_pid(doi: str):
 
 
 def safe_filename_from_doi(doi: str) -> str:
+    """Normalize DOI for file output without forbidden characters."""
     return doi.replace("/", "_").replace(":", "_")
 
 
 def main():
+    # Ensure output directory exists (for reproducibility)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     dois = load_dois(INPUT_FILE)
@@ -66,7 +71,7 @@ def main():
                 json.dump({"error": True}, f)
             print(f"  -> Fehler, Platzhalter-JSON in {out_path}")
 
-        time.sleep(0.3)
+        time.sleep(0.3)  # Gentle throttling to avoid API rate limits
 
     print("Fertig.")
 
