@@ -30,15 +30,15 @@ class TestKeyboardShortcuts:
     """Tests for keyboard shortcuts functionality."""
     
     def test_shortcuts_are_registered(self, main_window):
-        """Test that all 8 shortcuts are properly registered."""
+        """Test that all 9 shortcuts are properly registered."""
         assert hasattr(main_window, '_shortcuts')
-        assert len(main_window._shortcuts) == 8
+        assert len(main_window._shortcuts) == 9
     
     def test_shortcuts_have_correct_key_sequences(self, main_window):
         """Test that shortcuts have correct key sequences."""
         expected_shortcuts = [
             "Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4",
-            "Ctrl+5", "Ctrl+6", "Ctrl+7", "Ctrl+8"
+            "Ctrl+5", "Ctrl+6", "Ctrl+7", "Ctrl+8", "Ctrl+9"
         ]
         
         actual_shortcuts = [s.key().toString() for s in main_window._shortcuts]
@@ -57,6 +57,15 @@ class TestKeyboardShortcuts:
         # These should not be in the card shortcuts
         assert "Ctrl+," not in card_keys
         assert "Ctrl+Shift+S" not in card_keys
+
+
+class TestDeadLinksCard:
+    """Tests for Dead Links card."""
+
+    def test_dead_links_card_exists(self, main_window):
+        """Test that the dead links card is present."""
+        assert hasattr(main_window, 'dead_links_card')
+        assert main_window.dead_links_card is not None
 
 
 class TestDragAndDrop:
