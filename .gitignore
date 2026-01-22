@@ -220,3 +220,5 @@ desktop.ini
 # Results
 *.csv
 nuitka-crash-report.xml
+
+env
