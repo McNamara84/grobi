@@ -440,6 +440,10 @@ class MainWindow(QMainWindow):
         # Thread and worker for download URL update
         self.download_url_update_thread = None
         self.download_url_update_worker = None
+
+        # Thread and worker for dead link checks
+        self.dead_links_thread = None
+        self.dead_links_worker = None
         
         # Thread and worker for DOI rights fetch
         self.rights_thread = None
@@ -732,6 +736,22 @@ class MainWindow(QMainWindow):
         )
         self.fuji_card.primary_clicked.connect(self._on_fuji_check_clicked)
         tools_flow.addWidget(self.fuji_card)
+
+        # Card 9: Dead Links Check
+        self.dead_links_card = ActionCard(
+            icon="🧪",
+            title="Dead Links",
+            description="404-Links aus SUMARIOPMD finden",
+            primary_text="🔍 Prüfen"
+        )
+        self.dead_links_card.set_status("Bereit zum Prüfen", is_ready=True)
+        self.dead_links_card.setToolTip(
+            "Prüft alle contentUrl-Links aus der SUMARIOPMD-Datenbank\n"
+            "auf HTTP 404 und exportiert Treffer als CSV.\n\n"
+            "Tastenkürzel: Ctrl+9"
+        )
+        self.dead_links_card.primary_clicked.connect(self._on_check_dead_links_clicked)
+        tools_flow.addWidget(self.dead_links_card)
         
         self.tools_section.set_content_layout(tools_flow)
         content_layout.addWidget(self.tools_section)
@@ -811,6 +831,7 @@ class MainWindow(QMainWindow):
         self.export_download_urls_btn = self.downloads_card.split_button.primary_button
         self.export_pending_btn = self.pending_card.split_button.primary_button
         self.fuji_check_btn = self.fuji_card.split_button.primary_button
+        self.dead_links_check_btn = self.dead_links_card.split_button.primary_button
         
         # DEPRECATED LEGACY REFERENCES - BREAKING CHANGE in v2.0
         # These dropdown button references are DEPRECATED and will be removed in a future version.
@@ -840,7 +861,7 @@ class MainWindow(QMainWindow):
     
     def _setup_keyboard_shortcuts(self):
         """Set up keyboard shortcuts for quick card access."""
-        # Ctrl+1 to Ctrl+8 for cards
+        # Ctrl+1 to Ctrl+9 for cards
         shortcuts = [
             ("Ctrl+1", self._on_load_dois_clicked, "Landing Page URLs exportieren"),
             ("Ctrl+2", self._on_load_authors_clicked, "Autoren exportieren"),
@@ -850,6 +871,7 @@ class MainWindow(QMainWindow):
             ("Ctrl+6", self._on_export_download_urls_clicked, "Download-URLs exportieren"),
             ("Ctrl+7", self._on_export_pending_clicked, "Pending DOIs exportieren"),
             ("Ctrl+8", self._on_fuji_check_clicked, "F-UJI Check starten"),
+            ("Ctrl+9", self._on_check_dead_links_clicked, "Dead Links prüfen"),
         ]
         
         self._shortcuts = []  # Keep references to prevent garbage collection
@@ -1258,6 +1280,7 @@ class MainWindow(QMainWindow):
         self.downloads_card.setEnabled(enabled)
         self.pending_card.setEnabled(enabled)
         self.fuji_card.setEnabled(enabled)
+        self.dead_links_card.setEnabled(enabled)
     
     def _format_error_list(self, items: list, max_items: int = 10, bullet: str = "") -> str:
         """
@@ -3651,6 +3674,151 @@ class MainWindow(QMainWindow):
         self.download_url_update_thread = None
         self.download_url_update_worker = None
         
+        self._log("Bereit für nächsten Vorgang.")
+
+    # =========================================================================
+    # Dead Links Check Methods
+    # =========================================================================
+
+    def _on_check_dead_links_clicked(self):
+        """Handle dead links check button click."""
+        # Check if database is configured
+        settings = QSettings("GFZ", "GROBI")
+        db_enabled = settings.value("database/enabled", False, type=bool)
+
+        if not db_enabled:
+            QMessageBox.warning(
+                self,
+                "Datenbank nicht konfiguriert",
+                "Die Datenbank-Verbindung ist nicht aktiviert.\n\n"
+                "Bitte konfiguriere die Datenbank-Verbindung in den Einstellungen "
+                "(Einstellungen → Datenbank-Verbindung)."
+            )
+            return
+
+        from src.utils.credential_manager import load_db_credentials
+
+        db_creds = load_db_credentials()
+        if not db_creds:
+            QMessageBox.warning(
+                self,
+                "Keine DB-Credentials",
+                "Keine Datenbank-Zugangsdaten gespeichert.\n\n"
+                "Bitte konfiguriere die Datenbank in den Einstellungen."
+            )
+            return
+
+        self._start_dead_links_check(db_creds)
+
+    def _start_dead_links_check(self, db_creds: dict):
+        """Start worker to check dead download links in database."""
+        self._log("Starte Dead-Link-Check...")
+
+        from src.workers.dead_links_check_worker import DeadLinksCheckWorker
+
+        self.dead_links_worker = DeadLinksCheckWorker(
+            db_host=db_creds['host'],
+            db_name=db_creds['database'],
+            db_user=db_creds['username'],
+            db_password=db_creds['password']
+        )
+
+        self.dead_links_worker.progress_update.connect(self._on_dead_links_check_progress)
+        self.dead_links_worker.finished.connect(self._on_dead_links_check_finished)
+        self.dead_links_worker.error_occurred.connect(self._on_dead_links_check_error)
+
+        self.dead_links_thread = QThread()
+        self.dead_links_worker.moveToThread(self.dead_links_thread)
+
+        self.dead_links_thread.started.connect(self.dead_links_worker.run)
+        self.dead_links_worker.finished.connect(self.dead_links_thread.quit)
+        self.dead_links_worker.error_occurred.connect(self.dead_links_thread.quit)
+
+        self.dead_links_worker.finished.connect(self.dead_links_worker.deleteLater)
+        self.dead_links_worker.error_occurred.connect(self.dead_links_worker.deleteLater)
+
+        self.dead_links_thread.finished.connect(self.dead_links_thread.deleteLater)
+        self.dead_links_thread.finished.connect(self._cleanup_dead_links_worker)
+
+        self.dead_links_thread.start()
+
+        self.dead_links_check_btn.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setMaximum(0)
+
+    def _on_dead_links_check_progress(self, current: int, total: int, message: str):
+        """Handle progress updates from dead link check worker."""
+        if total > 0:
+            self.progress_bar.setMaximum(total)
+            self.progress_bar.setValue(current)
+        self._log(message)
+
+    def _on_dead_links_check_finished(
+        self,
+        dead_links: list,
+        checked_count: int,
+        skipped_count: int,
+        error_count: int
+    ):
+        """Handle dead link check completion."""
+        from PySide6.QtWidgets import QFileDialog
+        from src.utils.csv_exporter import export_dead_links_to_csv
+
+        self._log(
+            f"[OK] Dead-Link-Check abgeschlossen: {checked_count} geprüft, "
+            f"{len(dead_links)} mit 404"
+        )
+
+        if self._current_username:
+            default_filename = f"{self._current_username}_dead_links.csv"
+        else:
+            default_filename = "dead_links.csv"
+
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "CSV-Datei speichern",
+            default_filename,
+            "CSV Files (*.csv)"
+        )
+
+        if filepath:
+            try:
+                export_dead_links_to_csv(dead_links, filepath)
+                self._log(f"[OK] CSV-Datei gespeichert: {filepath}")
+                QMessageBox.information(
+                    self,
+                    "Check abgeschlossen",
+                    f"Dead-Link-Check abgeschlossen:\n\n"
+                    f"Geprüft: {checked_count}\n"
+                    f"404 gefunden: {len(dead_links)}\n"
+                    f"Übersprungen: {skipped_count}\n"
+                    f"Fehler: {error_count}\n\n"
+                    f"Datei: {Path(filepath).name}"
+                )
+            except Exception as e:
+                self._log(f"[FEHLER] CSV-Export fehlgeschlagen: {e}")
+                QMessageBox.critical(
+                    self,
+                    "Fehler",
+                    f"CSV-Export fehlgeschlagen:\n{e}"
+                )
+        else:
+            self._log("Dead-Link-Check abgeschlossen (kein Export gewählt).")
+
+    def _on_dead_links_check_error(self, error_msg: str):
+        """Handle dead link check error."""
+        self._log(f"[FEHLER] {error_msg}")
+        QMessageBox.critical(self, "Fehler", error_msg)
+
+    def _cleanup_dead_links_worker(self):
+        """Clean up dead link check worker and thread."""
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setMaximum(0)
+        self.dead_links_check_btn.setEnabled(True)
+
+        self.dead_links_thread = None
+        self.dead_links_worker = None
+
         self._log("Bereit für nächsten Vorgang.")
     
     # =========================================================================

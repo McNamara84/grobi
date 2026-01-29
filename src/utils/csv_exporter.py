@@ -456,6 +456,51 @@ def export_dois_download_urls(
         raise CSVExportError(error_msg)
 
 
+def export_dead_links_to_csv(
+    dead_links: List[Tuple[str, str]],
+    filepath: str
+) -> None:
+    """
+    Export dead download links (HTTP 404) to CSV.
+
+    Args:
+        dead_links: List of (DOI, URL) tuples
+        filepath: Output CSV file path
+
+    Raises:
+        CSVExportError: If file cannot be written
+    """
+    logger.info(f"Exporting {len(dead_links)} dead links to {filepath}")
+
+    try:
+        with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+
+            # Header
+            writer.writerow(['DOI', 'URL'])
+
+            # Data rows
+            for doi, url in dead_links:
+                writer.writerow([doi, url])
+
+        logger.info(f"Successfully exported {len(dead_links)} dead links to {filepath}")
+
+    except PermissionError as e:
+        error_msg = f"Keine Berechtigung zum Schreiben der Datei: {filepath}"
+        logger.error(f"Permission error writing file: {e}")
+        raise CSVExportError(error_msg)
+
+    except OSError as e:
+        error_msg = f"Die CSV-Datei konnte nicht gespeichert werden: {str(e)}"
+        logger.error(f"OS error writing file: {e}")
+        raise CSVExportError(error_msg)
+
+    except Exception as e:
+        error_msg = f"Unerwarteter Fehler beim Speichern der CSV-Datei: {str(e)}"
+        logger.error(f"Unexpected error: {e}")
+        raise CSVExportError(error_msg)
+
+
 def validate_csv_format(filepath: str) -> bool:
     """
     Validate that a CSV file has the correct format.

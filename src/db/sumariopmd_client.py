@@ -1048,7 +1048,7 @@ class SumarioPMDClient:
             logger.error(f"Database error fetching files for resource_id {resource_id}: {e}")
             raise DatabaseError(f"Failed to fetch files: {e}") from e
     
-    def fetch_all_dois_with_downloads(self) -> List[Tuple[str, str, str, str, int]]:
+    def fetch_all_dois_with_downloads(self) -> List[Tuple[str, str, str, str, str, int]]:
         """
         Fetch all DOIs with their download URLs from file table.
         
@@ -1056,7 +1056,7 @@ class SumarioPMDClient:
         
         Returns:
             List of tuples containing:
-            (DOI, Filename, Download_URL, Format, Size_Bytes)
+            (DOI, Filename, Download_URL, Description, Format, Size_Bytes)
             
         Raises:
             DatabaseError: If query fails

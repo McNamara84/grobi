@@ -11,6 +11,7 @@ from src.utils.csv_exporter import (
     export_dois_to_csv,
     export_dois_with_creators_to_csv,
     export_dois_with_publisher_to_csv,
+    export_dead_links_to_csv,
     validate_csv_format,
     CSVExportError
 )
@@ -145,14 +146,14 @@ class TestExportDOIsToCSV:
         # Only header should be present
         assert len(rows) == 1
         assert rows[0] == ['DOI', 'Landing_Page_URL']
-    
+
     def test_default_output_dir(self, sample_dois):
         """Test export to current working directory when output_dir is None."""
         username = "TEST.USER"
-        
+
         # Export to current directory
         filepath = export_dois_to_csv(sample_dois, username, output_dir=None)
-        
+
         try:
             # Should create file in current directory
             assert os.path.exists(filepath)
@@ -234,6 +235,64 @@ class TestExportDOIsToCSV:
         assert isinstance(filepath, str)
         assert filepath.endswith(f"{username}_urls.csv")
         assert os.path.isabs(filepath)
+
+
+class TestExportDeadLinksToCSV:
+    """Test CSV export for dead links."""
+
+    def test_export_dead_links_success(self, temp_dir):
+        """Test successful export of dead links to CSV."""
+        data = [
+            ("10.5880/GFZ.1", "https://example.org/a"),
+            ("10.5880/GFZ.2", "https://example.org/b")
+        ]
+
+        filepath = Path(temp_dir) / "dead_links.csv"
+        export_dead_links_to_csv(data, str(filepath))
+
+        assert filepath.exists()
+
+        with open(filepath, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+        assert rows[0] == ["DOI", "URL"]
+        assert rows[1] == ["10.5880/GFZ.1", "https://example.org/a"]
+        assert rows[2] == ["10.5880/GFZ.2", "https://example.org/b"]
+
+    def test_export_dead_links_empty(self, temp_dir):
+        """Test export with empty dead links list."""
+        filepath = Path(temp_dir) / "dead_links.csv"
+        export_dead_links_to_csv([], str(filepath))
+
+        assert filepath.exists()
+
+        with open(filepath, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+        assert rows[0] == ["DOI", "URL"]
+        assert len(rows) == 1
+
+    def test_export_dead_links_permission_error(self, temp_dir):
+        """Test handling of permission errors when writing file."""
+        data = [("10.5880/GFZ.1", "https://example.org/a")]
+
+        with patch('builtins.open', side_effect=PermissionError("No write permission")):
+            with pytest.raises(CSVExportError) as exc_info:
+                export_dead_links_to_csv(data, str(Path(temp_dir) / "dead_links.csv"))
+
+            assert "Berechtigung" in str(exc_info.value) or "Schreiben" in str(exc_info.value)
+
+    def test_export_dead_links_os_error(self, temp_dir):
+        """Test handling of OS errors when writing file."""
+        data = [("10.5880/GFZ.1", "https://example.org/a")]
+
+        with patch('builtins.open', side_effect=OSError("Disk full")):
+            with pytest.raises(CSVExportError) as exc_info:
+                export_dead_links_to_csv(data, str(Path(temp_dir) / "dead_links.csv"))
+
+            assert "CSV-Datei konnte nicht gespeichert werden" in str(exc_info.value)
 
 
 class TestExportDOIsWithCreatorsToCSV:
