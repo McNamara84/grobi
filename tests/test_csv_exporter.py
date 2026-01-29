@@ -274,6 +274,26 @@ class TestExportDeadLinksToCSV:
         assert rows[0] == ["DOI", "URL"]
         assert len(rows) == 1
 
+    def test_export_dead_links_permission_error(self, temp_dir):
+        """Test handling of permission errors when writing file."""
+        data = [("10.5880/GFZ.1", "https://example.org/a")]
+
+        with patch('builtins.open', side_effect=PermissionError("No write permission")):
+            with pytest.raises(CSVExportError) as exc_info:
+                export_dead_links_to_csv(data, str(Path(temp_dir) / "dead_links.csv"))
+
+            assert "Berechtigung" in str(exc_info.value) or "Schreiben" in str(exc_info.value)
+
+    def test_export_dead_links_os_error(self, temp_dir):
+        """Test handling of OS errors when writing file."""
+        data = [("10.5880/GFZ.1", "https://example.org/a")]
+
+        with patch('builtins.open', side_effect=OSError("Disk full")):
+            with pytest.raises(CSVExportError) as exc_info:
+                export_dead_links_to_csv(data, str(Path(temp_dir) / "dead_links.csv"))
+
+            assert "CSV-Datei konnte nicht gespeichert werden" in str(exc_info.value)
+
 
 class TestExportDOIsWithCreatorsToCSV:
     """Test CSV export functionality for DOIs with creators."""

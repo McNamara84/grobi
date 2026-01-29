@@ -740,7 +740,7 @@ class MainWindow(QMainWindow):
         # Card 9: Dead Links Check
         self.dead_links_card = ActionCard(
             icon="🧪",
-            title="Check Dead Links",
+            title="Dead Links",
             description="404-Links aus SUMARIOPMD finden",
             primary_text="🔍 Prüfen"
         )
