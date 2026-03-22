@@ -1,0 +1,53 @@
+=== Vergleich für
+  XML : 10.5880_GFZ.GRACE_06_GSM.xml
+  JSON: 10.5880_GFZ.GRACE_06_GSM.json
+
+Anzahl DOIs in XML (alle relatedIdentifier mit DOI): 11
+Anzahl DOIs in JSON (alle source/target DOIs): 36
+
+DOIs NUR in JSON (fehlen in XML): 29
+  + 10.1007/s00190-022-01651-8
+  + 10.1007/s40328-024-00446-x
+  + 10.1016/j.gloplacha.2023.104245
+  + 10.1029/2020jb020923
+  + 10.1029/2023jb026553
+  + 10.1038/s41597-021-00862-6
+  + 10.1093/gji/ggad437
+  + 10.1186/s40645-024-00608-z
+  + 10.17169/refubium-25562
+  + 10.18419/opus-11584
+  + 10.23689/fidgeo-4098
+  + 10.3389/fenvs.2020.584690
+  + 10.3390/rs12203359
+  + 10.3390/rs14184442
+  + 10.3929/ethz-b-000646187
+  + 10.48350/193577
+  + 10.5194/hess-2022-43
+  + 10.5194/hess-26-4515-2022
+  + 10.5194/hess-27-3743-2023
+  + 10.5285/8e5f910b-11d6-4a9d-bdf7-175c9b98cfb8
+  + 10.5285/bc870f9e-4200-4ae2-8db0-6cb80b870c09
+  + 10.5285/e6621111-5965-44df-b40c-125f466ceb5c
+  + 10.5445/ir/1000171404
+  + 10.5880/fidgeo.2020.045
+  + 10.5880/gfz.4.1.2020.011
+  + 10.5880/gfz.grace_06_gsm
+  + 10.5880/gfz.gravis_06_c20_slr
+  + 10.5880/icgem.2020.001
+  + 10.5880/icgem.cost-g.002
+
+DOIs NUR in XML (nicht in JSON): 4
+  - 10.1038/s43247-020-0010-1
+  - 10.5880/cost-g.icgem_02_l2
+  - 10.5880/gfz.gravis_06_l2b
+  - 10.5880/icgem.cost-g.001
+
+DOIs in BEIDEN Quellen: 7
+  = 10.2312/gfz.b103-18048
+  = 10.3390/rs11182116
+  = 10.5880/gfz.grace_06_gaa
+  = 10.5880/gfz.grace_06_gab
+  = 10.5880/gfz.grace_06_gac
+  = 10.5880/gfz.grace_06_gad
+  = 10.5880/gfz.gracefo_06_gsm
+
