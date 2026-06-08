@@ -83,7 +83,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install -r requirements-dev.txt
-        pip install coverage-badge==1.1.2
     
     - name: Run tests and generate coverage
       env:
@@ -93,7 +92,7 @@ jobs:
     
     - name: Generate coverage badge
       run: |
-        coverage-badge -o coverage.svg -f
+        python scripts/generate_coverage_badge.py coverage.json coverage.svg
     
     - name: Upload coverage badge as artifact
       uses: actions/upload-artifact@v7
