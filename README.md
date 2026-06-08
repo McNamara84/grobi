@@ -2,7 +2,7 @@
 
 ![Tests](https://github.com/McNamara84/grobi/workflows/Tests/badge.svg)
 [![codecov](https://codecov.io/gh/McNamara84/grobi/branch/main/graph/badge.svg)](https://codecov.io/gh/McNamara84/grobi)
-![Python](https://img.shields.io/badge/python-3.10%20|%203.11%20|%203.12%20|%203.13-blue)
+![Python](https://img.shields.io/badge/python-3.14-blue)
 ![License](https://img.shields.io/badge/license-GPLv3-green)
 
 **G**FZ **R**esearch Data Repository **O**perations & **B**atch **I**nterface
@@ -97,7 +97,7 @@ For developers who want to run from source code:
 
 ### Requirements
 
-- Python 3.10 or higher
+- Python 3.14
 - Windows 11 (recommended for optimal appearance)
 
 ### Steps
@@ -857,9 +857,9 @@ Holger Ehrmann, GFZ Data Services, GFZ Helmholtz Centre for Geosciences
 
 ## Built With
 
-- Python 3.10+ (Developed and tested with Python 3.13)
-  - **Note:** Release executables are built with Python 3.12 for better MSVC compatibility and stable Nuitka support
+- Python 3.14 (Developed, tested, and built with Python 3.14)
+  - **Note:** Release executables are built with Python 3.14 and Nuitka 4.x
 - PySide6 (Qt6) - Modern GUI framework
-- keyring >=24.3.0 - Secure credential storage with Windows Credential Manager
+- keyring >=25.7.0 - Secure credential storage with Windows Credential Manager
 - DataCite REST API v2 - DOI metadata management
 

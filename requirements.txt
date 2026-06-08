@@ -1,14 +1,14 @@
 # GROBI - Production Dependencies
 
 # GUI Framework
-PySide6>=6.6.0
+PySide6>=6.11.1
 
 # HTTP Requests
-requests>=2.31.0
+requests>=2.34.2
 
 # Secure Credential Storage
-keyring>=24.3.0
+keyring>=25.7.0
 
 # Database Connection (optional, for GFZ-internal database sync)
 # Using PyMySQL instead of mysql-connector-python for better Nuitka compatibility
-PyMySQL>=1.1.0
+PyMySQL>=1.2.0

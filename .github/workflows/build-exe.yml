@@ -18,22 +18,20 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
     
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
-        # Python 3.12 for releases: better MSVC compatibility and stable Nuitka support
-        # Development uses 3.13 for latest features and testing
-        python-version: '3.12'
+        python-version: '3.14'
     
     - name: Cache pip dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~\AppData\Local\pip\Cache
-        key: ${{ runner.os }}-pip-3.12-${{ hashFiles('**/requirements*.txt') }}
+        key: ${{ runner.os }}-pip-3.14-${{ hashFiles('**/requirements*.txt') }}
         restore-keys: |
-          ${{ runner.os }}-pip-3.12-
+          ${{ runner.os }}-pip-3.14-
           ${{ runner.os }}-pip-
     
     - name: Install dependencies
@@ -118,7 +116,7 @@ jobs:
         Compress-Archive -Path dist-release\* -DestinationPath "GROBI-$version-Windows.zip"
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: GROBI-Windows-EXE
         path: |
@@ -128,7 +126,7 @@ jobs:
         retention-days: 90
     
     - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       if: startsWith(github.ref, 'refs/tags/') && startsWith(github.ref_name, 'v')
       with:
         files: |
