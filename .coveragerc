@@ -1,0 +1,8 @@
+[report]
+exclude_also =
+    # Standard executable module guard.
+    if __name__ == .__main__.:
+
+    # Raw SUMARIOPMD/MySQL connection path needs GFZ VPN in real use.
+    # Query/update logic remains covered through mocked connections.
+    def get_connection

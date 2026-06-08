@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch, MagicMock
 
 from src.db.sumariopmd_client import SumarioPMDClient, DatabaseError
 from src.utils.csv_exporter import export_pending_dois, CSVExportError
+from src.workers.pending_export_worker import PendingExportWorker
 
 
 class TestFetchPendingDois:
@@ -334,7 +335,6 @@ class TestPendingExportWorker:
     @patch('src.workers.pending_export_worker.SumarioPMDClient')
     def test_worker_emits_error_signal_on_db_error(self, mock_client_class):
         """Test that worker emits error signal on database error."""
-        from src.workers.pending_export_worker import PendingExportWorker
         from src.db.sumariopmd_client import ConnectionError
         
         # Setup mock to raise connection error
@@ -358,3 +358,177 @@ class TestPendingExportWorker:
         # Verify error signal
         assert len(errors) == 1
         assert "Datenbankverbindung" in errors[0] or "Connection" in errors[0]
+
+    @patch('src.workers.pending_export_worker.SumarioPMDClient')
+    def test_worker_cancels_before_database_client_creation(self, mock_client_class):
+        """Test cancellation immediately after the first progress signal."""
+        worker = PendingExportWorker(
+            db_host='test-host',
+            db_name='test-db',
+            db_user='test-user',
+            db_password='test-pass',
+            output_path='/tmp/test.csv'
+        )
+
+        progress_messages = []
+
+        def stop_after_first_progress(message):
+            progress_messages.append(message)
+            if "Verbindung" in message:
+                worker.stop()
+
+        worker.progress.connect(stop_after_first_progress)
+        worker.run()
+
+        assert "Export abgebrochen." in progress_messages
+        mock_client_class.assert_not_called()
+
+    @patch('src.workers.pending_export_worker.SumarioPMDClient')
+    def test_worker_emits_error_on_fetch_database_error(self, mock_client_class):
+        """Test database query errors while fetching pending DOIs."""
+        mock_client = MagicMock()
+        mock_client.fetch_pending_dois.side_effect = DatabaseError("Query failed")
+        mock_client_class.return_value = mock_client
+
+        worker = PendingExportWorker(
+            db_host='test-host',
+            db_name='test-db',
+            db_user='test-user',
+            db_password='test-pass',
+            output_path='/tmp/test.csv'
+        )
+
+        errors = []
+        worker.error.connect(errors.append)
+        worker.run()
+
+        assert len(errors) == 1
+        assert "Abrufen" in errors[0]
+
+    @patch('src.workers.pending_export_worker.SumarioPMDClient')
+    def test_worker_cancels_after_database_client_creation(self, mock_client_class):
+        """Test cancellation after DB client creation but before fetching."""
+        worker = PendingExportWorker(
+            db_host='test-host',
+            db_name='test-db',
+            db_user='test-user',
+            db_password='test-pass',
+            output_path='/tmp/test.csv'
+        )
+        mock_client = MagicMock()
+
+        def create_client_and_stop(*args, **kwargs):
+            worker.stop()
+            return mock_client
+
+        mock_client_class.side_effect = create_client_and_stop
+
+        progress_messages = []
+        worker.progress.connect(progress_messages.append)
+        worker.run()
+
+        assert "Export abgebrochen." in progress_messages
+        mock_client.fetch_pending_dois.assert_not_called()
+
+    @patch('src.workers.pending_export_worker.SumarioPMDClient')
+    def test_worker_finishes_with_zero_when_no_pending_dois(self, mock_client_class):
+        """Test empty pending DOI result emits finished with count zero."""
+        mock_client = MagicMock()
+        mock_client.fetch_pending_dois.return_value = []
+        mock_client_class.return_value = mock_client
+
+        worker = PendingExportWorker(
+            db_host='test-host',
+            db_name='test-db',
+            db_user='test-user',
+            db_password='test-pass',
+            output_path='/tmp/test.csv'
+        )
+
+        progress_messages = []
+        finished_data = []
+        worker.progress.connect(progress_messages.append)
+        worker.finished.connect(lambda path, count: finished_data.append((path, count)))
+        worker.run()
+
+        assert any("Keine pending DOIs" in message for message in progress_messages)
+        assert finished_data == [("", 0)]
+
+    @patch('src.workers.pending_export_worker.SumarioPMDClient')
+    @patch('src.workers.pending_export_worker.export_pending_dois')
+    def test_worker_cancels_before_csv_export(self, mock_export, mock_client_class):
+        """Test cancellation after fetching data but before writing CSV."""
+        mock_client = MagicMock()
+        mock_client.fetch_pending_dois.return_value = [
+            ('10.5880/test.001', 'Test Title', 'Doe, John')
+        ]
+        mock_client_class.return_value = mock_client
+
+        worker = PendingExportWorker(
+            db_host='test-host',
+            db_name='test-db',
+            db_user='test-user',
+            db_password='test-pass',
+            output_path='/tmp/test.csv'
+        )
+
+        progress_messages = []
+
+        def stop_when_data_found(message):
+            progress_messages.append(message)
+            if "pending DOIs gefunden" in message:
+                worker.stop()
+
+        worker.progress.connect(stop_when_data_found)
+        worker.run()
+
+        assert "Export abgebrochen." in progress_messages
+        mock_export.assert_not_called()
+
+    @patch('src.workers.pending_export_worker.SumarioPMDClient')
+    @patch('src.workers.pending_export_worker.export_pending_dois')
+    def test_worker_emits_error_on_csv_export_error(self, mock_export, mock_client_class):
+        """Test CSV export failures are reported via error signal."""
+        mock_client = MagicMock()
+        mock_client.fetch_pending_dois.return_value = [
+            ('10.5880/test.001', 'Test Title', 'Doe, John')
+        ]
+        mock_client_class.return_value = mock_client
+        mock_export.side_effect = CSVExportError("Disk full")
+
+        worker = PendingExportWorker(
+            db_host='test-host',
+            db_name='test-db',
+            db_user='test-user',
+            db_password='test-pass',
+            output_path='/tmp/test.csv'
+        )
+
+        errors = []
+        worker.error.connect(errors.append)
+        worker.run()
+
+        assert len(errors) == 1
+        assert "Speichern" in errors[0]
+
+    @patch('src.workers.pending_export_worker.SumarioPMDClient')
+    def test_worker_emits_error_on_unexpected_exception(self, mock_client_class):
+        """Test unexpected exceptions are caught and emitted."""
+        mock_client = MagicMock()
+        mock_client.fetch_pending_dois.side_effect = RuntimeError("unexpected")
+        mock_client_class.return_value = mock_client
+
+        worker = PendingExportWorker(
+            db_host='test-host',
+            db_name='test-db',
+            db_user='test-user',
+            db_password='test-pass',
+            output_path='/tmp/test.csv'
+        )
+
+        errors = []
+        worker.error.connect(errors.append)
+        worker.run()
+
+        assert len(errors) == 1
+        assert "Unerwarteter Fehler" in errors[0]

@@ -3,8 +3,9 @@
 import csv
 import os
 import pytest
+from unittest.mock import patch
 
-from src.utils.csv_exporter import export_dois_with_contributors_to_csv
+from src.utils.csv_exporter import export_dois_with_contributors_to_csv, CSVExportError
 from src.utils.csv_parser import CSVParser, CSVParseError
 
 
@@ -175,6 +176,81 @@ class TestExportContributorsCSV:
         
         assert os.path.exists(filepath)
         assert 'subdir' in filepath and 'nested' in filepath
+
+    def test_export_directory_permission_error(self, tmp_path):
+        """Test permission errors while creating the output directory."""
+        data = [
+            ('10.5880/GFZ.1', 'Test', 'Personal', '', '', '', '', '',
+             'Researcher', '', '', '', '', '')
+        ]
+
+        with patch('pathlib.Path.mkdir', side_effect=PermissionError("denied")):
+            with pytest.raises(CSVExportError) as exc_info:
+                export_dois_with_contributors_to_csv(
+                    data, 'TIB.GFZ', str(tmp_path / 'missing')
+                )
+
+        assert "Berechtigung" in str(exc_info.value)
+
+    def test_export_directory_os_error(self, tmp_path):
+        """Test OS errors while creating the output directory."""
+        data = [
+            ('10.5880/GFZ.1', 'Test', 'Personal', '', '', '', '', '',
+             'Researcher', '', '', '', '', '')
+        ]
+
+        with patch('pathlib.Path.mkdir', side_effect=OSError("disk error")):
+            with pytest.raises(CSVExportError) as exc_info:
+                export_dois_with_contributors_to_csv(
+                    data, 'TIB.GFZ', str(tmp_path / 'missing')
+                )
+
+        assert "Verzeichnisses" in str(exc_info.value)
+
+    def test_export_file_permission_error(self, tmp_path):
+        """Test permission errors while writing the CSV file."""
+        data = [
+            ('10.5880/GFZ.1', 'Test', 'Personal', '', '', '', '', '',
+             'Researcher', '', '', '', '', '')
+        ]
+
+        with patch('builtins.open', side_effect=PermissionError("denied")):
+            with pytest.raises(CSVExportError) as exc_info:
+                export_dois_with_contributors_to_csv(
+                    data, 'TIB.GFZ', str(tmp_path)
+                )
+
+        assert "Schreiben" in str(exc_info.value)
+
+    def test_export_file_os_error(self, tmp_path):
+        """Test OS errors while writing the CSV file."""
+        data = [
+            ('10.5880/GFZ.1', 'Test', 'Personal', '', '', '', '', '',
+             'Researcher', '', '', '', '', '')
+        ]
+
+        with patch('builtins.open', side_effect=OSError("disk full")):
+            with pytest.raises(CSVExportError) as exc_info:
+                export_dois_with_contributors_to_csv(
+                    data, 'TIB.GFZ', str(tmp_path)
+                )
+
+        assert "CSV-Datei konnte nicht gespeichert werden" in str(exc_info.value)
+
+    def test_export_file_unexpected_error(self, tmp_path):
+        """Test unexpected errors while writing the CSV file."""
+        data = [
+            ('10.5880/GFZ.1', 'Test', 'Personal', '', '', '', '', '',
+             'Researcher', '', '', '', '', '')
+        ]
+
+        with patch('builtins.open', side_effect=RuntimeError("surprise")):
+            with pytest.raises(CSVExportError) as exc_info:
+                export_dois_with_contributors_to_csv(
+                    data, 'TIB.GFZ', str(tmp_path)
+                )
+
+        assert "Unerwarteter Fehler" in str(exc_info.value)
 
 
 class TestParseContributorsCSV:
